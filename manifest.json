@@ -285,6 +285,26 @@
         "hi",
         "en"
       ]
+    },
+    {
+      "id": "Vidcodin",
+      "name": "Vidcodin",
+      "description": "Vidcodin TMDB-id-based movie & TV streaming with AES-GCM encrypted quality links",
+      "version": "1.0.0",
+      "author": "CENSORED",
+      "supportedTypes": [
+        "movie",
+        "tv"
+      ],
+      "filename": "providers/vidcodin.js",
+      "enabled": true,
+      "formats": [
+        "mp4"
+      ],
+      "logo": "https://i.imgur.com/9bGkGMi.png",
+      "contentLanguage": [
+        "en"
+      ]
     }
   ]
 }
