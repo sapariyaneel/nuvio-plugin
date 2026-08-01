@@ -1,0 +1,250 @@
+// cineby.js
+// Cineby (https://www.cineby.at) - TMDB-id-based movie & TV streaming via a seeded-cipher CDN API.
+// Flow: GET {api}/seed?mediaId={tmdbId} -> {"seed":"<num>.<22 random b64url chars>","ttlMs":30000}
+//       GET {api}/cdn/sources-with-title?title=&mediaType=&year=&episodeId=&seasonId=&tmdbId=&imdbId=&enc=2&seed=
+//       -> base64url blob. XOR-decrypt with a keystream derived from the seed string + tmdbId
+//       (custom 61-slot LCG-ish PRNG seeded with FNV-1a(seed) ^ murmur3-fmix(tmdbId ^ 0x9E3779B9),
+//       mixed with SHA-256 round constants) to get JSON: {"sources":[{quality,url}],"subtitles":[...]}.
+// First 4 decrypted bytes must equal the ASCII magic "mvm1" or the payload is rejected as tampered.
+// Reverse-engineered from the site's own Next.js chunk (webpack module 84737, export `BV`, chunk
+// hash 831-75be8e900f88f162.js) by extracting and running its real decrypt function against a live
+// request/response pair captured through the browser - not guessed. The RC4-keyed branch in that
+// function is unreachable dead code (its selector `(e*(e+1))&1===1` is never true since e*(e+1) is
+// always even), so only the custom-PRNG branch is implemented here.
+// Streams are HLS (.m3u8) with no reported byte size - segments are disguised as .jpg files behind
+// rotating CDN hostnames, so "Unknown" is reported for size like other HLS-only providers.
+
+const DOMAINS_URL = "https://raw.githubusercontent.com/phisher98/TVVVV/refs/heads/main/domains.json";
+const FALLBACK_API_HOST = "https://api.speedracelight.com";
+const TMDB_API_KEY = "1865f43a0549ca50d341dd9ab8b29f49";
+
+const HEADERS = {
+  "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36",
+  "Referer": "https://www.cineby.at/",
+  "Origin": "https://www.cineby.at"
+};
+
+let cachedDomains = null;
+
+async function getDomains() {
+  if (cachedDomains) return cachedDomains;
+  try {
+    const resp = await fetch(DOMAINS_URL, { skipSizeCheck: true });
+    cachedDomains = await resp.json();
+  } catch (e) {
+    cachedDomains = {};
+  }
+  return cachedDomains;
+}
+
+async function getApiHost() {
+  const d = await getDomains();
+  return (d.cineby || d["speedracelight"] || d["api.speedracelight.com"] || FALLBACK_API_HOST).replace(/\/+$/, "");
+}
+
+const SHA256_CONSTANTS = [
+  1116352408, 1899447441, 3049323471, 3921009573, 961987163, 1508970993, 2453635748, 2870763221,
+  3624381080, 310598401, 607225278, 1426881987, 1925078388, 2162078206, 2614888103, 3248222580
+];
+const MAGIC_BYTES = [109, 118, 109, 49]; // "mvm1"
+
+function isCustomBranch(e) {
+  return ((e * (e + 1)) & 1) === 0;
+}
+
+function fmix32(h) {
+  h = h >>> 0;
+  h ^= h >>> 16;
+  h = Math.imul(h, 2246822507) >>> 0;
+  h ^= h >>> 13;
+  h = Math.imul(h, 3266489909) >>> 0;
+  h = (h ^ h >>> 16) >>> 0;
+  return h;
+}
+
+function rotl32(x, n) {
+  x = x >>> 0;
+  n &= 31;
+  if (n === 0) return x >>> 0;
+  return (x << n | x >>> (32 - n)) >>> 0;
+}
+
+function base64UrlToBytes(str) {
+  const b64 = str.replace(/-/g, "+").replace(/_/g, "/").padEnd(4 * Math.ceil(str.length / 4), "=");
+  const bin = typeof atob === "function"
+    ? atob(b64)
+    : Buffer.from(b64, "base64").toString("binary");
+  const bytes = new Uint8Array(bin.length);
+  for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+  return bytes;
+}
+
+function fnv1a32(str) {
+  let h = 2166136261;
+  for (let i = 0; i < str.length; i++) h = Math.imul(h ^ str.charCodeAt(i), 16777619) >>> 0;
+  return fmix32(h);
+}
+
+function makeKeystreamState(seedStr, mediaId) {
+  const slots = new Array(61);
+  let n = fmix32(fnv1a32(seedStr) ^ fmix32((mediaId >>> 0) ^ 2654435769)) >>> 0;
+  for (let i = 0; i < 8; i++) {
+    if (isCustomBranch(i)) {
+      const slot = n % 61;
+      n = rotl32((n + 2654435769) >>> 0, 7 + (7 & i));
+      slots[slot] = (n ^ fmix32(n)) >>> 0;
+      n = fmix32((n + slot) >>> 0);
+    } else {
+      slots[i] = SHA256_CONSTANTS[15 & i];
+    }
+  }
+  return { slots, acc: fmix32(2779096485 ^ n) >>> 0 };
+}
+
+function nextKeystreamWord(state, counter) {
+  const slots = state.slots;
+  const prevAcc = state.acc;
+  const slotIdx = prevAcc % 61;
+  const hasSlot = (slotIdx in slots) ? -1 : 0;
+  const slotVal = slots[slotIdx] >>> 0;
+  const mix = (slotVal ^ (Math.imul(2654435769, counter + 1) >>> 0)) >>> 0;
+  const combined = (((prevAcc ^ mix) >>> 0) | ((prevAcc & mix & hasSlot) >>> 0)) >>> 0;
+  const rotated = (rotl32((combined + prevAcc) >>> 0, 31 & slotIdx) ^ rotl32(prevAcc, 31 & Math.imul(slotIdx, 7))) >>> 0;
+  const newAcc = fmix32((rotated + 2654435769) >>> 0);
+  slots[slotIdx] = newAcc >>> 0;
+  state.acc = newAcc;
+  return newAcc >>> 0;
+}
+
+function generateKeystream(seedStr, mediaId, length) {
+  const state = makeKeystreamState(seedStr, mediaId);
+  const out = new Uint8Array(length);
+  let idx = 0, counter = 0;
+  while (idx < length) {
+    const word = nextKeystreamWord(state, counter++);
+    out[idx++] = 255 & word;
+    if (idx < length) out[idx++] = (word >>> 8) & 255;
+    if (idx < length) out[idx++] = (word >>> 16) & 255;
+    if (idx < length) out[idx++] = (word >>> 24) & 255;
+  }
+  return out;
+}
+
+function decryptSourcesPayload(cipherText, seedStr, mediaId) {
+  const cipherBytes = base64UrlToBytes(cipherText);
+  const keystream = generateKeystream(seedStr, mediaId, cipherBytes.length);
+  const plain = new Uint8Array(cipherBytes.length);
+  for (let i = 0; i < cipherBytes.length; i++) plain[i] = cipherBytes[i] ^ keystream[i];
+  for (let i = 0; i < MAGIC_BYTES.length; i++) {
+    if (plain[i] !== MAGIC_BYTES[i]) throw new Error("decrypt failed: bad seed or tampered payload");
+  }
+  const body = plain.subarray(MAGIC_BYTES.length);
+  return new TextDecoder("utf-8").decode(body);
+}
+
+async function resolveTmdbId(id) {
+  if (typeof id === "string" && id.trim().toLowerCase().startsWith("tt")) return null;
+  return String(id);
+}
+
+async function getTmdbMeta(tmdbId, mediaType) {
+  const type = mediaType === "tv" ? "tv" : "movie";
+  const url = `https://api.themoviedb.org/3/${type}/${tmdbId}?api_key=${TMDB_API_KEY}&append_to_response=external_ids`;
+  const resp = await fetch(url, { skipSizeCheck: true });
+  if (!resp.ok) return null;
+  const data = await resp.json();
+  const title = type === "tv" ? data.name : data.title;
+  const dateStr = type === "tv" ? data.first_air_date : data.release_date;
+  const year = dateStr ? dateStr.slice(0, 4) : "";
+  const imdbId = (data.external_ids && data.external_ids.imdb_id) || data.imdb_id || "";
+  return { title, year, imdbId };
+}
+
+function qualityRank(q) {
+  if (!q) return 0;
+  if (/4k/i.test(q)) return 2160;
+  const n = parseInt(q, 10);
+  return Number.isFinite(n) ? n : 0;
+}
+
+async function getStreams(tmdbId, mediaType, season, episode) {
+  try {
+    let numericTmdbId = tmdbId;
+    if (typeof tmdbId === "string" && tmdbId.trim().toLowerCase().startsWith("tt")) {
+      const findUrl = `https://api.themoviedb.org/3/find/${tmdbId}?api_key=${TMDB_API_KEY}&external_source=imdb_id`;
+      const findData = await (await fetch(findUrl, { skipSizeCheck: true })).json();
+      const results = mediaType === "tv" ? findData.tv_results : findData.movie_results;
+      numericTmdbId = results && results.length ? results[0].id : null;
+      if (!numericTmdbId) return [];
+    }
+    numericTmdbId = parseInt(numericTmdbId, 10);
+    if (!numericTmdbId) return [];
+
+    const meta = await getTmdbMeta(numericTmdbId, mediaType);
+    if (!meta || !meta.title) return [];
+
+    const apiHost = await getApiHost();
+    const isTv = mediaType === "tv";
+
+    const seedResp = await fetch(`${apiHost}/seed?mediaId=${numericTmdbId}`, { headers: HEADERS, skipSizeCheck: true });
+    if (!seedResp.ok) return [];
+    const seedData = await seedResp.json().catch(() => null);
+    if (!seedData || !seedData.seed) return [];
+
+    const params = new URLSearchParams({
+      title: meta.title,
+      mediaType: isTv ? "tv" : "movie",
+      year: meta.year || "",
+      episodeId: String(isTv ? (episode || 1) : 1),
+      seasonId: String(isTv ? (season || 1) : 1),
+      tmdbId: String(numericTmdbId),
+      imdbId: meta.imdbId || "",
+      enc: "2",
+      seed: seedData.seed
+    });
+
+    const sourcesResp = await fetch(`${apiHost}/cdn/sources-with-title?${params.toString()}`, { headers: HEADERS, skipSizeCheck: true });
+    if (!sourcesResp.ok) return [];
+    const cipherText = await sourcesResp.text();
+
+    let payload;
+    try {
+      const plainText = decryptSourcesPayload(cipherText, seedData.seed, numericTmdbId);
+      payload = JSON.parse(plainText);
+    } catch (e) {
+      console.error("[Cineby] decrypt failed:", e.message);
+      return [];
+    }
+
+    const sources = (payload && payload.sources) || [];
+    if (!sources.length) return [];
+
+    const subtitles = ((payload && payload.subtitles) || [])
+      .filter(s => s && s.url)
+      .map(s => ({ url: s.url, lang: s.lang || s.language || "Unknown" }));
+
+    const streams = sources
+      .filter(s => s && s.url)
+      .map(s => ({
+        url: s.url,
+        quality: s.quality || "Unknown",
+        title: `Cineby ${s.quality || "Unknown"}`,
+        name: "Cineby",
+        size: "Unknown",
+        headers: HEADERS,
+        subtitles
+      }));
+
+    streams.sort((a, b) => qualityRank(b.quality) - qualityRank(a.quality));
+    return streams;
+  } catch (e) {
+    console.error("[Cineby]", e);
+    return [];
+  }
+}
+
+if (typeof module !== "undefined" && module.exports) {
+  module.exports = { getStreams };
+} else {
+  global.getStreams = getStreams;
+}

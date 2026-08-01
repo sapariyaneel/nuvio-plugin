@@ -305,6 +305,26 @@
       "contentLanguage": [
         "en"
       ]
+    },
+    {
+      "id": "Cineby",
+      "name": "Cineby",
+      "description": "Cineby TMDB-id-based movie & TV streaming with quality options and subtitles",
+      "version": "1.0.0",
+      "author": "CENSORED",
+      "supportedTypes": [
+        "movie",
+        "tv"
+      ],
+      "filename": "providers/cineby.js",
+      "enabled": true,
+      "formats": [
+        "m3u8"
+      ],
+      "logo": "https://i.imgur.com/9bGkGMi.png",
+      "contentLanguage": [
+        "en"
+      ]
     }
   ]
 }
