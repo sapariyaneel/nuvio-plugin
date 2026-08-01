@@ -141,6 +141,20 @@ async function resolveRedirect(rawUrl) {
   }
 }
 
+// Non-hubcloud mirrors (hubdrive.tips and similar) don't get the structured resolveHubCloud()
+// treatment, so they never got a size at all. Do a best-effort generic scrape instead of nothing -
+// most of these mirror pages still print a plain GB/MB figure somewhere even without hubcloud's
+// specific i#size markup.
+async function probeSize(url) {
+  try {
+    const html = await (await fetch(url, { headers: HEADERS, skipSizeCheck: true })).text();
+    const m = html.match(/([\d.]+\s*(?:GB|MB))(?!\w)/i);
+    return m ? formatBytes(toBytes(m[1])) : "";
+  } catch (e) {
+    return "";
+  }
+}
+
 async function resolveImdbToTmdb(imdbId, mediaType) {
   try {
     const url = `https://api.themoviedb.org/3/find/${imdbId}?api_key=${TMDB_API_KEY}&external_source=imdb_id`;
@@ -236,6 +250,7 @@ async function getStreams(tmdbId, mediaType, season, episode) {
               url: resolved,
               quality: extractQuality(epText),
               title: `4KHDHUB [S${season}E${episode}]`,
+              size: await probeSize(resolved),
               subtitles: []
             });
           }
@@ -265,6 +280,7 @@ async function getStreams(tmdbId, mediaType, season, episode) {
               url: resolved,
               quality: extractQuality(resolved),
               title: `4KHDHUB`,
+              size: await probeSize(resolved),
               subtitles: []
             });
           }

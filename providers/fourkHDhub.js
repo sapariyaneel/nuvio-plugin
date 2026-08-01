@@ -185,6 +185,17 @@ function resolveRedirect(rawUrl) {
     }
   });
 }
+function probeSize(url) {
+  return __async(this, null, function* () {
+    try {
+      const html = yield (yield fetch(url, { headers: HEADERS, skipSizeCheck: true })).text();
+      const m = html.match(/([\d.]+\s*(?:GB|MB))(?!\w)/i);
+      return m ? formatBytes(toBytes(m[1])) : "";
+    } catch (e) {
+      return "";
+    }
+  });
+}
 function resolveImdbToTmdb(imdbId, mediaType) {
   return __async(this, null, function* () {
     try {
@@ -273,6 +284,7 @@ function getStreams(tmdbId, mediaType, season, episode) {
                 url: resolved,
                 quality: extractQuality(epText),
                 title: `4KHDHUB [S${season}E${episode}]`,
+                size: yield probeSize(resolved),
                 subtitles: []
               });
             }
@@ -301,6 +313,7 @@ function getStreams(tmdbId, mediaType, season, episode) {
                 url: resolved,
                 quality: extractQuality(resolved),
                 title: `4KHDHUB`,
+                size: yield probeSize(resolved),
                 subtitles: []
               });
             }
