@@ -40,10 +40,11 @@ var __async = (__this, __arguments, generator) => {
 const DOMAINS_URL = "https://raw.githubusercontent.com/phisher98/TVVVV/refs/heads/main/domains.json";
 const FALLBACK_API_HOST = "https://api.speedracelight.com";
 const TMDB_API_KEY = "1865f43a0549ca50d341dd9ab8b29f49";
+const SEGMENT_SAMPLE_SIZE = 5;
 const HEADERS = {
   "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36",
-  "Referer": "https://www.cineby.at/",
-  "Origin": "https://www.cineby.at"
+  "Referer": "https://www.fmovies.gd/",
+  "Origin": "https://www.fmovies.gd"
 };
 let cachedDomains = null;
 function getDomains() {
@@ -62,7 +63,7 @@ function getDomains() {
 function getApiHost() {
   return __async(this, null, function* () {
     const d = yield getDomains();
-    return (d.cineby || d["speedracelight"] || d["api.speedracelight.com"] || FALLBACK_API_HOST).replace(/\/+$/, "");
+    return (d.fmovies || d["speedracelight"] || d["api.speedracelight.com"] || FALLBACK_API_HOST).replace(/\/+$/, "");
   });
 }
 const SHA256_CONSTANTS = [
@@ -175,13 +176,6 @@ function decryptSourcesPayload(cipherText, seedStr, mediaId) {
   const body = plain.subarray(MAGIC_BYTES.length);
   return new TextDecoder("utf-8").decode(body);
 }
-function resolveTmdbId(id) {
-  return __async(this, null, function* () {
-    if (typeof id === "string" && id.trim().toLowerCase().startsWith("tt"))
-      return null;
-    return String(id);
-  });
-}
 function getTmdbMeta(tmdbId, mediaType) {
   return __async(this, null, function* () {
     const type = mediaType === "tv" ? "tv" : "movie";
@@ -213,7 +207,6 @@ function formatBytes(bytes) {
   const i = Math.floor(Math.log(bytes) / Math.log(k));
   return `${parseFloat((bytes / Math.pow(k, i)).toFixed(2))} ${sizes[i]}`;
 }
-const SEGMENT_SAMPLE_SIZE = 5;
 function getRealSegmentSize(url) {
   return __async(this, null, function* () {
     try {
@@ -303,29 +296,29 @@ function getStreams(tmdbId, mediaType, season, episode) {
         const plainText = decryptSourcesPayload(cipherText, seedData.seed, numericTmdbId);
         payload = JSON.parse(plainText);
       } catch (e) {
-        console.error("[Cineby] decrypt failed:", e.message);
+        console.error("[Fmovies] decrypt failed:", e.message);
         return [];
       }
       const sources = payload && payload.sources || [];
       if (!sources.length)
         return [];
       const subtitles = (payload && payload.subtitles || []).filter((s) => s && s.url).map((s) => ({ url: s.url, lang: s.lang || s.language || "Unknown" }));
-      const streams = yield Promise.all(sources.filter((s) => s && s.url).map((s) => __async(this, null, function* () {
+      const withSizes = yield Promise.all(sources.filter((s) => s && s.url).map((s) => __async(this, null, function* () {
         const size = yield estimateHlsSize(s.url);
         return {
           url: s.url,
           quality: s.quality || "Unknown",
-          title: `Cineby ${s.quality || "Unknown"}`,
-          name: "Cineby",
+          title: `Fmovies ${s.quality || "Unknown"}`,
+          name: "Fmovies",
           size,
           headers: HEADERS,
           subtitles
         };
       })));
-      streams.sort((a, b) => qualityRank(b.quality) - qualityRank(a.quality));
-      return streams;
+      withSizes.sort((a, b) => qualityRank(b.quality) - qualityRank(a.quality));
+      return withSizes;
     } catch (e) {
-      console.error("[Cineby]", e);
+      console.error("[Fmovies]", e);
       return [];
     }
   });

@@ -309,7 +309,7 @@
     {
       "id": "Cineby",
       "name": "Cineby",
-      "description": "Cineby TMDB-id-based movie & TV streaming with quality options and subtitles",
+      "description": "Cineby TMDB-id-based movie & TV streaming with quality, estimated size and subtitles",
       "version": "1.0.0",
       "author": "CENSORED",
       "supportedTypes": [
@@ -317,6 +317,26 @@
         "tv"
       ],
       "filename": "providers/cineby.js",
+      "enabled": true,
+      "formats": [
+        "m3u8"
+      ],
+      "logo": "https://i.imgur.com/9bGkGMi.png",
+      "contentLanguage": [
+        "en"
+      ]
+    },
+    {
+      "id": "Fmovies",
+      "name": "Fmovies",
+      "description": "Fmovies TMDB-id-based movie & TV streaming with quality, estimated size and subtitles",
+      "version": "1.0.0",
+      "author": "CENSORED",
+      "supportedTypes": [
+        "movie",
+        "tv"
+      ],
+      "filename": "providers/fmovies.js",
       "enabled": true,
       "formats": [
         "m3u8"

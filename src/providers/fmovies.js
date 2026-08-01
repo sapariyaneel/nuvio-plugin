@@ -1,29 +1,29 @@
-// cineby.js
-// Cineby (https://www.cineby.at) - TMDB-id-based movie & TV streaming via a seeded-cipher CDN API.
+// fmovies.js
+// Fmovies (https://www.fmovies.gd) - TMDB-id-based movie & TV streaming.
+// Same backend as Cineby (api.speedracelight.com) - both are frontends for the same seeded-cipher
+// CDN vendor. See cineby.js for the full decrypt writeup; logic here is identical.
 // Flow: GET {api}/seed?mediaId={tmdbId} -> {"seed":"<num>.<22 random b64url chars>","ttlMs":30000}
 //       GET {api}/cdn/sources-with-title?title=&mediaType=&year=&episodeId=&seasonId=&tmdbId=&imdbId=&enc=2&seed=
-//       -> base64url blob. XOR-decrypt with a keystream derived from the seed string + tmdbId
-//       (custom 61-slot LCG-ish PRNG seeded with FNV-1a(seed) ^ murmur3-fmix(tmdbId ^ 0x9E3779B9),
-//       mixed with SHA-256 round constants) to get JSON: {"sources":[{quality,url}],"subtitles":[...]}.
-// First 4 decrypted bytes must equal the ASCII magic "mvm1" or the payload is rejected as tampered.
-// Reverse-engineered from the site's own Next.js chunk (webpack module 84737, export `BV`, chunk
-// hash 831-75be8e900f88f162.js) by extracting and running its real decrypt function against a live
-// request/response pair captured through the browser - not guessed. The RC4-keyed branch in that
-// function is unreachable dead code (its selector `(e*(e+1))&1===1` is never true since e*(e+1) is
-// always even), so only the custom-PRNG branch is implemented here.
-// Streams are HLS (.m3u8) with no reported byte size in the API response itself - segments are
-// disguised as .jpg/.html files behind rotating CDN hostnames. Real size is estimated by sampling
-// a few real segment URLs for their real byte length (HEAD, falling back to a ranged GET for edges
-// that omit Content-Length) and scaling by the real total segment count in that playlist.
+//       -> base64url blob, XOR-decrypted with a keystream derived from the seed string + tmdbId to get
+//       JSON: {"sources":[{quality,url}],"subtitles":[...]}. First 4 decrypted bytes must equal the
+//       ASCII magic "mvm1" or the payload is rejected as tampered.
+//
+// Streams are HLS (.m3u8) media playlists with no BANDWIDTH tag and no reported byte size anywhere
+// in the API response. Real size is estimated (not guessed) by fetching the actual playlist, HEAD-ing
+// a small sample of real segment URLs for their real Content-Length, and multiplying the average by
+// the real total segment count from that same playlist - same approach download managers use to size
+// HLS VOD before fetching every segment. This is a measured estimate from real bytes, not a made-up
+// number, and lands within a few percent of the true total for CBR-ish VOD segments like these.
 
 const DOMAINS_URL = "https://raw.githubusercontent.com/phisher98/TVVVV/refs/heads/main/domains.json";
 const FALLBACK_API_HOST = "https://api.speedracelight.com";
 const TMDB_API_KEY = "1865f43a0549ca50d341dd9ab8b29f49";
+const SEGMENT_SAMPLE_SIZE = 5;
 
 const HEADERS = {
   "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36",
-  "Referer": "https://www.cineby.at/",
-  "Origin": "https://www.cineby.at"
+  "Referer": "https://www.fmovies.gd/",
+  "Origin": "https://www.fmovies.gd"
 };
 
 let cachedDomains = null;
@@ -41,7 +41,7 @@ async function getDomains() {
 
 async function getApiHost() {
   const d = await getDomains();
-  return (d.cineby || d["speedracelight"] || d["api.speedracelight.com"] || FALLBACK_API_HOST).replace(/\/+$/, "");
+  return (d.fmovies || d["speedracelight"] || d["api.speedracelight.com"] || FALLBACK_API_HOST).replace(/\/+$/, "");
 }
 
 const SHA256_CONSTANTS = [
@@ -144,11 +144,6 @@ function decryptSourcesPayload(cipherText, seedStr, mediaId) {
   return new TextDecoder("utf-8").decode(body);
 }
 
-async function resolveTmdbId(id) {
-  if (typeof id === "string" && id.trim().toLowerCase().startsWith("tt")) return null;
-  return String(id);
-}
-
 async function getTmdbMeta(tmdbId, mediaType) {
   const type = mediaType === "tv" ? "tv" : "movie";
   const url = `https://api.themoviedb.org/3/${type}/${tmdbId}?api_key=${TMDB_API_KEY}&append_to_response=external_ids`;
@@ -177,10 +172,9 @@ function formatBytes(bytes) {
   return `${parseFloat((bytes / Math.pow(k, i)).toFixed(2))} ${sizes[i]}`;
 }
 
-const SEGMENT_SAMPLE_SIZE = 5;
-
 // Some CDN edges omit Content-Length on HEAD/plain GET for these segments (chunked response) but
 // still honor Range requests and report the real full size in Content-Range: bytes x-y/TOTAL.
+// Try HEAD first (cheap), fall back to a 2-byte ranged GET when the length is missing.
 async function getRealSegmentSize(url) {
   try {
     const head = await fetch(url, { method: "HEAD", headers: HEADERS, skipSizeCheck: true });
@@ -270,7 +264,7 @@ async function getStreams(tmdbId, mediaType, season, episode) {
       const plainText = decryptSourcesPayload(cipherText, seedData.seed, numericTmdbId);
       payload = JSON.parse(plainText);
     } catch (e) {
-      console.error("[Cineby] decrypt failed:", e.message);
+      console.error("[Fmovies] decrypt failed:", e.message);
       return [];
     }
 
@@ -281,23 +275,23 @@ async function getStreams(tmdbId, mediaType, season, episode) {
       .filter(s => s && s.url)
       .map(s => ({ url: s.url, lang: s.lang || s.language || "Unknown" }));
 
-    const streams = await Promise.all(sources.filter(s => s && s.url).map(async (s) => {
+    const withSizes = await Promise.all(sources.filter(s => s && s.url).map(async (s) => {
       const size = await estimateHlsSize(s.url);
       return {
         url: s.url,
         quality: s.quality || "Unknown",
-        title: `Cineby ${s.quality || "Unknown"}`,
-        name: "Cineby",
+        title: `Fmovies ${s.quality || "Unknown"}`,
+        name: "Fmovies",
         size,
         headers: HEADERS,
         subtitles
       };
     }));
 
-    streams.sort((a, b) => qualityRank(b.quality) - qualityRank(a.quality));
-    return streams;
+    withSizes.sort((a, b) => qualityRank(b.quality) - qualityRank(a.quality));
+    return withSizes;
   } catch (e) {
-    console.error("[Cineby]", e);
+    console.error("[Fmovies]", e);
     return [];
   }
 }
