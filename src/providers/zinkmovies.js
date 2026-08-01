@@ -4,7 +4,7 @@
 // Movie: div.movie-button-container a[href]; TV: .lgtagmessage season headings → season page → .entry-content a[href]
 // Links: bypassShortlink (tpi.li/oii.la) → generateZinkLinks (ajax token → /dl/ page → mirrors + worker) → HubCloud/Hubdrive/HUBCDN/PixelDrain extractors
 
-const DOMAINS_URL = "https://raw.githubusercontent.com/phisher98/TVVVV/refs/heads/main/domains.json";
+const DOMAINS_URL = "https://raw.githubusercontent.com/sapariyaneel/nuvio-plugin/refs/heads/main/domains.json";
 const FALLBACK_BASE_URL = "https://zinkmovies.vip";
 const TMDB_API_KEY = "1865f43a0549ca50d341dd9ab8b29f49";
 

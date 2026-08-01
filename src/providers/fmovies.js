@@ -15,7 +15,7 @@
 // HLS VOD before fetching every segment. This is a measured estimate from real bytes, not a made-up
 // number, and lands within a few percent of the true total for CBR-ish VOD segments like these.
 
-const DOMAINS_URL = "https://raw.githubusercontent.com/phisher98/TVVVV/refs/heads/main/domains.json";
+const DOMAINS_URL = "https://raw.githubusercontent.com/sapariyaneel/nuvio-plugin/refs/heads/main/domains.json";
 const FALLBACK_API_HOST = "https://api.speedracelight.com";
 const TMDB_API_KEY = "1865f43a0549ca50d341dd9ab8b29f49";
 const SEGMENT_SAMPLE_SIZE = 5;

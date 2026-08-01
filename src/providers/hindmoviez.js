@@ -5,7 +5,7 @@
 // TV: h3 Season headers → episode list URLs → per-episode signed HShare URLs
 // HShare signing uses HMAC-SHA256 (approximated here since we can't do crypto in vanilla JS easily)
 
-const DOMAINS_URL = "https://raw.githubusercontent.com/phisher98/TVVVV/refs/heads/main/domains.json";
+const DOMAINS_URL = "https://raw.githubusercontent.com/sapariyaneel/nuvio-plugin/refs/heads/main/domains.json";
 const FALLBACK_BASE_URL = "https://hindmovie.icu";
 const TMDB_API_KEY = "1865f43a0549ca50d341dd9ab8b29f49";
 const HEADERS = {

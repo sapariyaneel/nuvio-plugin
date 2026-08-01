@@ -3,10 +3,10 @@
 // Search: /?s={query}
 // Stream links: p a elements containing "watch online" text
 
-// No registry key currently exists for this site (checked against phisher98/TVVVV/domains.json) -
+// No registry key currently exists for this site (checked against our shared domains.json registry) -
 // still wired to the shared registry so it picks up a live domain automatically if one is added later,
 // falling back to the hardcoded domain in the meantime.
-const DOMAINS_URL = "https://raw.githubusercontent.com/phisher98/TVVVV/refs/heads/main/domains.json";
+const DOMAINS_URL = "https://raw.githubusercontent.com/sapariyaneel/nuvio-plugin/refs/heads/main/domains.json";
 const FALLBACK_BASE_URL = "https://www.5movierulz.vote";
 const TMDB_API_KEY = "1865f43a0549ca50d341dd9ab8b29f49";
 const HEADERS = {

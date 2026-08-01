@@ -4,7 +4,7 @@
 // Download links: a.maxbutton → redirect pages with more maxbutton links → final stream URLs
 // Uses Cinemeta for metadata enhancement
 
-const DOMAINS_URL = "https://raw.githubusercontent.com/phisher98/TVVVV/refs/heads/main/domains.json";
+const DOMAINS_URL = "https://raw.githubusercontent.com/sapariyaneel/nuvio-plugin/refs/heads/main/domains.json";
 const FALLBACK_BASE_URL = "https://dudefilms.casa";
 const TMDB_API_KEY = "1865f43a0549ca50d341dd9ab8b29f49";
 const CINEMETA_URL = "https://v3-cinemeta.strem.io/meta";

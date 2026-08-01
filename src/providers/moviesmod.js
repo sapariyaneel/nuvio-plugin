@@ -5,7 +5,7 @@
 //           (Google Drive link, gated by cloud.unblockedgames.world bypass chain)
 // Links: same Driveseed/Driveleech(.org/.net/.pro) family and unblockedgames bypass as uhdmovies.js
 
-const DOMAINS_URL = "https://raw.githubusercontent.com/phisher98/TVVVV/refs/heads/main/domains.json";
+const DOMAINS_URL = "https://raw.githubusercontent.com/sapariyaneel/nuvio-plugin/refs/heads/main/domains.json";
 const FALLBACK_BASE_URL = "https://moviesmod.zone";
 const TMDB_API_KEY = "1865f43a0549ca50d341dd9ab8b29f49";
 

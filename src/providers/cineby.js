@@ -16,7 +16,7 @@
 // a few real segment URLs for their real byte length (HEAD, falling back to a ranged GET for edges
 // that omit Content-Length) and scaling by the real total segment count in that playlist.
 
-const DOMAINS_URL = "https://raw.githubusercontent.com/phisher98/TVVVV/refs/heads/main/domains.json";
+const DOMAINS_URL = "https://raw.githubusercontent.com/sapariyaneel/nuvio-plugin/refs/heads/main/domains.json";
 const FALLBACK_API_HOST = "https://api.speedracelight.com";
 const TMDB_API_KEY = "1865f43a0549ca50d341dd9ab8b29f49";
 

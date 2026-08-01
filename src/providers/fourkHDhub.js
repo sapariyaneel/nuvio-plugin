@@ -4,7 +4,7 @@
 // Download links: div.download-item a[href] → redirect URLs → HubCloud extraction
 // TV episodes: div.episodes-list div.season-item → div.episode-download-item → a[href]
 
-const DOMAINS_URL = "https://raw.githubusercontent.com/phisher98/TVVVV/refs/heads/main/domains.json";
+const DOMAINS_URL = "https://raw.githubusercontent.com/sapariyaneel/nuvio-plugin/refs/heads/main/domains.json";
 const FALLBACK_BASE_URL = "https://4khdhub.one";
 const TMDB_API_KEY = "1865f43a0549ca50d341dd9ab8b29f49";
 const HEADERS = {

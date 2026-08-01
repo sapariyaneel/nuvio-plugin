@@ -8,11 +8,11 @@
 // Reverse-engineered from the site's obfuscated Vite/React bundle (javascript-obfuscator string-array
 // scheme) by extracting and running its own decoder function standalone - not guessed.
 
-// No registry key currently exists for this site (checked against phisher98/TVVVV/domains.json) -
+// No registry key currently exists for this site (checked against our shared domains.json registry) -
 // still wired to the shared registry so it picks up a live API host automatically if one is added
 // later, falling back to the hardcoded host in the meantime. The frontend (vidcodin.net) and the
 // actual API backend (stream.fontaine.lol) are separate domains that can churn independently.
-const DOMAINS_URL = "https://raw.githubusercontent.com/phisher98/TVVVV/refs/heads/main/domains.json";
+const DOMAINS_URL = "https://raw.githubusercontent.com/sapariyaneel/nuvio-plugin/refs/heads/main/domains.json";
 const FALLBACK_API_HOST = "https://stream.fontaine.lol";
 const AES_KEY_HEX = "bfdf4d46136f9e54f85699893a75261e7237a53d9015ee76d120aa54a1943bb0";
 const TMDB_API_KEY = "1865f43a0549ca50d341dd9ab8b29f49";

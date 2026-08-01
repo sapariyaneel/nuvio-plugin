@@ -4,7 +4,7 @@
 // Content: GET /wp-json/wp/v2/posts/{id} (WP REST API - bypasses theme's client-side download-button gating)
 // Links: nexdrive.fit shortlink pages -> G-Direct(fastdl.zip)/V-Cloud(vcloud.zip->hubcloud.foo) buttons -> HubCloud chain
 
-const DOMAINS_URL = "https://raw.githubusercontent.com/phisher98/TVVVV/refs/heads/main/domains.json";
+const DOMAINS_URL = "https://raw.githubusercontent.com/sapariyaneel/nuvio-plugin/refs/heads/main/domains.json";
 const FALLBACK_BASE_URL = "https://vegamovies.catering";
 const TMDB_API_KEY = "1865f43a0549ca50d341dd9ab8b29f49";
 

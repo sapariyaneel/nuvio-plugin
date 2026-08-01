@@ -1,7 +1,7 @@
 // multimovies.js
 // MultiMovies - Hindi/Bollywood/Anime provider via multimovies.autos with WordPress player extraction
 
-const DOMAINS_URL = "https://raw.githubusercontent.com/phisher98/TVVVV/refs/heads/main/domains.json";
+const DOMAINS_URL = "https://raw.githubusercontent.com/sapariyaneel/nuvio-plugin/refs/heads/main/domains.json";
 const FALLBACK_URL = "https://multimovies.motorcycles";
 const TMDB_API_KEY = "1865f43a0549ca50d341dd9ab8b29f49";
 
