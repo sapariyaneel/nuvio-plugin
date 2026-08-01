@@ -1,0 +1,85 @@
+Provider domains audit - generated 2026-08-01
+Format: file | manifest name | domain(s) currently hardcoded in source
+
+allmovieland.js             AllMovieLand            https://api.themoviedb.org/3
+allwish.js                  AllWish                 https://all-wish.me
+anichi.js                   Anichi                  https://api.allanime.day/api
+anidb.js                    AniDb                   https://anidb.app
+anikage.js                  Anikage                 https://anikage.cc
+anime-dekho.js              AnimeDekho              https://animedekho.app
+animeav1.js                 AnimeAv1                https://animeav1.com
+animecloud.js                AnimeCloud              https://fireani.me
+animedubhindi.js            AnimeDubHindi           https://www.animedubhindi.me
+animekhor.js                Animekhor               https://animekhor.org
+animenosub.js                Animenosub              https://animenosub.to
+animepahe.js                 AnimePahe               https://animepahe.pw
+animesalt.js                 Animesalt               https://animesalt.link
+animexin.js                  Animexin                https://animexin.dev
+anineko.js                   Anineko                 https://anineko.to
+aniworld.js                  Aniworld                https://aniworld.to | https://serienstream.to
+anizone.js                   Anizone                 https://anizone.to
+banglaplex.js                BanglaPlex              https://banglaplex.click
+cinefreak.js                 Cinefreak               https://cinefreak.nl
+cinemacity.js                Cinemacity              https://cinemacity.cc
+cloudplay.js                 CloudPlay               https://url-main.cply9.workers.dev
+coflix.js                    Coflix                  https://coflix.wales
+desicinemas.js               Desicinemas             https://desicinemas.to
+donghuastream.js             Donghuastream           https://donghuastream.org
+dorabash.js                  DoraBash                https://dorabash.in
+dudefilms.js                 DudeFilms               https://dudefilms.sarl   [DNS ENOTFOUND in test]
+fibwatch.js                  FibWatch                https://fibwatch.top    [DNS ENOTFOUND in test]
+fivemovierulz.js             5movierulz              https://5movierulz.gripe
+fourkHDhub.js                4KHDHub                https://4khdhub.dad
+goojara.js                   Goojara                 https://ww1.goojara.to
+hdhub4u.js                   HDhub4u                 https://hdhub4u.glass   [returns HTML not JSON, possible CF block]
+hdmovie2.js                  Hdmovie2                https://hdmovie2.qpon
+hianime.js                   HiAnime                 https://api.themoviedb.org/3
+hindmoviez.js                Hindmoviez              https://hindmoviez.cafe
+idlix.js                     Idlix                   https://z1.idlixku.com   [returns HTML not JSON, possible CF block]
+istreamflare.js               IStreamFlare            https://istreamflare.com  [connect timeout]
+kayifamilytv.js              KayiFamilyTv            https://kayifamilytv.com/v18
+kickassanime.js              KickassAnime            https://kaa.lt
+kisskh.js                    KissKH                  https://kisskh.nl
+latanime.js                  Latanime                https://latanime.org
+layarkaca.js                 LayarKaca               https://lk21.de
+masstamilan.js                MassTamilan             https://masstamilan.dev
+megakino.js                  Megakino                https://megakino.team   [connect timeout / ECONNRESET]
+movieblast.js                 MovieBlast              https://app.cloud-mb.xyz
+moviebox.js                  MovieBox                https://api6.aoneroom.com | https://api5.aoneroom.com | https://api4.aoneroom.com  [fetch failed]
+movierulzhd.js                Movierulzhd             https://123moviesfree9.cloud  [DNS ENOTFOUND on fallback 123moviesfree9.cv, check current live domain]
+movies4u.js                  Movies4u                https://new2.movies4u.style
+moviesdrive.js               MoviesDrive             https://api.themoviedb.org/3
+mplayer.js                   MPlayer                 https://www.mxplayer.in
+multimovies.js               MultiMovies             https://multimovies.autos
+netcinez.js                  Netcinez                https://netcinez.si   [logged DNS ENOTFOUND media-player - check for hardcoded sub-resource domain in file]
+ohli24.js                    OHLI24                  https://ani.ohli24.com
+onepace.js                   OnePace                 https://onepace.co
+pelisplushd.js                Pelisplushd             https://pelisplushd.nz
+pencurimovie.js               Pencurimovie            https://ww73.pencurimovie.bond  [TLS handshake failure]
+pinoymoviepedia.js           Pinoymoviepedia         https://pinoymoviepedia.ru
+piratexplay.js                Piratexplay             https://piratexplay.cc
+pmsm.js                       PMSM                    https://ww105.pencurimoviesubmalay.guru  [ETIMEDOUT]
+ringz.js                      RingZ                   (no BASE_URL literal found, check file manually)
+showbox.js                    ShowBox                 https://www.febbox.com   [returns HTML not JSON, likely CF/mTLS block per manifest description]
+streamplay.js                  StreamPlay              https://moviesdrive.surf | https://4khdhub.dad | https://pixeldrain.com  [moviesdrives.my sub-host DNS ENOTFOUND]
+superstream.js                 SuperStream             (no BASE_URL literal found, requires personal Febbox token per manifest)
+tamilblasters.js              Tamilblasters           https://www.1tamilblasters.company/
+tokusatsu.js                  Tokusatsu               https://toku555.com   [DNS ENOTFOUND in test, site appears live via websearch - verify manually]
+tokusatsuultimate.js          TokusatsuUltimate       https://toku555.com   [duplicate of tokusatsu.js, same domain]
+tokuzilla.js                   TokuZilla               https://tokuzilla.net  [DNS ENOTFOUND in test, site appears live via websearch - verify manually]
+toonhub.js                     ToonHub4u               https://toonhub4u.co
+toonstream.js                  Toonstream              https://toonstream.vip
+toontales.js                   ToonTales               https://www.toontales.net
+topcartoons.js                 Topcartoons             https://www.topcartoons.tv
+topstreamfilm.js               TopStreamFilm           https://www.topstreamfilm.live
+torrastream.js                 TorraStream             https://torrentio.strem.fun | https://thepiratebay-plus.strem.fun | https://torrentsdb.com
+uhdmovies.js                   UHDmovies               https://uhdmovies.rip
+vegamovies.js                  Vegamovies              https://vegamovies.catering  [ETIMEDOUT]
+xdmovies.js                    XDMovies                https://api.themoviedb.org/3
+yts.js                         YTS                     https://www12.yts-official.to
+zinkmovies.js                   Zinkmovies              https://zinkmovies.vip
+
+Notes:
+- [bracketed] tags = observed issue during local batch test (node harness, movie:Fight Club/550, tv:GoT/1399, anime:AoT/1429).
+- Domains flagged ENOTFOUND/timeout may be genuinely dead, geo-blocked, or just unreachable from the test machine - please verify manually and report back which ones are actually down vs working on your device/network.
+- Sites returning HTML instead of JSON on API-style endpoints usually means Cloudflare challenge page - confirm if this also happens on your device.

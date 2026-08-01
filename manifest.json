@@ -1,0 +1,290 @@
+{
+  "name": "CENSORED's Repo",
+  "version": "1.0.0",
+  "scrapers": [
+    {
+      "id": "MoviesDrive",
+      "name": "MoviesDrive",
+      "description": "MoviesDrive streaming with multiple quality options and versions",
+      "version": "1.1.1",
+      "author": "CENSORED",
+      "supportedTypes": [
+        "movie",
+        "tv"
+      ],
+      "filename": "providers/moviesdrive.js",
+      "enabled": true,
+      "formats": [
+        "mp4",
+        "mkv"
+      ],
+      "logo": "https://i.imgur.com/9bGkGMi.png",
+      "contentLanguage": [
+        "en"
+      ]
+    },
+    {
+      "id": "Zinkmovies",
+      "name": "Zinkmovies",
+      "description": "Zinkmovies Hindi/Indian movie & series streaming via HubCloud mirror chain",
+      "version": "1.0.0",
+      "author": "CENSORED",
+      "supportedTypes": [
+        "movie",
+        "tv"
+      ],
+      "filename": "providers/zinkmovies.js",
+      "enabled": true,
+      "formats": [
+        "mp4",
+        "m3u8"
+      ],
+      "logo": "https://i.imgur.com/9bGkGMi.png",
+      "contentLanguage": [
+        "hi",
+        "en"
+      ]
+    },
+    {
+      "id": "HDhub4u",
+      "name": "HDhub4u",
+      "description": "HDhub4u Hindi movie streaming via HubCloud mirror chain",
+      "version": "1.0.0",
+      "author": "CENSORED",
+      "supportedTypes": [
+        "movie",
+        "tv"
+      ],
+      "filename": "providers/hdhub4u.js",
+      "enabled": true,
+      "formats": [
+        "mp4",
+        "m3u8"
+      ],
+      "logo": "https://i.imgur.com/9bGkGMi.png",
+      "contentLanguage": [
+        "hi",
+        "en"
+      ]
+    },
+    {
+      "id": "UHDmovies",
+      "name": "UHDmovies",
+      "description": "UHDmovies 4K Hindi/English movie streaming via Driveseed/Driveleech chain",
+      "version": "1.0.0",
+      "author": "CENSORED",
+      "supportedTypes": [
+        "movie",
+        "tv"
+      ],
+      "filename": "providers/uhdmovies.js",
+      "enabled": true,
+      "formats": [
+        "mp4",
+        "m3u8"
+      ],
+      "logo": "https://i.imgur.com/9bGkGMi.png",
+      "contentLanguage": [
+        "hi",
+        "en"
+      ]
+    },
+    {
+      "id": "Desicinemas",
+      "name": "Desicinemas",
+      "description": "Desicinemas Hindi/Punjabi/Bollywood movie site",
+      "version": "1.0.0",
+      "author": "CENSORED",
+      "supportedTypes": [
+        "movie",
+        "tv"
+      ],
+      "filename": "providers/desicinemas.js",
+      "enabled": true,
+      "formats": [
+        "mp4",
+        "m3u8"
+      ],
+      "logo": "https://i.imgur.com/9bGkGMi.png",
+      "contentLanguage": [
+        "hi",
+        "pa"
+      ]
+    },
+    {
+      "id": "DudeFilms",
+      "name": "DudeFilms",
+      "description": "DudeFilms Hindi/Bollywood/South Indian movie & series site",
+      "version": "1.0.0",
+      "author": "CENSORED",
+      "supportedTypes": [
+        "movie",
+        "tv"
+      ],
+      "filename": "providers/dudefilms.js",
+      "enabled": true,
+      "formats": [
+        "mp4",
+        "m3u8"
+      ],
+      "logo": "https://i.imgur.com/9bGkGMi.png",
+      "contentLanguage": [
+        "hi",
+        "en"
+      ]
+    },
+    {
+      "id": "Fivemovierulz",
+      "name": "5movierulz",
+      "description": "5movierulz South Indian/Bollywood movie site",
+      "version": "1.0.0",
+      "author": "CENSORED",
+      "supportedTypes": [
+        "movie"
+      ],
+      "filename": "providers/fivemovierulz.js",
+      "enabled": true,
+      "formats": [
+        "mp4",
+        "m3u8"
+      ],
+      "logo": "https://i.imgur.com/9bGkGMi.png",
+      "contentLanguage": [
+        "hi",
+        "te"
+      ]
+    },
+    {
+      "id": "FourKHDHub",
+      "name": "4KHDHub",
+      "description": "4KHDHub high quality movie & series site via HubCloud extraction",
+      "version": "1.0.0",
+      "author": "CENSORED",
+      "supportedTypes": [
+        "movie",
+        "tv"
+      ],
+      "filename": "providers/fourkHDhub.js",
+      "enabled": true,
+      "formats": [
+        "mp4",
+        "m3u8"
+      ],
+      "logo": "https://i.imgur.com/9bGkGMi.png",
+      "contentLanguage": [
+        "hi",
+        "en"
+      ]
+    },
+    {
+      "id": "Hindmoviez",
+      "name": "Hindmoviez",
+      "description": "Hindmoviez Hindi movie & web series site",
+      "version": "1.0.0",
+      "author": "CENSORED",
+      "supportedTypes": [
+        "movie",
+        "tv"
+      ],
+      "filename": "providers/hindmoviez.js",
+      "enabled": true,
+      "formats": [
+        "mp4",
+        "m3u8"
+      ],
+      "logo": "https://i.imgur.com/9bGkGMi.png",
+      "contentLanguage": [
+        "hi"
+      ]
+    },
+    {
+      "id": "MultiMovies",
+      "name": "MultiMovies",
+      "description": "MultiMovies Hindi/Bollywood/Anime provider",
+      "version": "1.0.0",
+      "author": "CENSORED",
+      "supportedTypes": [
+        "movie",
+        "tv",
+        "anime"
+      ],
+      "filename": "providers/multimovies.js",
+      "enabled": true,
+      "formats": [
+        "mp4",
+        "m3u8"
+      ],
+      "logo": "https://i.imgur.com/9bGkGMi.png",
+      "contentLanguage": [
+        "hi",
+        "en"
+      ]
+    },
+    {
+      "id": "Vegamovies",
+      "name": "Vegamovies",
+      "description": "Vegamovies Hindi/English movie & series site, Typesense search + WP REST API + V-Cloud/HubCloud mirror chain",
+      "version": "1.0.0",
+      "author": "CENSORED",
+      "supportedTypes": [
+        "movie",
+        "tv"
+      ],
+      "filename": "providers/vegamovies.js",
+      "enabled": true,
+      "formats": [
+        "mp4",
+        "m3u8"
+      ],
+      "logo": "https://i.imgur.com/9bGkGMi.png",
+      "contentLanguage": [
+        "hi",
+        "en"
+      ]
+    },
+    {
+      "id": "MoviesMod",
+      "name": "MoviesMod",
+      "description": "MoviesMod Hindi/English Bollywood & Hollywood movie & series site",
+      "version": "1.0.0",
+      "author": "CENSORED",
+      "supportedTypes": [
+        "movie",
+        "tv"
+      ],
+      "filename": "providers/moviesmod.js",
+      "enabled": true,
+      "formats": [
+        "mp4",
+        "mkv"
+      ],
+      "logo": "https://i.imgur.com/9bGkGMi.png",
+      "contentLanguage": [
+        "hi",
+        "en"
+      ]
+    },
+    {
+      "id": "RogMovies",
+      "name": "RogMovies",
+      "description": "RogMovies Hindi/English movie & series site (Vegamovies-family backend)",
+      "version": "1.0.0",
+      "author": "CENSORED",
+      "supportedTypes": [
+        "movie",
+        "tv"
+      ],
+      "filename": "providers/rogmovies.js",
+      "enabled": true,
+      "formats": [
+        "mp4",
+        "mkv"
+      ],
+      "logo": "https://i.imgur.com/9bGkGMi.png",
+      "contentLanguage": [
+        "hi",
+        "en"
+      ]
+    }
+  ]
+}

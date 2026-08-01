@@ -1,0 +1,491 @@
+// uhdmovies.js
+// UHDmoviesProvider - Hindi/English 4K movie site (domain from a remote config file)
+// Search: GET /?s={query} -> article.gridlove-post (uses h1.sanket / div.entry-image)
+// Movie: div.entry-content > p matching /\[.*]/ (quality label) -> next sibling a.maxbutton-1 href
+// TV: div.entry-content "pre, p, a:contains(Episode)" grouped by season/episode -> per-episode hrefs
+// Links: Driveseed/Driveleech(.org/.net/.pro) family - intermediate r?key= redirect page with <script>
+//        replace("...") token, then Instant Download / Resume Worker Bot / Direct Links / Resume Cloud /
+//        Cloud Download buttons; UHDMovies (video-seed.xyz) token-based POST /api extractor
+
+const DOMAINS_URL = "https://raw.githubusercontent.com/phisher98/TVVVV/refs/heads/main/domains.json";
+const FALLBACK_BASE_URL = "https://uhdmovies.autos";
+const TMDB_API_KEY = "1865f43a0549ca50d341dd9ab8b29f49";
+
+const HEADERS = {
+  "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36"
+};
+
+let cachedDomains = null;
+
+async function getDomains() {
+  if (cachedDomains) return cachedDomains;
+  try {
+    const resp = await fetch(DOMAINS_URL, { skipSizeCheck: true });
+    cachedDomains = await resp.json();
+  } catch (e) {
+    cachedDomains = {};
+  }
+  return cachedDomains;
+}
+
+async function getBaseUrl() {
+  const d = await getDomains();
+  return d.UHDMovies || FALLBACK_BASE_URL;
+}
+
+function getOrigin(url) {
+  try {
+    const u = new URL(url);
+    return `${u.protocol}//${u.host}`;
+  } catch (e) {
+    return "";
+  }
+}
+
+function fixUrl(url, domain) {
+  if (!url) return "";
+  if (url.startsWith("http")) return url;
+  if (url.startsWith("//")) return `https:${url}`;
+  if (url.startsWith("/")) return `${domain}${url}`;
+  return `${domain}/${url}`;
+}
+
+function indexQuality(str) {
+  const m = (str || "").match(/(\d{3,4})[pP]/);
+  return m ? parseInt(m[1], 10) : 2160;
+}
+
+function qualityLabel(n) {
+  if (n >= 2160) return "2160p";
+  if (n >= 1440) return "1440p";
+  if (n >= 1080) return "1080p";
+  if (n >= 720) return "720p";
+  if (n >= 480) return "480p";
+  return "Unknown";
+}
+
+function toBytes(size) {
+  const m = (size || "").match(/([\d.]+)\s*(GB|MB|KB)/i);
+  if (!m) return 0;
+  const v = parseFloat(m[1]);
+  const unit = m[2].toUpperCase();
+  if (unit === "GB") return v * 1024 ** 3;
+  if (unit === "MB") return v * 1024 ** 2;
+  return v * 1024;
+}
+
+function formatBytes(bytes) {
+  if (!bytes) return "";
+  const k = 1024;
+  const sizes = ["Bytes", "KB", "MB", "GB", "TB"];
+  const i = Math.floor(Math.log(bytes) / Math.log(k));
+  return `${parseFloat((bytes / Math.pow(k, i)).toFixed(1))} ${sizes[i]}`;
+}
+
+// ExtractorsKt.cleanTitle: normalize codec/audio tokens, strip extension, extract quality/codec/audio tags
+function cleanTitle(title) {
+  const name = (title || "").replace(/\.[a-zA-Z0-9]{2,4}$/, "");
+  const normalized = name
+    .replace(/WEB[-_. ]?DL/gi, "WEB-DL")
+    .replace(/WEB[-_. ]?RIP/gi, "WEBRIP")
+    .replace(/H[ .]?265/gi, "H265")
+    .replace(/H[ .]?264/gi, "H264")
+    .replace(/DDP[ .]?([0-9]\.[0-9])/gi, "DDP$1");
+
+  const sourceTags = new Set(["WEB-DL", "WEBRIP", "BLURAY", "HDRIP", "DVDRIP", "HDTV", "CAM", "TS", "BRRIP", "BDRIP"]);
+  const codecTags = new Set(["H264", "H265", "X264", "X265", "HEVC", "AVC"]);
+  const audioTags = ["AAC", "AC3", "DTS", "MP3", "FLAC", "DD", "DDP", "EAC3"];
+  const audioExtras = new Set(["ATMOS"]);
+  const hdrTags = new Set(["SDR", "HDR", "HDR10", "HDR10+", "DV", "DOLBYVISION"]);
+
+  const tags = [];
+  const titleParts = [];
+  for (const part of normalized.split(/[ _.]/)) {
+    const p = part.toUpperCase();
+    if (sourceTags.has(p) || codecTags.has(p)) {
+      tags.push(p);
+    } else if (audioTags.some(t => p.startsWith(t)) || audioExtras.has(p)) {
+      tags.push(p);
+    } else if (hdrTags.has(p)) {
+      tags.push(p === "DV" || p === "DOLBYVISION" ? "DOLBYVISION" : p);
+    } else if (p === "NF" || p === "CR") {
+      tags.push(p);
+    } else {
+      titleParts.push(part);
+    }
+  }
+
+  const cleanTitleStr = titleParts.join(" ").replace(/\s+/g, " ").trim();
+  const cleanTags = [...new Set(tags)].join(" ");
+  return [cleanTitleStr, cleanTags].filter(Boolean).join(" ");
+}
+
+// removeLeadingIndex: strip leading "1) " / "[2] " style index prefixes
+function removeLeadingIndex(title) {
+  return (title || "").replace(/^[[(]?\s*\d+\s*[\])\-_.]*\s*/, "");
+}
+
+// UHDMovies (video-seed.xyz): POST token from ?url= to /api, parse url":"..." from response
+async function uhdMoviesGetUrl(finallink, quality) {
+  try {
+    const token = finallink.split("https://video-seed.xyz/?url=")[1] || "";
+    const resp = await fetch("https://video-seed.xyz/api", {
+      method: "POST",
+      headers: {
+        "x-token": "video-seed.xyz",
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:125.0) Gecko/20100101 Firefox/125.0",
+        "Content-Type": "application/x-www-form-urlencoded",
+        Referer: finallink
+      },
+      body: new URLSearchParams({ keys: token }).toString(),
+      skipSizeCheck: true
+    });
+    const text = await resp.text();
+    const afterUrl = text.split('url":"')[1];
+    if (!afterUrl) return [];
+    const finalLink = afterUrl.split('","name')[0].replace(/\\\//g, "/");
+    if (!finalLink) return [];
+    return [{ url: finalLink, quality: qualityLabel(indexQuality(quality)), title: `UHDMovies ${quality || ""}`.trim() }];
+  } catch (e) {
+    return [];
+  }
+}
+
+// Driveseed/Driveleech family extractors
+async function driveseedCFType1(url) {
+  try {
+    const html = await (await fetch(`${url}?type=1`, { headers: HEADERS, skipSizeCheck: true })).text();
+    const $ = cheerio.load(html);
+    return $("a.btn-success").toArray().map(el => $(el).attr("href")).filter(h => h && h.startsWith("http"));
+  } catch (e) {
+    return [];
+  }
+}
+
+async function driveseedResumeCloudLink(baseUrl, path) {
+  try {
+    const html = await (await fetch(`${baseUrl}${path}`, { headers: HEADERS, skipSizeCheck: true })).text();
+    const $ = cheerio.load(html);
+    const href = $("a.btn-success").attr("href");
+    return href && href.startsWith("http") ? href : null;
+  } catch (e) {
+    return null;
+  }
+}
+
+async function driveseedResumeBot(url) {
+  try {
+    const resp = await fetch(url, { headers: HEADERS, skipSizeCheck: true });
+    const html = await resp.text();
+    const cookieHeader = resp.headers.get("set-cookie") || "";
+    const ssidMatch = cookieHeader.match(/PHPSESSID=([^;]+)/);
+    const ssid = ssidMatch ? ssidMatch[1] : "";
+
+    const tokenMatch = html.match(/formData\.append\('token', '([a-f0-9]+)'\)/);
+    const token = tokenMatch ? tokenMatch[1] : "";
+    const idMatch = html.match(/fetch\('\/download\?id=([a-zA-Z0-9/+]+)'/);
+    const id = idMatch ? idMatch[1] : "";
+    if (!token || !id) return null;
+
+    const baseUrl = url.split("/download")[0];
+    const body = new URLSearchParams({ token }).toString();
+    const dl = await fetch(`${baseUrl}/download?id=${id}`, {
+      method: "POST",
+      headers: {
+        Accept: "*/*",
+        Origin: baseUrl,
+        "Sec-Fetch-Site": "same-origin",
+        "Content-Type": "application/x-www-form-urlencoded",
+        Cookie: ssid ? `PHPSESSID=${ssid}` : ""
+      },
+      body,
+      skipSizeCheck: true
+    });
+    const json = JSON.parse(await dl.text());
+    const finalUrl = json.url;
+    // Note: only absolute (http) URLs are usable download links here.
+    return finalUrl && finalUrl.startsWith("http") ? finalUrl : null;
+  } catch (e) {
+    return null;
+  }
+}
+
+async function driveseedInstantLink(finalLink) {
+  try {
+    const resp = await fetch(finalLink, { headers: HEADERS, skipSizeCheck: true, redirect: "follow" });
+    const resolvedUrl = resp.url || finalLink;
+    const extracted = resolvedUrl.split("url=")[1];
+    return extracted && extracted.length ? decodeURIComponent(extracted) : null;
+  } catch (e) {
+    return null;
+  }
+}
+
+async function driveseedGetUrl(url, referer, siteName) {
+  try {
+    const name = siteName || "Driveseed";
+    let currentUrl = url;
+    const baseDomain = getOrigin(currentUrl);
+
+    // Intermediate `r?key=` redirect page: extract replace("...") path from inline <script>, follow it
+    if (currentUrl.includes("r?key=")) {
+      const html = await (await fetch(currentUrl, { headers: HEADERS, skipSizeCheck: true })).text();
+      const $ = cheerio.load(html);
+      const scriptData = $("script").first().html() || "";
+      const afterReplace = scriptData.split('replace("')[1];
+      const path = afterReplace ? afterReplace.split('")')[0] : "";
+      currentUrl = `${baseDomain}${path}`;
+    }
+
+    const pageHtml = await (await fetch(currentUrl, { headers: HEADERS, skipSizeCheck: true })).text();
+    const $ = cheerio.load(pageHtml);
+
+    const rawFileName = ($("li.list-group-item").first().text() || "").replace("Name : ", "").trim();
+    const fileName = cleanTitle(removeLeadingIndex(rawFileName));
+    const size = ($("li:nth-child(3)").first().text() || "").replace("Size : ", "").trim();
+    const quality = indexQuality(rawFileName);
+    const sizeInBytes = toBytes(size);
+
+    let labelExtras = "";
+    if (fileName.length > 0) labelExtras += `[${fileName}]`;
+    if (size.length > 0) labelExtras += `[${size}]`;
+
+    const streams = [];
+    const buttons = $("div.text-center > a").toArray();
+
+    for (const el of buttons) {
+      const href = $(el).attr("href");
+      const text = $(el).text();
+      if (!href) continue;
+
+      try {
+        if (text.toLowerCase().includes("instant download")) {
+          const link = await driveseedInstantLink(href);
+          if (link) streams.push({ url: link, quality: qualityLabel(quality), title: `${name} Instant(Download) (Use VLC) ${labelExtras}`.trim(), size: formatBytes(sizeInBytes )});
+        } else if (text.toLowerCase().includes("resume worker bot")) {
+          const link = await driveseedResumeBot(href);
+          if (link) streams.push({ url: link, quality: qualityLabel(quality), title: `${name} ResumeBot(VLC) ${labelExtras}`.trim(), size: formatBytes(sizeInBytes )});
+        } else if (text.toLowerCase().includes("direct links")) {
+          const links = await driveseedCFType1(baseDomain + href);
+          for (const l of links) streams.push({ url: l, quality: qualityLabel(quality), title: `${name} DirectLink ${labelExtras}`.trim(), size: formatBytes(sizeInBytes )});
+        } else if (text.toLowerCase().includes("resume cloud")) {
+          const link = await driveseedResumeCloudLink(baseDomain, href);
+          if (link) streams.push({ url: link, quality: qualityLabel(quality), title: `${name} ResumeCloud ${labelExtras}`.trim(), size: formatBytes(sizeInBytes )});
+        } else if (text.toLowerCase().includes("cloud download")) {
+          streams.push({ url: href, quality: qualityLabel(quality), title: `${name} Cloud Download ${labelExtras}`.trim(), size: formatBytes(sizeInBytes )});
+        }
+      } catch (e) {}
+    }
+    return streams;
+  } catch (e) {
+    return [];
+  }
+}
+
+// bypassHrefli: WordPress-style anti-adblock bypass chain for unblockedgames-hosted shortlinks
+// Form POSTs require Content-Type + Referer or the WAF serves an unrelated decoy page instead of the next hop.
+// The final ?go= step is now gated by a client-set cookie (from the inline s_343(name, value, minutes) call)
+// rather than a custom header - the old [skToken]: wpHttp2 header trick no longer works.
+async function bypassHrefli(url) {
+  try {
+    const host = getOrigin(url);
+    const formHeaders = { ...HEADERS, "Content-Type": "application/x-www-form-urlencoded" };
+
+    const getForm = ($) => ({
+      action: $("form#landing").attr("action") || "",
+      data: (() => {
+        const params = new URLSearchParams();
+        $("form#landing input").each((i, el) => {
+          params.append($(el).attr("name") || "", $(el).attr("value") || "");
+        });
+        return params;
+      })()
+    });
+
+    let res = await fetch(url, { headers: HEADERS, skipSizeCheck: true });
+    let $ = cheerio.load(await res.text());
+    let form = getForm($);
+
+    res = await fetch(form.action, { method: "POST", headers: { ...formHeaders, Referer: url }, body: form.data.toString(), skipSizeCheck: true });
+    $ = cheerio.load(await res.text());
+    form = getForm($);
+
+    res = await fetch(form.action, { method: "POST", headers: { ...formHeaders, Referer: url }, body: form.data.toString(), skipSizeCheck: true });
+    const html4 = await res.text();
+    $ = cheerio.load(html4);
+
+    const scriptText = $("script:contains(?go=)").first().html() || "";
+    const cookieMatch = scriptText.match(/s_343\('([^']+)',\s*'([^']+)',\s*\d+\)/);
+    if (!cookieMatch) return null;
+    const [, cookieName, cookieValue] = cookieMatch;
+
+    const goResp = await fetch(`${host}/?go=${cookieName}`, {
+      headers: { ...HEADERS, Cookie: `${cookieName}=${encodeURIComponent(cookieValue)}`, Referer: form.action },
+      skipSizeCheck: true
+    });
+    const goHtml = await goResp.text();
+    const $go = cheerio.load(goHtml);
+    const metaRefresh = $go('meta[http-equiv="refresh"]').attr("content") || "";
+    let driveUrl = metaRefresh.includes("url=") ? metaRefresh.split("url=")[1] : null;
+    if (!driveUrl) return null;
+
+    const finalText = await (await fetch(driveUrl, { headers: HEADERS, skipSizeCheck: true })).text();
+    const afterReplace = finalText.split('replace("')[1];
+    const path = afterReplace ? afterReplace.split('")')[0] : "";
+    if (path === "/404") return null;
+
+    return fixUrl(path, getOrigin(driveUrl));
+  } catch (e) {
+    return null;
+  }
+}
+
+async function loadExtractor(link) {
+  if (!link || !link.startsWith("http")) return [];
+  const host = getOrigin(link).toLowerCase();
+  try {
+    if (host.includes("driveseed")) return driveseedGetUrl(link, null, "Driveseed");
+    if (host.includes("driveleech")) return driveseedGetUrl(link, null, "Driveleech");
+    if (host.includes("video-seed.xyz")) return uhdMoviesGetUrl(link, "");
+    return [];
+  } catch (e) {
+    return [];
+  }
+}
+
+async function resolveSourceLink(link) {
+  try {
+    let finalLink = link;
+    if (link.includes("unblockedgames")) {
+      finalLink = await bypassHrefli(link);
+      if (!finalLink) return [];
+    }
+    return loadExtractor(finalLink);
+  } catch (e) {
+    return [];
+  }
+}
+
+async function resolveImdbToTmdb(imdbId, mediaType) {
+  try {
+    const url = `https://api.themoviedb.org/3/find/${imdbId}?api_key=${TMDB_API_KEY}&external_source=imdb_id`;
+    const data = await (await fetch(url, { skipSizeCheck: true })).json();
+    const results = mediaType === "tv" ? data.tv_results : data.movie_results;
+    return results && results.length ? results[0].id : null;
+  } catch (e) {
+    return null;
+  }
+}
+
+async function getStreams(tmdbId, mediaType, season, episode) {
+  try {
+    if (typeof tmdbId === "string" && tmdbId.trim().toLowerCase().startsWith("tt")) {
+      tmdbId = await resolveImdbToTmdb(tmdbId, mediaType);
+      if (!tmdbId) return [];
+    }
+
+    const baseUrl = await getBaseUrl();
+
+    const tmdbUrl = `https://api.themoviedb.org/3/${mediaType}/${tmdbId}?api_key=${TMDB_API_KEY}`;
+    const mediaInfo = await (await fetch(tmdbUrl, { skipSizeCheck: true })).json();
+    const title = mediaInfo.title || mediaInfo.name;
+    if (!title) return [];
+
+    const searchUrl = `${baseUrl}/?s=${encodeURIComponent(title)}`;
+    const searchHtml = await (await fetch(searchUrl, { headers: HEADERS, skipSizeCheck: true })).text();
+    const $ = cheerio.load(searchHtml);
+
+    const results = [];
+    $("article.gridlove-post").each((i, el) => {
+      let titleRaw = ($(el).find("h1.sanket").text() || "").trim().replace(/^Download\s+/i, "");
+      const m = titleRaw.match(/(^.*\)\d*)/);
+      if (m) titleRaw = m[1];
+      const href = fixUrl($(el).find("div.entry-image > a").attr("href") || "", baseUrl);
+      if (titleRaw && href) results.push({ title: titleRaw, url: href });
+    });
+    if (!results.length) return [];
+
+    const lcTitle = title.toLowerCase();
+    let match = results.find(r => r.title.toLowerCase().includes(lcTitle)) || results[0];
+
+    const pageHtml = await (await fetch(match.url, { headers: HEADERS, skipSizeCheck: true })).text();
+    const $page = cheerio.load(pageHtml);
+
+    const entryTitle = $page("h1.entry-title").text() || "";
+    const isTvSeries = /Season/i.test(entryTitle) && !/S0/i.test(entryTitle);
+
+    const sourceLinks = [];
+
+    if (isTvSeries && mediaType === "tv") {
+      const seasonPattern = new RegExp(`(?:season\\s*|S)0?${season}\\b`, "i");
+      const episodePattern = new RegExp(`Episode\\s*0?${episode}\\b`, "i");
+      let currentSeason = 1;
+
+      $page("div.entry-content").find("pre, p, a").each((i, el) => {
+        const node = $page(el);
+        const text = node.text();
+        const seasonMatch = text.match(/(?:season\s*|S)(\d+)/i);
+        if (seasonMatch) currentSeason = parseInt(seasonMatch[1], 10);
+
+        if (node.prop("tagName") && node.prop("tagName").toLowerCase() === "a" && /episode/i.test(text) && !/zip/i.test(text)) {
+          const epMatch = text.match(/episode\s*(\d+)/i);
+          if (epMatch && parseInt(epMatch[1], 10) === parseInt(episode, 10) && currentSeason === parseInt(season, 10)) {
+            const href = node.attr("href");
+            if (href) sourceLinks.push(href);
+          }
+        }
+      });
+
+      if (!sourceLinks.length) {
+        // Fallback: season regex didn't align with DOM order; just match by episode text anywhere.
+        $page("div.entry-content a").each((i, el) => {
+          const text = $page(el).text();
+          if (/episode/i.test(text) && !/zip/i.test(text) && episodePattern.test(text)) {
+            const href = $page(el).attr("href");
+            if (href) sourceLinks.push(href);
+          }
+        });
+      }
+    } else {
+      $page("div.entry-content > p").each((i, el) => {
+        const node = $page(el);
+        if (!/\[.*\]/.test(node.text())) return;
+        const next = node.next();
+        const href = next.find("a.maxbutton-1").attr("href");
+        if (href) sourceLinks.push(href);
+      });
+    }
+
+    const uniqueLinks = [...new Set(sourceLinks.filter(Boolean))];
+    if (!uniqueLinks.length) return [];
+
+    const streams = [];
+    for (const link of uniqueLinks) {
+      const extracted = await resolveSourceLink(link);
+      streams.push(...extracted);
+    }
+
+    return streams
+      .filter(s => s && s.url)
+      .map(s => ({
+        url: s.url,
+        quality: s.quality || "Unknown",
+        title: s.title || "UHDmovies",
+        name: s.title || "UHDmovies",
+        headers: s.headers || { Referer: baseUrl, "User-Agent": HEADERS["User-Agent"] },
+        subtitles: [],
+        // s.size is already a formatted string from the extractor above - re-running it through
+        // formatBytes() treats it as a raw byte count and produces NaN.
+        size: s.size || ""
+      }));
+  } catch (e) {
+    console.error("[UHDmovies]", e);
+    return [];
+  }
+}
+
+if (typeof module !== 'undefined' && module.exports) {
+  module.exports = { getStreams };
+} else {
+  global.getStreams = getStreams;
+}
