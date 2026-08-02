@@ -347,27 +347,6 @@
       ]
     },
     {
-      "id": "Rivestream",
-      "name": "Rivestream",
-      "description": "Rivestream TMDB-id-based movie & TV streaming with real quality and exact size",
-      "version": "1.0.0",
-      "author": "CENSORED",
-      "supportedTypes": [
-        "movie",
-        "tv"
-      ],
-      "filename": "providers/rivestream.js",
-      "enabled": true,
-      "formats": [
-        "mp4",
-        "m3u8"
-      ],
-      "logo": "https://i.imgur.com/9bGkGMi.png",
-      "contentLanguage": [
-        "en"
-      ]
-    },
-    {
       "id": "Vidrock",
       "name": "Vidrock",
       "description": "Vidrock TMDB-id-based movie & TV streaming across multiple servers with real quality and size",
