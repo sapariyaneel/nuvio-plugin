@@ -187,6 +187,38 @@ function parseMasterPlaylistTopVariant(text, baseUrl) {
   return best;
 }
 
+// Tried in order when FlowCast has nothing. FlowCast is preferred first because it reports an
+// exact byte size; these return HLS masters, so size has to be derived from BANDWIDTH x runtime.
+const HLS_FALLBACK_SERVICES = ["primevids", "ophim"];
+
+// Resolves one HLS-style service to a single adaptive stream, or null when that service has no
+// entry for the title. The master URL is returned rather than a single variant so the player's own
+// ABR logic can drop down on a weak connection.
+async function buildHlsStream(baseUrl, requestID, params, secretKey, service, tmdbId, mediaType, season, episode) {
+  const data = await fetchService(baseUrl, requestID, params, secretKey, service);
+  const sources = (data && data.sources) || [];
+  const hlsSource = sources.find(s => s && s.url && s.format === "hls");
+  if (!hlsSource) return null;
+
+  const playlistResp = await fetch(hlsSource.url, { headers: HEADERS, skipSizeCheck: true });
+  if (!playlistResp.ok) return null;
+
+  const topVariant = parseMasterPlaylistTopVariant(await playlistResp.text(), hlsSource.url);
+  if (!topVariant) return null;
+
+  const runtimeSeconds = await getTmdbRuntimeSeconds(tmdbId, mediaType, season, episode);
+  const quality = qualityLabelFromHeight(topVariant.height);
+  return {
+    url: topVariant.url,
+    quality,
+    title: `Rivestream ${quality}`,
+    name: "Rivestream",
+    size: runtimeSeconds ? formatBytes((topVariant.bandwidth * runtimeSeconds) / 8) : "Unknown",
+    headers: HEADERS,
+    subtitles: []
+  };
+}
+
 async function fetchService(baseUrl, requestID, params, secretKey, service) {
   const search = new URLSearchParams({ requestID, ...params, service, secretKey, proxyMode: "noProxy" });
   const resp = await fetch(`${baseUrl}/api/backendfetch?${search.toString()}`, { headers: HEADERS, skipSizeCheck: true });
@@ -239,28 +271,15 @@ async function getStreams(tmdbId, mediaType, season, episode) {
       }
     }
 
+    // FlowCast only carries a subset of the catalogue, and primevids has its own gaps - plenty of
+    // well-known titles (Inception, The Dark Knight) return {"data":null} from BOTH while ophim
+    // still has them, so all three are tried in turn rather than just the first two.
     if (!streams.length) {
-      const primeData = await fetchService(baseUrl, requestID, params, secretKey, "primevids");
-      const primeSources = (primeData && primeData.sources) || [];
-      const hlsSource = primeSources.find(s => s && s.url && s.format === "hls");
-      if (hlsSource) {
-        const playlistResp = await fetch(hlsSource.url, { headers: HEADERS, skipSizeCheck: true });
-        if (playlistResp.ok) {
-          const playlistText = await playlistResp.text();
-          const topVariant = parseMasterPlaylistTopVariant(playlistText, hlsSource.url);
-          if (topVariant) {
-            const runtimeSeconds = await getTmdbRuntimeSeconds(numericTmdbId, mediaType, season, episode);
-            const quality = qualityLabelFromHeight(topVariant.height);
-            streams.push({
-              url: topVariant.url,
-              quality,
-              title: `Rivestream ${quality}`,
-              name: "Rivestream",
-              size: runtimeSeconds ? formatBytes((topVariant.bandwidth * runtimeSeconds) / 8) : "Unknown",
-              headers: HEADERS,
-              subtitles: []
-            });
-          }
+      for (const service of HLS_FALLBACK_SERVICES) {
+        const stream = await buildHlsStream(baseUrl, requestID, params, secretKey, service, numericTmdbId, mediaType, season, episode);
+        if (stream) {
+          streams.push(stream);
+          break;
         }
       }
     }

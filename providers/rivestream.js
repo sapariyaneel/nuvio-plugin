@@ -191,6 +191,33 @@ function parseMasterPlaylistTopVariant(text, baseUrl) {
   }
   return best;
 }
+const HLS_FALLBACK_SERVICES = ["primevids", "ophim"];
+function buildHlsStream(baseUrl, requestID, params, secretKey, service, tmdbId, mediaType, season, episode) {
+  return __async(this, null, function* () {
+    const data = yield fetchService(baseUrl, requestID, params, secretKey, service);
+    const sources = data && data.sources || [];
+    const hlsSource = sources.find((s) => s && s.url && s.format === "hls");
+    if (!hlsSource)
+      return null;
+    const playlistResp = yield fetch(hlsSource.url, { headers: HEADERS, skipSizeCheck: true });
+    if (!playlistResp.ok)
+      return null;
+    const topVariant = parseMasterPlaylistTopVariant(yield playlistResp.text(), hlsSource.url);
+    if (!topVariant)
+      return null;
+    const runtimeSeconds = yield getTmdbRuntimeSeconds(tmdbId, mediaType, season, episode);
+    const quality = qualityLabelFromHeight(topVariant.height);
+    return {
+      url: topVariant.url,
+      quality,
+      title: `Rivestream ${quality}`,
+      name: "Rivestream",
+      size: runtimeSeconds ? formatBytes(topVariant.bandwidth * runtimeSeconds / 8) : "Unknown",
+      headers: HEADERS,
+      subtitles: []
+    };
+  });
+}
 function fetchService(baseUrl, requestID, params, secretKey, service) {
   return __async(this, null, function* () {
     const search = new URLSearchParams(__spreadProps(__spreadValues({ requestID }, params), { service, secretKey, proxyMode: "noProxy" }));
@@ -245,27 +272,11 @@ function getStreams(tmdbId, mediaType, season, episode) {
         }
       }
       if (!streams.length) {
-        const primeData = yield fetchService(baseUrl, requestID, params, secretKey, "primevids");
-        const primeSources = primeData && primeData.sources || [];
-        const hlsSource = primeSources.find((s) => s && s.url && s.format === "hls");
-        if (hlsSource) {
-          const playlistResp = yield fetch(hlsSource.url, { headers: HEADERS, skipSizeCheck: true });
-          if (playlistResp.ok) {
-            const playlistText = yield playlistResp.text();
-            const topVariant = parseMasterPlaylistTopVariant(playlistText, hlsSource.url);
-            if (topVariant) {
-              const runtimeSeconds = yield getTmdbRuntimeSeconds(numericTmdbId, mediaType, season, episode);
-              const quality = qualityLabelFromHeight(topVariant.height);
-              streams.push({
-                url: topVariant.url,
-                quality,
-                title: `Rivestream ${quality}`,
-                name: "Rivestream",
-                size: runtimeSeconds ? formatBytes(topVariant.bandwidth * runtimeSeconds / 8) : "Unknown",
-                headers: HEADERS,
-                subtitles: []
-              });
-            }
+        for (const service of HLS_FALLBACK_SERVICES) {
+          const stream = yield buildHlsStream(baseUrl, requestID, params, secretKey, service, numericTmdbId, mediaType, season, episode);
+          if (stream) {
+            streams.push(stream);
+            break;
           }
         }
       }
