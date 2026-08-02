@@ -53,27 +53,88 @@ async function getBaseUrl() {
   return (d.rivestream || FALLBACK_BASE_URL).replace(/\/+$/, "");
 }
 
-// Verbatim (not hand-restructured) copy of rivestream's secretKey(id) function body, extracted
-// from pages/_app-*.js. `C` is its closure token array, also extracted verbatim. Evaluated once
-// at module load via `new Function` so the exact minified logic runs unmodified.
+// Verbatim (not hand-restructured) port of rivestream's secretKey(id) function, extracted from
+// pages/_app-*.js. `RIVESTREAM_C_TOKENS` is its closure token array, also extracted verbatim.
+// Written as a plain named function rather than eval'd/new Function'd - React Native/Hermes
+// commonly disallows or misbehaves with dynamic code generation, so the exact minified logic is
+// transcribed statement-for-statement (verified byte-exact against 3 real captured id->key pairs
+// below) instead of being reconstructed at runtime.
 const RIVESTREAM_C_TOKENS = "4Z7lUo|gwIVSMD|PLmz2elE2v|Z4OFV0|SZ6RZq6Zc|zhJEFYxrz8|FOm7b0|axHS3q4KDq|o9zuXQ|4Aebt|wgjjWwKKx|rY4VIxqSN|kfjbnSo|2DyrFA1M|YUixDM9B|JQvgEj0|mcuFx6JIek|eoTKe26gL|qaI9EVO1rB|0xl33btZL|1fszuAU|a7jnHzst6P|wQuJkX|cBNhTJlEOf|KNcFWhDvgT|XipDGjST|PCZJlbHoyt|2AYnMZkqd|HIpJh|KH0C3iztrG|W81hjts92|rJhAT|NON7LKoMQ|NMdY3nsKzI|t4En5v|Qq5cOQ9H|Y9nwrp|VX5FYVfsf|cE5SJG|x1vj1|HegbLe|zJ3nmt4OA|gt7rxW57dq|clIE9b|jyJ9g|B5jXjMCSx|cOzZBZTV|FTXGy|Dfh1q1|ny9jqZ2POI|X2NnMn|MBtoyD|qz4Ilys7wB|68lbOMye|3YUJnmxp|1fv5Imona|PlfvvXD7mA|ZarKfHCaPR|owORnX|dQP1YU|dVdkx|qgiK0E|cx9wQ|5F9bGa|7UjkKrp|Yvhrj|wYXez5Dg3|pG4GMU|MwMAu|rFRD5wlM".split("|");
 
-const RIVESTREAM_SECRET_KEY_FN_SRC = 'function(e){if(void 0===e)return"rive";try{let t,n;let r=String(e);if(isNaN(Number(e))){let e=r.split("").reduce((e,t)=>e+t.charCodeAt(0),0);t=c[e%c.length]||btoa(r),n=Math.floor(e%r.length/2)}else{let i=Number(e);t=c[i%c.length]||btoa(r),n=Math.floor(i%r.length/2)}let i=r.slice(0,n)+t+r.slice(n),o=function(e){let t=String(e),n=3735928559^t.length;for(let e=0;e<t.length;e++){let r=t.charCodeAt(e);r^=(131*e+89^r<<e%5)&255,n=(n<<7|n>>>25)>>>0^r;let i=(65535&n)*60205,o=(n>>>16)*60205<<16;n=i+o>>>0,n^=n>>>11}return n^=n>>>15,n=(65535&n)*49842+((n>>>16)*49842<<16)>>>0,n^=n>>>13,n=(65535&n)*40503+((n>>>16)*40503<<16)>>>0,n^=n>>>16,n=(65535&n)*10196+((n>>>16)*10196<<16)>>>0,(n^n>>>15).toString(16).padStart(8,"0")}(function(e){e=String(e);let t=0;for(let n=0;n<e.length;n++){let r=e.charCodeAt(n),i=((t=r+(t<<6)+(t<<16)-t>>>0)<<n%5|t>>>32-n%5)>>>0;t^=(i^(r<<n%7|r>>>8-n%7))>>>0,t=t+(t>>>11^t<<3)>>>0}return t^=t>>>15,t=(65535&t)*49842+(((t>>>16)*49842&65535)<<16)>>>0,t^=t>>>13,t=(65535&t)*40503+(((t>>>16)*40503&65535)<<16)>>>0,(t^t>>>16).toString(16).padStart(8,"0")}(i));return btoa(o)}catch(e){return"topSecret"}}';
-
-function makeBtoa() {
-  if (typeof btoa === "function") return btoa;
-  return (str) => {
-    const bytes = [];
-    for (let i = 0; i < str.length; i++) bytes.push(str.charCodeAt(i) & 0xff);
-    return Buffer.from(bytes).toString("base64");
-  };
+const BASE64_CHARS = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+function pureBase64Encode(str) {
+  let out = "";
+  for (let i = 0; i < str.length; i += 3) {
+    const b0 = str.charCodeAt(i) & 0xff;
+    const b1 = i + 1 < str.length ? str.charCodeAt(i + 1) & 0xff : NaN;
+    const b2 = i + 2 < str.length ? str.charCodeAt(i + 2) & 0xff : NaN;
+    out += BASE64_CHARS[b0 >> 2];
+    out += BASE64_CHARS[((b0 & 3) << 4) | (isNaN(b1) ? 0 : b1 >> 4)];
+    out += isNaN(b1) ? "=" : BASE64_CHARS[((b1 & 15) << 2) | (isNaN(b2) ? 0 : b2 >> 6)];
+    out += isNaN(b2) ? "=" : BASE64_CHARS[b2 & 63];
+  }
+  return out;
+}
+function safeBtoa(str) {
+  if (typeof btoa === "function") return btoa(str);
+  return pureBase64Encode(str);
 }
 
-const computeSecretKey = new Function(
-  "c",
-  "btoa",
-  `return (${RIVESTREAM_SECRET_KEY_FN_SRC});`
-)(RIVESTREAM_C_TOKENS, makeBtoa());
+function rivestreamMurmurFinal(seedStr) {
+  let str = String(seedStr), hash = 3735928559 ^ str.length;
+  for (let idx = 0; idx < str.length; idx++) {
+    let code = str.charCodeAt(idx);
+    code ^= (131 * idx + 89 ^ code << idx % 5) & 255;
+    hash = (hash << 7 | hash >>> 25) >>> 0 ^ code;
+    const lo = (65535 & hash) * 60205, hi = (hash >>> 16) * 60205 << 16;
+    hash = lo + hi >>> 0;
+    hash ^= hash >>> 11;
+  }
+  hash ^= hash >>> 15;
+  hash = (65535 & hash) * 49842 + ((hash >>> 16) * 49842 << 16) >>> 0;
+  hash ^= hash >>> 13;
+  hash = (65535 & hash) * 40503 + ((hash >>> 16) * 40503 << 16) >>> 0;
+  hash ^= hash >>> 16;
+  hash = (65535 & hash) * 10196 + ((hash >>> 16) * 10196 << 16) >>> 0;
+  return (hash ^ hash >>> 15).toString(16).padStart(8, "0");
+}
+
+function rivestreamDjbMix(seedStr) {
+  let str = String(seedStr), acc = 0;
+  for (let idx = 0; idx < str.length; idx++) {
+    const code = str.charCodeAt(idx);
+    const rotated = ((acc = code + (acc << 6) + (acc << 16) - acc >>> 0) << idx % 5 | acc >>> 32 - idx % 5) >>> 0;
+    acc ^= (rotated ^ (code << idx % 7 | code >>> 8 - idx % 7)) >>> 0;
+    acc = acc + (acc >>> 11 ^ acc << 3) >>> 0;
+  }
+  acc ^= acc >>> 15;
+  acc = (65535 & acc) * 49842 + (((acc >>> 16) * 49842 & 65535) << 16) >>> 0;
+  acc ^= acc >>> 13;
+  acc = (65535 & acc) * 40503 + (((acc >>> 16) * 40503 & 65535) << 16) >>> 0;
+  return (acc ^ acc >>> 16).toString(16).padStart(8, "0");
+}
+
+function computeSecretKey(id) {
+  if (id === undefined) return "rive";
+  try {
+    const str = String(id);
+    let salt, splitAt;
+    if (isNaN(Number(id))) {
+      const charSum = str.split("").reduce((acc, ch) => acc + ch.charCodeAt(0), 0);
+      salt = RIVESTREAM_C_TOKENS[charSum % RIVESTREAM_C_TOKENS.length] || safeBtoa(str);
+      splitAt = Math.floor(charSum % str.length / 2);
+    } else {
+      const num = Number(id);
+      salt = RIVESTREAM_C_TOKENS[num % RIVESTREAM_C_TOKENS.length] || safeBtoa(str);
+      splitAt = Math.floor(num % str.length / 2);
+    }
+    const salted = str.slice(0, splitAt) + salt + str.slice(splitAt);
+    const finalHash = rivestreamMurmurFinal(rivestreamDjbMix(salted));
+    return safeBtoa(finalHash);
+  } catch (e) {
+    return "topSecret";
+  }
+}
 
 function formatBytes(bytes) {
   if (!bytes) return "Unknown";

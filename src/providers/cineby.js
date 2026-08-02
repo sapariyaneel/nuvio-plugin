@@ -41,7 +41,10 @@ async function getDomains() {
 
 async function getApiHost() {
   const d = await getDomains();
-  return (d.cineby || d["speedracelight"] || d["api.speedracelight.com"] || FALLBACK_API_HOST).replace(/\/+$/, "");
+  // NOTE: the `cineby` key holds the *frontend* domain (www.cineby.at); the seed/sources API lives
+  // on a separate host, so the API keys must be checked first or every request hits the frontend
+  // and returns nothing.
+  return (d["speedracelight"] || d["api.speedracelight.com"] || FALLBACK_API_HOST).replace(/\/+$/, "");
 }
 
 const SHA256_CONSTANTS = [
@@ -71,11 +74,32 @@ function rotl32(x, n) {
   return (x << n | x >>> (32 - n)) >>> 0;
 }
 
+// Pure-JS base64 decode, used only if the runtime somehow lacks atob. Buffer is deliberately not
+// referenced here - it does not exist in React Native/Hermes, so a Buffer fallback would throw
+// rather than fall back.
+const BASE64_CHARS = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+function pureBase64Decode(b64) {
+  let clean = "";
+  for (let i = 0; i < b64.length; i++) {
+    const ch = b64.charAt(i);
+    if (ch !== "=" && BASE64_CHARS.indexOf(ch) !== -1) clean += ch;
+  }
+  let bin = "";
+  for (let i = 0; i < clean.length; i += 4) {
+    const n0 = BASE64_CHARS.indexOf(clean.charAt(i));
+    const n1 = BASE64_CHARS.indexOf(clean.charAt(i + 1));
+    const n2 = i + 2 < clean.length ? BASE64_CHARS.indexOf(clean.charAt(i + 2)) : -1;
+    const n3 = i + 3 < clean.length ? BASE64_CHARS.indexOf(clean.charAt(i + 3)) : -1;
+    bin += String.fromCharCode((n0 << 2) | (n1 >> 4));
+    if (n2 !== -1) bin += String.fromCharCode(((n1 & 15) << 4) | (n2 >> 2));
+    if (n3 !== -1) bin += String.fromCharCode(((n2 & 3) << 6) | n3);
+  }
+  return bin;
+}
+
 function base64UrlToBytes(str) {
   const b64 = str.replace(/-/g, "+").replace(/_/g, "/").padEnd(4 * Math.ceil(str.length / 4), "=");
-  const bin = typeof atob === "function"
-    ? atob(b64)
-    : Buffer.from(b64, "base64").toString("binary");
+  const bin = typeof atob === "function" ? atob(b64) : pureBase64Decode(b64);
   const bytes = new Uint8Array(bin.length);
   for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
   return bytes;
@@ -132,6 +156,33 @@ function generateKeystream(seedStr, mediaId, length) {
   return out;
 }
 
+// Manual UTF-8 decode - avoids relying on TextDecoder, which isn't guaranteed to exist in every
+// React Native/Hermes runtime this provider runs under.
+function utf8BytesToString(bytes) {
+  let result = "";
+  let i = 0;
+  while (i < bytes.length) {
+    const b0 = bytes[i++];
+    if (b0 < 0x80) {
+      result += String.fromCharCode(b0);
+    } else if ((b0 & 0xe0) === 0xc0) {
+      const b1 = bytes[i++];
+      result += String.fromCharCode(((b0 & 0x1f) << 6) | (b1 & 0x3f));
+    } else if ((b0 & 0xf0) === 0xe0) {
+      const b1 = bytes[i++], b2 = bytes[i++];
+      result += String.fromCharCode(((b0 & 0x0f) << 12) | ((b1 & 0x3f) << 6) | (b2 & 0x3f));
+    } else if ((b0 & 0xf8) === 0xf0) {
+      const b1 = bytes[i++], b2 = bytes[i++], b3 = bytes[i++];
+      let code = ((b0 & 0x07) << 18) | ((b1 & 0x3f) << 12) | ((b2 & 0x3f) << 6) | (b3 & 0x3f);
+      code -= 0x10000;
+      result += String.fromCharCode(0xd800 + (code >> 10), 0xdc00 + (code & 0x3ff));
+    } else {
+      result += String.fromCharCode(b0);
+    }
+  }
+  return result;
+}
+
 function decryptSourcesPayload(cipherText, seedStr, mediaId) {
   const cipherBytes = base64UrlToBytes(cipherText);
   const keystream = generateKeystream(seedStr, mediaId, cipherBytes.length);
@@ -141,7 +192,7 @@ function decryptSourcesPayload(cipherText, seedStr, mediaId) {
     if (plain[i] !== MAGIC_BYTES[i]) throw new Error("decrypt failed: bad seed or tampered payload");
   }
   const body = plain.subarray(MAGIC_BYTES.length);
-  return new TextDecoder("utf-8").decode(body);
+  return utf8BytesToString(body);
 }
 
 async function resolveTmdbId(id) {

@@ -62,7 +62,7 @@ function getDomains() {
 function getApiHost() {
   return __async(this, null, function* () {
     const d = yield getDomains();
-    return (d.cineby || d["speedracelight"] || d["api.speedracelight.com"] || FALLBACK_API_HOST).replace(/\/+$/, "");
+    return (d["speedracelight"] || d["api.speedracelight.com"] || FALLBACK_API_HOST).replace(/\/+$/, "");
   });
 }
 const SHA256_CONSTANTS = [
@@ -103,9 +103,31 @@ function rotl32(x, n) {
     return x >>> 0;
   return (x << n | x >>> 32 - n) >>> 0;
 }
+const BASE64_CHARS = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+function pureBase64Decode(b64) {
+  let clean = "";
+  for (let i = 0; i < b64.length; i++) {
+    const ch = b64.charAt(i);
+    if (ch !== "=" && BASE64_CHARS.indexOf(ch) !== -1)
+      clean += ch;
+  }
+  let bin = "";
+  for (let i = 0; i < clean.length; i += 4) {
+    const n0 = BASE64_CHARS.indexOf(clean.charAt(i));
+    const n1 = BASE64_CHARS.indexOf(clean.charAt(i + 1));
+    const n2 = i + 2 < clean.length ? BASE64_CHARS.indexOf(clean.charAt(i + 2)) : -1;
+    const n3 = i + 3 < clean.length ? BASE64_CHARS.indexOf(clean.charAt(i + 3)) : -1;
+    bin += String.fromCharCode(n0 << 2 | n1 >> 4);
+    if (n2 !== -1)
+      bin += String.fromCharCode((n1 & 15) << 4 | n2 >> 2);
+    if (n3 !== -1)
+      bin += String.fromCharCode((n2 & 3) << 6 | n3);
+  }
+  return bin;
+}
 function base64UrlToBytes(str) {
   const b64 = str.replace(/-/g, "+").replace(/_/g, "/").padEnd(4 * Math.ceil(str.length / 4), "=");
-  const bin = typeof atob === "function" ? atob(b64) : Buffer.from(b64, "base64").toString("binary");
+  const bin = typeof atob === "function" ? atob(b64) : pureBase64Decode(b64);
   const bytes = new Uint8Array(bin.length);
   for (let i = 0; i < bin.length; i++)
     bytes[i] = bin.charCodeAt(i);
@@ -162,6 +184,30 @@ function generateKeystream(seedStr, mediaId, length) {
   }
   return out;
 }
+function utf8BytesToString(bytes) {
+  let result = "";
+  let i = 0;
+  while (i < bytes.length) {
+    const b0 = bytes[i++];
+    if (b0 < 128) {
+      result += String.fromCharCode(b0);
+    } else if ((b0 & 224) === 192) {
+      const b1 = bytes[i++];
+      result += String.fromCharCode((b0 & 31) << 6 | b1 & 63);
+    } else if ((b0 & 240) === 224) {
+      const b1 = bytes[i++], b2 = bytes[i++];
+      result += String.fromCharCode((b0 & 15) << 12 | (b1 & 63) << 6 | b2 & 63);
+    } else if ((b0 & 248) === 240) {
+      const b1 = bytes[i++], b2 = bytes[i++], b3 = bytes[i++];
+      let code = (b0 & 7) << 18 | (b1 & 63) << 12 | (b2 & 63) << 6 | b3 & 63;
+      code -= 65536;
+      result += String.fromCharCode(55296 + (code >> 10), 56320 + (code & 1023));
+    } else {
+      result += String.fromCharCode(b0);
+    }
+  }
+  return result;
+}
 function decryptSourcesPayload(cipherText, seedStr, mediaId) {
   const cipherBytes = base64UrlToBytes(cipherText);
   const keystream = generateKeystream(seedStr, mediaId, cipherBytes.length);
@@ -173,7 +219,7 @@ function decryptSourcesPayload(cipherText, seedStr, mediaId) {
       throw new Error("decrypt failed: bad seed or tampered payload");
   }
   const body = plain.subarray(MAGIC_BYTES.length);
-  return new TextDecoder("utf-8").decode(body);
+  return utf8BytesToString(body);
 }
 function resolveTmdbId(id) {
   return __async(this, null, function* () {
