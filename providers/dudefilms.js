@@ -18,6 +18,7 @@ var __async = (__this, __arguments, generator) => {
     step((generator = generator.apply(__this, __arguments)).next());
   });
 };
+const { formatStreamTitle } = require("../lib/streamFormat");
 const DOMAINS_URL = "https://raw.githubusercontent.com/sapariyaneel/nuvio-plugin/refs/heads/main/domains.json";
 const FALLBACK_BASE_URL = "https://dudefilms.casa";
 const TMDB_API_KEY = "1865f43a0549ca50d341dd9ab8b29f49";
@@ -144,7 +145,14 @@ function getStreams(tmdbId, mediaType, season, episode) {
                   streams.push({
                     url: epUrl,
                     quality,
-                    title: `DudeFilms [S${season}E${episode}]`,
+                    title: formatStreamTitle({
+                      title,
+                      season,
+                      episode,
+                      rawText: epText,
+                      url: epUrl,
+                      quality
+                    }),
                     subtitles: []
                   });
                   found = true;
@@ -189,7 +197,13 @@ function getStreams(tmdbId, mediaType, season, episode) {
                 streams.push({
                   url: href,
                   quality,
-                  title: linkText.trim() ? `DudeFilms [${linkText.trim()}]` : "DudeFilms",
+                  title: formatStreamTitle({
+                    title,
+                    rawText: `${headingText} ${linkText}`,
+                    sizeLabel: size || void 0,
+                    url: href,
+                    quality
+                  }),
                   size,
                   subtitles: []
                 });

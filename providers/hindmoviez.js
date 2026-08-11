@@ -18,6 +18,7 @@ var __async = (__this, __arguments, generator) => {
     step((generator = generator.apply(__this, __arguments)).next());
   });
 };
+const { formatStreamTitle } = require("../lib/streamFormat");
 const DOMAINS_URL = "https://raw.githubusercontent.com/sapariyaneel/nuvio-plugin/refs/heads/main/domains.json";
 const FALLBACK_BASE_URL = "https://hindmovie.icu";
 const TMDB_API_KEY = "1865f43a0549ca50d341dd9ab8b29f49";
@@ -103,6 +104,8 @@ function getStreams(tmdbId, mediaType, season, episode) {
       const title = mediaInfo.title || mediaInfo.name;
       if (!title)
         return [];
+      const releaseDate = mediaInfo.release_date || mediaInfo.first_air_date || "";
+      const year = releaseDate ? releaseDate.split("-")[0] : void 0;
       const searchUrl = `${baseUrl}/page/1/?s=${encodeURIComponent(title)}`;
       const searchHtml = yield (yield fetch(searchUrl, { headers: HEADERS, skipSizeCheck: true })).text();
       const $ = cheerio.load(searchHtml);
@@ -167,10 +170,20 @@ function getStreams(tmdbId, mediaType, season, episode) {
                   const btnHref = $epPage(btn).attr("href") || "";
                   if (btnHref && btnHref.startsWith("http")) {
                     const h2text = $epPage("div.container h2").text() || "";
+                    const detectedQuality = extractQuality(h2text || btnHref);
                     streams.push({
                       url: btnHref,
-                      quality: extractQuality(h2text || btnHref),
-                      title: `Hindmoviez [S${season}E${episode}]`,
+                      quality: detectedQuality,
+                      title: formatStreamTitle({
+                        title,
+                        year,
+                        season,
+                        episode,
+                        rawText: h2text,
+                        sizeBytes: epSizeBytes,
+                        url: btnHref,
+                        quality: detectedQuality
+                      }),
                       subtitles: [],
                       size: formatBytes(epSizeBytes)
                     });
@@ -207,10 +220,18 @@ function getStreams(tmdbId, mediaType, season, episode) {
                 $linkPage("a.btn").each((i, dlBtn) => {
                   const dlHref = $linkPage(dlBtn).attr("href") || "";
                   if (dlHref && dlHref.startsWith("http")) {
+                    const detectedQuality = extractQuality(h2text || dlHref);
                     streams.push({
                       url: dlHref,
-                      quality: extractQuality(h2text || dlHref),
-                      title: `Hindmoviez [${name || "Download"}]`,
+                      quality: detectedQuality,
+                      title: formatStreamTitle({
+                        title,
+                        year,
+                        rawText: `${h2text} ${name}`,
+                        sizeBytes,
+                        url: dlHref,
+                        quality: detectedQuality
+                      }),
                       subtitles: [],
                       size: formatBytes(sizeBytes)
                     });

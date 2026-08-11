@@ -4,8 +4,10 @@
 // Movie: div.movie-button-container a[href]; TV: .lgtagmessage season headings → season page → .entry-content a[href]
 // Links: bypassShortlink (tpi.li/oii.la) → generateZinkLinks (ajax token → /dl/ page → mirrors + worker) → HubCloud/Hubdrive/HUBCDN/PixelDrain extractors
 
+const { formatStreamTitle } = require('../lib/streamFormat');
+
 const DOMAINS_URL = "https://raw.githubusercontent.com/sapariyaneel/nuvio-plugin/refs/heads/main/domains.json";
-const FALLBACK_BASE_URL = "https://zinkmovies.vip";
+const FALLBACK_BASE_URL = "https://new2.zinkmovies.mobi";
 const TMDB_API_KEY = "1865f43a0549ca50d341dd9ab8b29f49";
 
 const HEADERS = {
@@ -502,12 +504,24 @@ async function getStreams(tmdbId, mediaType, season, episode) {
       streams.push(...resolved);
     }
 
+    const releaseDate = mediaInfo.release_date || mediaInfo.first_air_date || "";
+    const year = releaseDate ? releaseDate.slice(0, 4) : undefined;
+
     return streams
       .filter(s => s && s.url)
       .map(s => ({
         url: s.url,
         quality: s.quality || "Unknown",
-        title: s.title || "Zinkmovies",
+        title: formatStreamTitle({
+          title: title,
+          year: year,
+          season: isTV ? season : undefined,
+          episode: isTV ? episode : undefined,
+          rawText: s.title || "",
+          sizeLabel: s.size,
+          url: s.url,
+          quality: s.quality
+        }),
         name: s.title || "Zinkmovies",
         headers: { Referer: baseUrl, "User-Agent": HEADERS["User-Agent"] },
         subtitles: [],

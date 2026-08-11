@@ -387,6 +387,609 @@
         "en",
         "it"
       ]
+    },
+    {
+      "id": "OneShows",
+      "name": "1Shows",
+      "description": "1Shows movie & series streaming site",
+      "version": "1.0.0",
+      "author": "CENSORED",
+      "supportedTypes": [
+        "movie",
+        "tv"
+      ],
+      "filename": "providers/1shows.js",
+      "enabled": true,
+      "formats": [
+        "mkv",
+        "mp4",
+        "m3u8"
+      ],
+      "logo": "https://i.postimg.cc/9fDVBvn5/1shows.png",
+      "contentLanguage": [
+        "en",
+        "hi"
+      ]
+    },
+    {
+      "id": "AllMovieLand",
+      "name": "AllMovieLand",
+      "description": "AllMovieLand multi-language movie & series streaming site",
+      "version": "1.0.0",
+      "author": "CENSORED",
+      "supportedTypes": [
+        "movie",
+        "tv"
+      ],
+      "filename": "providers/allmovieland.js",
+      "enabled": true,
+      "formats": [
+        "m3u8"
+      ],
+      "logo": "https://i.postimg.cc/hhWqkVQs/allmovieland.png",
+      "contentLanguage": [
+        "en",
+        "hi",
+        "ta",
+        "te"
+      ]
+    },
+    {
+      "id": "BollyFlix",
+      "name": "BollyFlix",
+      "description": "BollyFlix Hindi/Bollywood/South Indian movie & series site",
+      "version": "1.0.0",
+      "author": "CENSORED",
+      "supportedTypes": [
+        "movie",
+        "tv",
+        "anime"
+      ],
+      "filename": "providers/bollyflix.js",
+      "enabled": true,
+      "formats": [
+        "mkv",
+        "mp4"
+      ],
+      "logo": "https://ruayamo.s-ul.eu/a5T2socz",
+      "contentLanguage": [
+        "en",
+        "hi",
+        "ta",
+        "te",
+        "pa",
+        "ml"
+      ]
+    },
+    {
+      "id": "CTGMovies",
+      "name": "CTGMovies",
+      "description": "CTGMovies multi-language movie & series streaming site",
+      "version": "1.0.0",
+      "author": "CENSORED",
+      "supportedTypes": [
+        "movie",
+        "tv"
+      ],
+      "filename": "providers/ctgmovies.js",
+      "enabled": true,
+      "formats": [
+        "m3u8",
+        "mp4",
+        "mkv"
+      ],
+      "logo": "https://i.postimg.cc/jSQmk9B3/ctgmovies.png",
+      "contentLanguage": [
+        "en",
+        "hi"
+      ]
+    },
+    {
+      "id": "Castle",
+      "name": "Castle",
+      "description": "Castle TMDB-id-based movie & TV streaming site",
+      "version": "1.0.0",
+      "author": "CENSORED",
+      "supportedTypes": [
+        "movie",
+        "tv"
+      ],
+      "filename": "providers/castle.js",
+      "enabled": true,
+      "formats": [
+        "mp4",
+        "m3u8"
+      ],
+      "logo": "https://i.postimg.cc/0NvGzFyK/castle.png",
+      "contentLanguage": [
+        "en"
+      ]
+    },
+    {
+      "id": "CineFreak",
+      "name": "CineFreak",
+      "description": "CineFreak Hindi/English movie & series streaming site",
+      "version": "1.0.0",
+      "author": "CENSORED",
+      "supportedTypes": [
+        "movie",
+        "tv"
+      ],
+      "filename": "providers/cinefreak.js",
+      "enabled": true,
+      "formats": [
+        "mkv",
+        "mp4"
+      ],
+      "logo": "https://i.postimg.cc/rpDB2284/cinefreak.png",
+      "contentLanguage": [
+        "en",
+        "hi"
+      ]
+    },
+    {
+      "id": "CineMM",
+      "name": "CineMM",
+      "description": "CineMM movie & series streaming site",
+      "version": "1.0.0",
+      "author": "CENSORED",
+      "supportedTypes": [
+        "movie",
+        "tv"
+      ],
+      "filename": "providers/cinemm.js",
+      "enabled": true,
+      "formats": [
+        "mp4",
+        "mkv"
+      ],
+      "logo": "https://www.google.com/s2/favicons?domain=cinemm.com&sz=256",
+      "contentLanguage": [
+        "en"
+      ]
+    },
+    {
+      "id": "DahmerMovies",
+      "name": "Dahmermovies",
+      "description": "DahmerMovies movie & series streaming site",
+      "version": "1.0.0",
+      "author": "CENSORED",
+      "supportedTypes": [
+        "movie",
+        "tv"
+      ],
+      "filename": "providers/dahmermovies.js",
+      "enabled": true,
+      "formats": [
+        "mp4",
+        "mkv",
+        "m3u8"
+      ],
+      "logo": "https://i.postimg.cc/hGt3dV6Z/dhamermovies.png",
+      "contentLanguage": [
+        "en"
+      ]
+    },
+    {
+      "id": "DahmermoviesTV",
+      "name": "Dahmermovies-TV",
+      "description": "DahmerMovies alternate 4K/Android-TV endpoint",
+      "version": "1.0.0",
+      "author": "CENSORED",
+      "supportedTypes": [
+        "movie",
+        "tv"
+      ],
+      "filename": "providers/dahmermovies-tv.js",
+      "enabled": true,
+      "formats": [
+        "mp4",
+        "mkv",
+        "m3u8"
+      ],
+      "logo": "https://i.postimg.cc/hGt3dV6Z/dhamermovies.png",
+      "contentLanguage": [
+        "en"
+      ]
+    },
+    {
+      "id": "HDFilme",
+      "name": "HDFilme",
+      "description": "HDFilme German movie & series streaming site",
+      "version": "1.0.0",
+      "author": "CENSORED",
+      "supportedTypes": [
+        "movie",
+        "tv"
+      ],
+      "filename": "providers/hdfilme.js",
+      "enabled": true,
+      "formats": [
+        "m3u8"
+      ],
+      "logo": "https://hdfilme.win/templates/hdfilme/images/logo-hdfilme.svg",
+      "contentLanguage": [
+        "de"
+      ]
+    },
+    {
+      "id": "HDGharTV",
+      "name": "HDGharTV",
+      "description": "HDGharTV Hindi/English movie & series streaming site",
+      "version": "1.0.0",
+      "author": "CENSORED",
+      "supportedTypes": [
+        "movie",
+        "tv"
+      ],
+      "filename": "providers/hdghartv.js",
+      "enabled": true,
+      "formats": [
+        "m3u8"
+      ],
+      "logo": "https://i.postimg.cc/761WVpJS/hdghartv.png",
+      "contentLanguage": [
+        "en",
+        "hi"
+      ]
+    },
+    {
+      "id": "HindMovie",
+      "name": "HindMovie",
+      "description": "HindMovie Hindi movie & series site via HubCloud mirror chain",
+      "version": "1.0.0",
+      "author": "CENSORED",
+      "supportedTypes": [
+        "movie",
+        "tv"
+      ],
+      "filename": "providers/hindmovie.js",
+      "enabled": true,
+      "formats": [
+        "mp4",
+        "mkv",
+        "m3u8"
+      ],
+      "logo": "https://hindmovie.icu/wp-content/themes/generate-pro/images/favicon.ico",
+      "contentLanguage": [
+        "hi",
+        "en"
+      ]
+    },
+    {
+      "id": "Mapple",
+      "name": "Mapple",
+      "description": "Mapple movie & series streaming site",
+      "version": "1.0.0",
+      "author": "CENSORED",
+      "supportedTypes": [
+        "movie",
+        "tv"
+      ],
+      "filename": "providers/mapple.js",
+      "enabled": true,
+      "formats": [
+        "mp4",
+        "m3u8"
+      ],
+      "logo": "https://i.imgur.com/9bGkGMi.png",
+      "contentLanguage": [
+        "en"
+      ]
+    },
+    {
+      "id": "MoonFlix",
+      "name": "MoonFlix",
+      "description": "MoonFlix Hindi/English movie & series streaming site",
+      "version": "1.0.0",
+      "author": "CENSORED",
+      "supportedTypes": [
+        "movie",
+        "tv"
+      ],
+      "filename": "providers/moonflix.js",
+      "enabled": true,
+      "formats": [
+        "mp4",
+        "mkv"
+      ],
+      "logo": "https://i.postimg.cc/90dVRJJq/moonflix.png",
+      "contentLanguage": [
+        "en",
+        "hi"
+      ]
+    },
+    {
+      "id": "MovieBlast",
+      "name": "MovieBlast",
+      "description": "MovieBlast multi-language movie & series streaming site",
+      "version": "1.0.0",
+      "author": "CENSORED",
+      "supportedTypes": [
+        "movie",
+        "tv"
+      ],
+      "filename": "providers/movieblast.js",
+      "enabled": true,
+      "formats": [
+        "mp4",
+        "mkv",
+        "m3u8"
+      ],
+      "logo": "https://i.postimg.cc/qqkLSyhN/movieblast.png",
+      "contentLanguage": [
+        "en",
+        "hi",
+        "ta",
+        "te"
+      ]
+    },
+    {
+      "id": "MoviesHunt",
+      "name": "MoviesHunt",
+      "description": "MoviesHunt Hindi/English/Tamil/Telugu movie & series site",
+      "version": "1.0.0",
+      "author": "CENSORED",
+      "supportedTypes": [
+        "movie",
+        "tv"
+      ],
+      "filename": "providers/movieshunt.js",
+      "enabled": true,
+      "formats": [
+        "mkv",
+        "mp4"
+      ],
+      "logo": "https://www.google.com/s2/favicons?domain=movieshunt.team&sz=256",
+      "contentLanguage": [
+        "en",
+        "hi",
+        "ta",
+        "te"
+      ]
+    },
+    {
+      "id": "Movix",
+      "name": "Movix",
+      "description": "Movix French/English movie & series streaming site",
+      "version": "1.0.0",
+      "author": "CENSORED",
+      "supportedTypes": [
+        "movie",
+        "tv"
+      ],
+      "filename": "providers/movix.js",
+      "enabled": true,
+      "formats": [
+        "mp4",
+        "m3u8"
+      ],
+      "logo": "https://i.postimg.cc/XYrPQm87/movix.png",
+      "contentLanguage": [
+        "en",
+        "fr"
+      ]
+    },
+    {
+      "id": "MyflixerExtractor",
+      "name": "Myflixer-extractor",
+      "description": "Myflixer (watch32.sx / videostr.net) TMDB-based extractor",
+      "version": "1.0.0",
+      "author": "CENSORED",
+      "supportedTypes": [
+        "movie",
+        "tv"
+      ],
+      "filename": "providers/myflixer-extractor.js",
+      "enabled": true,
+      "formats": [
+        "m3u8"
+      ],
+      "logo": "https://i.imgur.com/9bGkGMi.png",
+      "contentLanguage": [
+        "en"
+      ]
+    },
+    {
+      "id": "NetMirror",
+      "name": "NetMirror",
+      "description": "NetMirror multi-language movie & series streaming site",
+      "version": "1.0.0",
+      "author": "CENSORED",
+      "supportedTypes": [
+        "movie",
+        "tv"
+      ],
+      "filename": "providers/netmirror.js",
+      "enabled": true,
+      "formats": [
+        "mp4",
+        "m3u8",
+        "mkv"
+      ],
+      "logo": "https://i.postimg.cc/L64M3bYV/netmirror.png",
+      "contentLanguage": [
+        "en",
+        "hi",
+        "ta",
+        "te"
+      ]
+    },
+    {
+      "id": "PlayIMDb",
+      "name": "PlayIMDb",
+      "description": "PlayIMDb TMDB-id-based movie & TV streaming site",
+      "version": "1.0.0",
+      "author": "CENSORED",
+      "supportedTypes": [
+        "movie",
+        "tv"
+      ],
+      "filename": "providers/playimdb.js",
+      "enabled": true,
+      "formats": [
+        "mp4",
+        "mkv",
+        "m3u8"
+      ],
+      "logo": "https://i.postimg.cc/KzjPtYWY/imdb.png",
+      "contentLanguage": [
+        "en",
+        "hi"
+      ]
+    },
+    {
+      "id": "StreamFlix",
+      "name": "StreamFlix",
+      "description": "StreamFlix movie & series streaming site",
+      "version": "1.0.0",
+      "author": "CENSORED",
+      "supportedTypes": [
+        "movie",
+        "tv"
+      ],
+      "filename": "providers/streamflix.js",
+      "enabled": true,
+      "formats": [
+        "mp4",
+        "m3u8"
+      ],
+      "logo": "https://i.imgur.com/9bGkGMi.png",
+      "contentLanguage": [
+        "en"
+      ]
+    },
+    {
+      "id": "VidEasy",
+      "name": "VidEasy",
+      "description": "VidEasy TMDB-id-based movie & TV streaming site, multi-language",
+      "version": "1.0.0",
+      "author": "CENSORED",
+      "supportedTypes": [
+        "movie",
+        "tv"
+      ],
+      "filename": "providers/videasy.js",
+      "enabled": true,
+      "formats": [
+        "mp4",
+        "m3u8"
+      ],
+      "logo": "https://i.postimg.cc/7LHYMtVV/videasy.png",
+      "contentLanguage": [
+        "en",
+        "de",
+        "it",
+        "fr",
+        "es",
+        "pt"
+      ]
+    },
+    {
+      "id": "VidFast",
+      "name": "VidFast",
+      "description": "VidFast TMDB-id-based movie & TV streaming site",
+      "version": "1.0.0",
+      "author": "CENSORED",
+      "supportedTypes": [
+        "movie",
+        "tv"
+      ],
+      "filename": "providers/vidfast.js",
+      "enabled": true,
+      "formats": [
+        "mp4",
+        "m3u8"
+      ],
+      "logo": "https://i.postimg.cc/0Qp8PSx5/vidfast.png",
+      "contentLanguage": [
+        "en"
+      ]
+    },
+    {
+      "id": "VidLove",
+      "name": "VidLove",
+      "description": "VidLove TMDB-id-based movie & TV streaming site",
+      "version": "1.0.0",
+      "author": "CENSORED",
+      "supportedTypes": [
+        "movie",
+        "tv"
+      ],
+      "filename": "providers/vidlove.js",
+      "enabled": true,
+      "formats": [
+        "mp4",
+        "m3u8",
+        "mkv"
+      ],
+      "logo": "https://i.postimg.cc/ZRjQytBY/vidlove.png",
+      "contentLanguage": [
+        "en"
+      ]
+    },
+    {
+      "id": "Vidlink",
+      "name": "VidLink",
+      "description": "VidLink TMDB-id-based movie & TV streaming site",
+      "version": "1.0.0",
+      "author": "CENSORED",
+      "supportedTypes": [
+        "movie",
+        "tv"
+      ],
+      "filename": "providers/vidlink.js",
+      "enabled": true,
+      "formats": [
+        "mp4",
+        "m3u8"
+      ],
+      "logo": "https://i.postimg.cc/RZRHQd75/vidlink.png",
+      "contentLanguage": [
+        "en"
+      ]
+    },
+    {
+      "id": "Vidnest",
+      "name": "Vidnest",
+      "description": "Vidnest movie & series streaming site",
+      "version": "1.0.0",
+      "author": "CENSORED",
+      "supportedTypes": [
+        "movie",
+        "tv"
+      ],
+      "filename": "providers/vidnest.js",
+      "enabled": true,
+      "formats": [
+        "mp4",
+        "m3u8"
+      ],
+      "logo": "https://i.imgur.com/9bGkGMi.png",
+      "contentLanguage": [
+        "en"
+      ]
+    },
+    {
+      "id": "Yflix",
+      "name": "Yflix",
+      "description": "Yflix movie & series streaming site",
+      "version": "1.0.0",
+      "author": "CENSORED",
+      "supportedTypes": [
+        "movie",
+        "tv"
+      ],
+      "filename": "providers/yflix.js",
+      "enabled": true,
+      "formats": [
+        "mp4",
+        "m3u8"
+      ],
+      "logo": "https://i.imgur.com/9bGkGMi.png",
+      "contentLanguage": [
+        "en"
+      ]
     }
   ]
 }

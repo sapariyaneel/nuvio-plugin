@@ -18,6 +18,7 @@ var __async = (__this, __arguments, generator) => {
     step((generator = generator.apply(__this, __arguments)).next());
   });
 };
+const { formatStreamTitle } = require("../lib/streamFormat");
 const TMDB_API_KEY = "1865f43a0549ca50d341dd9ab8b29f49";
 const DOMAINS_URL = "https://raw.githubusercontent.com/sapariyaneel/nuvio-plugin/refs/heads/main/domains.json";
 const FALLBACK_BASE_URL = "https://vidrock.net";
@@ -250,6 +251,23 @@ function getTmdbRuntimeSeconds(tmdbId, mediaType, season, episode) {
     }
   });
 }
+function getTmdbTitleInfo(tmdbId, mediaType) {
+  return __async(this, null, function* () {
+    try {
+      const url = mediaType === "tv" ? `https://api.themoviedb.org/3/tv/${tmdbId}?api_key=${TMDB_API_KEY}` : `https://api.themoviedb.org/3/movie/${tmdbId}?api_key=${TMDB_API_KEY}`;
+      const resp = yield fetch(url, { skipSizeCheck: true });
+      if (!resp.ok)
+        return null;
+      const data = yield resp.json();
+      const title = mediaType === "tv" ? data.name : data.title;
+      const dateStr = mediaType === "tv" ? data.first_air_date : data.release_date;
+      const year = dateStr ? dateStr.slice(0, 4) : null;
+      return title ? { title, year } : null;
+    } catch (e) {
+      return null;
+    }
+  });
+}
 function qualityLabelFromResolution(width, height) {
   if (width >= 3200 || height >= 2e3)
     return "4K";
@@ -300,7 +318,7 @@ function parseMasterTopVariant(text, baseUrl) {
   }
   return best;
 }
-function buildStream(serverName, entry, runtimeSeconds) {
+function buildStream(serverName, entry, runtimeSeconds, mediaInfo) {
   return __async(this, null, function* () {
     try {
       const masterUrl = decryptStreamUrl(entry.url);
@@ -314,12 +332,22 @@ function buildStream(serverName, entry, runtimeSeconds) {
         return null;
       const quality = qualityLabelFromResolution(topVariant.width, topVariant.height);
       const language = entry.language || "Original";
+      const sizeLabel = runtimeSeconds && topVariant.bandwidth ? formatBytes(topVariant.bandwidth * runtimeSeconds / 8) : "Unknown";
       return {
         url: masterUrl,
         quality,
-        title: `Vidrock ${serverName} ${quality} (${language})`,
+        title: formatStreamTitle({
+          title: mediaInfo && mediaInfo.title,
+          year: mediaInfo && mediaInfo.year,
+          season: mediaInfo && mediaInfo.season,
+          episode: mediaInfo && mediaInfo.episode,
+          rawText: `${serverName} ${language}`,
+          sizeLabel,
+          url: masterUrl,
+          quality
+        }),
         name: "Vidrock",
-        size: runtimeSeconds && topVariant.bandwidth ? formatBytes(topVariant.bandwidth * runtimeSeconds / 8) : "Unknown",
+        size: sizeLabel,
         headers: HEADERS,
         subtitles: []
       };
@@ -355,8 +383,17 @@ function getStreams(tmdbId, mediaType, season, episode) {
       const entries = Object.keys(data).map((name) => ({ name, entry: data[name] })).filter((e) => e.entry && typeof e.entry === "object" && e.entry.url);
       if (!entries.length)
         return [];
-      const runtimeSeconds = yield getTmdbRuntimeSeconds(numericTmdbId, mediaType, season, episode);
-      const resolved = yield Promise.all(entries.map((e) => buildStream(e.name, e.entry, runtimeSeconds)));
+      const [runtimeSeconds, titleInfo] = yield Promise.all([
+        getTmdbRuntimeSeconds(numericTmdbId, mediaType, season, episode),
+        getTmdbTitleInfo(numericTmdbId, mediaType)
+      ]);
+      const mediaInfo = {
+        title: titleInfo && titleInfo.title,
+        year: titleInfo && titleInfo.year,
+        season: isTv ? season || 1 : void 0,
+        episode: isTv ? episode || 1 : void 0
+      };
+      const resolved = yield Promise.all(entries.map((e) => buildStream(e.name, e.entry, runtimeSeconds, mediaInfo)));
       const seenUrls = {};
       const streams = [];
       for (const stream of resolved) {

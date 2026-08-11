@@ -16,6 +16,8 @@
 // a few real segment URLs for their real byte length (HEAD, falling back to a ranged GET for edges
 // that omit Content-Length) and scaling by the real total segment count in that playlist.
 
+const { formatStreamTitle } = require('../lib/streamFormat');
+
 const DOMAINS_URL = "https://raw.githubusercontent.com/sapariyaneel/nuvio-plugin/refs/heads/main/domains.json";
 const FALLBACK_API_HOST = "https://api.speedracelight.com";
 const TMDB_API_KEY = "1865f43a0549ca50d341dd9ab8b29f49";
@@ -334,10 +336,20 @@ async function getStreams(tmdbId, mediaType, season, episode) {
 
     const streams = await Promise.all(sources.filter(s => s && s.url).map(async (s) => {
       const size = await estimateHlsSize(s.url);
+      const formattedTitle = formatStreamTitle({
+        title: meta.title,
+        year: meta.year,
+        season: isTv ? (season || 1) : undefined,
+        episode: isTv ? (episode || 1) : undefined,
+        rawText: s.quality || '',
+        sizeLabel: size,
+        url: s.url,
+        quality: s.quality || 'Unknown'
+      });
       return {
         url: s.url,
         quality: s.quality || "Unknown",
-        title: `Cineby ${s.quality || "Unknown"}`,
+        title: formattedTitle,
         name: "Cineby",
         size,
         headers: HEADERS,

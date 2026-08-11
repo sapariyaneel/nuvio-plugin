@@ -37,6 +37,7 @@ var __async = (__this, __arguments, generator) => {
     step((generator = generator.apply(__this, __arguments)).next());
   });
 };
+const { formatStreamTitle } = require("../lib/streamFormat");
 const DOMAINS_URL = "https://raw.githubusercontent.com/sapariyaneel/nuvio-plugin/refs/heads/main/domains.json";
 const FALLBACK_BASE_URL = "https://moviesmod.zone";
 const TMDB_API_KEY = "1865f43a0549ca50d341dd9ab8b29f49";
@@ -404,6 +405,8 @@ function getStreams(tmdbId, mediaType, season, episode) {
       const title = mediaInfo.title || mediaInfo.name;
       if (!title)
         return [];
+      const releaseDate = mediaInfo.release_date || mediaInfo.first_air_date || "";
+      const year = releaseDate ? releaseDate.split("-")[0] : void 0;
       const searchUrl = `${baseUrl}/?s=${encodeURIComponent(title)}`;
       const searchHtml = yield (yield fetch(searchUrl, { headers: HEADERS, skipSizeCheck: true })).text();
       const $ = cheerio.load(searchHtml);
@@ -436,17 +439,30 @@ function getStreams(tmdbId, mediaType, season, episode) {
         const extracted = yield resolveModproLink(link);
         streams.push(...extracted);
       }
-      return streams.filter((s) => s && s.url).map((s) => ({
-        url: s.url,
-        quality: s.quality || "Unknown",
-        title: s.title || "MoviesMod",
-        name: s.title || "MoviesMod",
-        headers: s.headers || { Referer: baseUrl, "User-Agent": HEADERS["User-Agent"] },
-        subtitles: [],
-        // s.size is already a formatted string from the extractor above - re-running it through
-        // formatBytes() treats it as a raw byte count and produces NaN.
-        size: s.size || ""
-      }));
+      return streams.filter((s) => s && s.url).map((s) => {
+        const quality = s.quality || "Unknown";
+        const richTitle = formatStreamTitle({
+          title,
+          year,
+          season: isTvSeries ? season : void 0,
+          episode: isTvSeries ? episode : void 0,
+          rawText: s.title || "",
+          sizeLabel: s.size || "",
+          url: s.url,
+          quality
+        });
+        return {
+          url: s.url,
+          quality,
+          title: richTitle,
+          name: richTitle,
+          headers: s.headers || { Referer: baseUrl, "User-Agent": HEADERS["User-Agent"] },
+          subtitles: [],
+          // s.size is already a formatted string from the extractor above - re-running it through
+          // formatBytes() treats it as a raw byte count and produces NaN.
+          size: s.size || ""
+        };
+      });
     } catch (e) {
       console.error("[MoviesMod]", e);
       return [];

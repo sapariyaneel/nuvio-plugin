@@ -18,6 +18,7 @@ var __async = (__this, __arguments, generator) => {
     step((generator = generator.apply(__this, __arguments)).next());
   });
 };
+const { formatStreamTitle } = require("../lib/streamFormat");
 const DOMAINS_URL = "https://raw.githubusercontent.com/sapariyaneel/nuvio-plugin/refs/heads/main/domains.json";
 const FALLBACK_API_HOST = "https://stream.fontaine.lol";
 const AES_KEY_HEX = "bfdf4d46136f9e54f85699893a75261e7237a53d9015ee76d120aa54a1943bb0";
@@ -265,6 +266,16 @@ function getStreams(tmdbId, mediaType, season, episode) {
         params.set("seasonId", String(season || 1));
         params.set("episodeId", String(episode || 1));
       }
+      let mediaTitle = null;
+      let mediaYear = null;
+      try {
+        const tmdbUrl = `https://api.themoviedb.org/3/${isTv ? "tv" : "movie"}/${tmdbId}?api_key=${TMDB_API_KEY}`;
+        const tmdbData = yield (yield fetch(tmdbUrl, { skipSizeCheck: true })).json();
+        mediaTitle = tmdbData.title || tmdbData.name || null;
+        const dateStr = tmdbData.release_date || tmdbData.first_air_date || "";
+        mediaYear = dateStr ? dateStr.slice(0, 4) : null;
+      } catch (e) {
+      }
       const apiUrl = yield getApiUrl();
       const resp = yield fetch(`${apiUrl}?${params.toString()}`, { headers: HEADERS, skipSizeCheck: true });
       if (!resp.ok)
@@ -281,14 +292,25 @@ function getStreams(tmdbId, mediaType, season, episode) {
         const size = yield probeSize(url);
         return { quality: q, url, size };
       })));
-      const streams = decrypted.filter(Boolean).map((d) => ({
-        url: d.url,
-        quality: qualityLabel(d.quality),
-        title: `Vidcodin ${qualityLabel(d.quality)}`,
-        name: "Vidcodin",
-        size: d.size,
-        subtitles: []
-      }));
+      const streams = decrypted.filter(Boolean).map((d) => {
+        const resolvedQuality = qualityLabel(d.quality);
+        return {
+          url: d.url,
+          quality: resolvedQuality,
+          title: mediaTitle ? formatStreamTitle({
+            title: mediaTitle,
+            year: mediaYear,
+            season: isTv ? season : void 0,
+            episode: isTv ? episode : void 0,
+            sizeLabel: d.size || void 0,
+            quality: resolvedQuality,
+            url: d.url
+          }) : `Vidcodin ${resolvedQuality}`,
+          name: "Vidcodin",
+          size: d.size,
+          subtitles: []
+        };
+      });
       streams.sort((a, b) => (parseInt(b.quality, 10) || 0) - (parseInt(a.quality, 10) || 0));
       return streams;
     } catch (e) {

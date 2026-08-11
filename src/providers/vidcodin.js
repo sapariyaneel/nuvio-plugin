@@ -12,6 +12,8 @@
 // still wired to the shared registry so it picks up a live API host automatically if one is added
 // later, falling back to the hardcoded host in the meantime. The frontend (vidcodin.net) and the
 // actual API backend (stream.fontaine.lol) are separate domains that can churn independently.
+
+const { formatStreamTitle } = require('../lib/streamFormat');
 const DOMAINS_URL = "https://raw.githubusercontent.com/sapariyaneel/nuvio-plugin/refs/heads/main/domains.json";
 const FALLBACK_API_HOST = "https://stream.fontaine.lol";
 const AES_KEY_HEX = "bfdf4d46136f9e54f85699893a75261e7237a53d9015ee76d120aa54a1943bb0";
@@ -274,6 +276,18 @@ async function getStreams(tmdbId, mediaType, season, episode) {
       params.set("episodeId", String(episode || 1));
     }
 
+    let mediaTitle = null;
+    let mediaYear = null;
+    try {
+      const tmdbUrl = `https://api.themoviedb.org/3/${isTv ? "tv" : "movie"}/${tmdbId}?api_key=${TMDB_API_KEY}`;
+      const tmdbData = await (await fetch(tmdbUrl, { skipSizeCheck: true })).json();
+      mediaTitle = tmdbData.title || tmdbData.name || null;
+      const dateStr = tmdbData.release_date || tmdbData.first_air_date || "";
+      mediaYear = dateStr ? dateStr.slice(0, 4) : null;
+    } catch (e) {
+      // Title lookup is best-effort - streams still work without it.
+    }
+
     const apiUrl = await getApiUrl();
     const resp = await fetch(`${apiUrl}?${params.toString()}`, { headers: HEADERS, skipSizeCheck: true });
     if (!resp.ok) return [];
@@ -291,14 +305,27 @@ async function getStreams(tmdbId, mediaType, season, episode) {
 
     const streams = decrypted
       .filter(Boolean)
-      .map(d => ({
-        url: d.url,
-        quality: qualityLabel(d.quality),
-        title: `Vidcodin ${qualityLabel(d.quality)}`,
-        name: "Vidcodin",
-        size: d.size,
-        subtitles: []
-      }));
+      .map(d => {
+        const resolvedQuality = qualityLabel(d.quality);
+        return {
+          url: d.url,
+          quality: resolvedQuality,
+          title: mediaTitle
+            ? formatStreamTitle({
+                title: mediaTitle,
+                year: mediaYear,
+                season: isTv ? season : undefined,
+                episode: isTv ? episode : undefined,
+                sizeLabel: d.size || undefined,
+                quality: resolvedQuality,
+                url: d.url
+              })
+            : `Vidcodin ${resolvedQuality}`,
+          name: "Vidcodin",
+          size: d.size,
+          subtitles: []
+        };
+      });
 
     streams.sort((a, b) => (parseInt(b.quality, 10) || 0) - (parseInt(a.quality, 10) || 0));
     return streams;

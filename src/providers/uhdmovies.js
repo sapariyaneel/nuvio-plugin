@@ -7,6 +7,8 @@
 //        replace("...") token, then Instant Download / Resume Worker Bot / Direct Links / Resume Cloud /
 //        Cloud Download buttons; UHDMovies (video-seed.xyz) token-based POST /api extractor
 
+const { formatStreamTitle } = require('../lib/streamFormat');
+
 const DOMAINS_URL = "https://raw.githubusercontent.com/sapariyaneel/nuvio-plugin/refs/heads/main/domains.json";
 const FALLBACK_BASE_URL = "https://uhdmovies.autos";
 const TMDB_API_KEY = "1865f43a0549ca50d341dd9ab8b29f49";
@@ -465,12 +467,24 @@ async function getStreams(tmdbId, mediaType, season, episode) {
       streams.push(...extracted);
     }
 
+    const year = (mediaInfo.release_date || mediaInfo.first_air_date || "").slice(0, 4) || undefined;
+    const isTv = mediaType === "tv";
+
     return streams
       .filter(s => s && s.url)
       .map(s => ({
         url: s.url,
         quality: s.quality || "Unknown",
-        title: s.title || "UHDmovies",
+        title: formatStreamTitle({
+          title,
+          year,
+          season: isTv ? season : undefined,
+          episode: isTv ? episode : undefined,
+          rawText: s.title || "",
+          sizeLabel: s.size || undefined,
+          quality: s.quality || undefined,
+          url: s.url
+        }),
         name: s.title || "UHDmovies",
         headers: s.headers || { Referer: baseUrl, "User-Agent": HEADERS["User-Agent"] },
         subtitles: [],

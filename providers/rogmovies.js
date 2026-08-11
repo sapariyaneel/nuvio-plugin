@@ -37,6 +37,7 @@ var __async = (__this, __arguments, generator) => {
     step((generator = generator.apply(__this, __arguments)).next());
   });
 };
+const { formatStreamTitle } = require("../lib/streamFormat");
 const DOMAINS_URL = "https://raw.githubusercontent.com/sapariyaneel/nuvio-plugin/refs/heads/main/domains.json";
 const FALLBACK_BASE_URL = "https://new1.rogmovies.click";
 const TMDB_API_KEY = "1865f43a0549ca50d341dd9ab8b29f49";
@@ -121,6 +122,18 @@ function getTmdbTitle(tmdbId, mediaType) {
     const url = `https://api.themoviedb.org/3/${mediaType}/${tmdbId}?api_key=${TMDB_API_KEY}`;
     const data = yield (yield fetch(url, { skipSizeCheck: true })).json();
     return data.title || data.name || null;
+  });
+}
+function getTmdbYear(tmdbId, mediaType) {
+  return __async(this, null, function* () {
+    try {
+      const url = `https://api.themoviedb.org/3/${mediaType}/${tmdbId}?api_key=${TMDB_API_KEY}`;
+      const data = yield (yield fetch(url, { skipSizeCheck: true })).json();
+      const dateStr = data.release_date || data.first_air_date || "";
+      return dateStr ? dateStr.slice(0, 4) : null;
+    } catch (e) {
+      return null;
+    }
   });
 }
 function searchSite(query) {
@@ -389,9 +402,10 @@ function getStreams(tmdbId, mediaType, season, episode) {
           return [];
       }
       const isTv = mediaType === "tv";
-      const [imdbId, title] = yield Promise.all([
+      const [imdbId, title, year] = yield Promise.all([
         getImdbId(tmdbId, mediaType),
-        getTmdbTitle(tmdbId, mediaType)
+        getTmdbTitle(tmdbId, mediaType),
+        getTmdbYear(tmdbId, mediaType)
       ]);
       if (!title) {
         return [];
@@ -420,10 +434,20 @@ function getStreams(tmdbId, mediaType, season, episode) {
           for (const mirror of nexdriveLinks) {
             const resolved = yield resolveMirrorLink(mirror.href, mirror.label);
             for (const s of resolved) {
+              const resolvedQuality = qualityLabel(s.quality || quality);
               streams.push({
                 url: s.url,
-                quality: qualityLabel(s.quality || quality),
-                title: `RogMovies ${block.heading}`.trim(),
+                quality: resolvedQuality,
+                title: formatStreamTitle({
+                  title,
+                  year,
+                  season: isTv ? season : void 0,
+                  episode: isTv ? episode : void 0,
+                  rawText: `${block.heading} ${s.title || ""}`,
+                  sizeLabel: s.size || void 0,
+                  quality: resolvedQuality,
+                  url: s.url
+                }),
                 name: s.title || "RogMovies",
                 subtitles: [],
                 // s.size is already a formatted string from the extractor above - re-running it
