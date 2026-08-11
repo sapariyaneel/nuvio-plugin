@@ -18,6 +18,7 @@ var __async = (__this, __arguments, generator) => {
     step((generator = generator.apply(__this, __arguments)).next());
   });
 };
+const { formatStreamTitle } = require("../lib/streamFormat");
 const DOMAINS_URL = "https://raw.githubusercontent.com/sapariyaneel/nuvio-plugin/refs/heads/main/domains.json";
 const FALLBACK_BASE_URL = "https://desicinemas.to";
 const PROXY = "https://desicinemas.phisherdesicinema.workers.dev/";
@@ -124,10 +125,17 @@ function getStreams(tmdbId, mediaType, season, episode) {
           const name = $page("p.AAIco-dns", box).text().trim() || "Desicinemas";
           const linkText = linkEl.text().trim();
           const quality = extractQuality(linkText) !== "Unknown" ? extractQuality(linkText) : extractQuality(iframeSrc);
+          const year = (mediaInfo.release_date || mediaInfo.first_air_date || "").slice(0, 4) || void 0;
           streams.push({
             url: iframeSrc,
             quality,
-            title: `Desicinemas [${name}]`,
+            title: formatStreamTitle({
+              title,
+              year,
+              rawText: `${name} ${linkText}`,
+              url: iframeSrc,
+              quality
+            }),
             subtitles: []
           });
         } catch (e) {

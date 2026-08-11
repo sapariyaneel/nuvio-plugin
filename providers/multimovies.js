@@ -37,6 +37,7 @@ var __async = (__this, __arguments, generator) => {
     step((generator = generator.apply(__this, __arguments)).next());
   });
 };
+const { formatStreamTitle } = require("../lib/streamFormat");
 const DOMAINS_URL = "https://raw.githubusercontent.com/sapariyaneel/nuvio-plugin/refs/heads/main/domains.json";
 const FALLBACK_URL = "https://multimovies.motorcycles";
 const TMDB_API_KEY = "1865f43a0549ca50d341dd9ab8b29f49";
@@ -84,6 +85,8 @@ function getStreams(tmdbId, mediaType, season, episode) {
       const title = mediaInfo.title || mediaInfo.name;
       if (!title)
         return [];
+      const releaseDate = mediaInfo.release_date || mediaInfo.first_air_date || "";
+      const year = releaseDate ? releaseDate.split("-")[0] : void 0;
       const searchResp = yield fetch(`${BASE_URL}/?s=${encodeURIComponent(title)}`, {
         headers: HEADERS,
         skipSizeCheck: true
@@ -157,10 +160,19 @@ function getStreams(tmdbId, mediaType, season, episode) {
           if (embedUrl && !embedUrl.includes("youtube")) {
             const resolvedUrl = yield resolveEmbed(embedUrl, BASE_URL);
             if (resolvedUrl) {
+              const quality = extractQuality(resolvedUrl);
               streams.push({
                 url: resolvedUrl,
-                quality: extractQuality(resolvedUrl),
-                title: "MultiMovies",
+                quality,
+                title: formatStreamTitle({
+                  title,
+                  year,
+                  season: targetEp.season,
+                  episode: targetEp.episode,
+                  rawText: "MultiMovies",
+                  url: resolvedUrl,
+                  quality
+                }),
                 headers: resolvedUrl.includes(".m3u8") || resolvedUrl.includes(".mp4") ? { Referer: new URL(embedUrl).origin + "/", "User-Agent": HEADERS["User-Agent"] } : void 0,
                 subtitles: []
               });
@@ -184,10 +196,17 @@ function getStreams(tmdbId, mediaType, season, episode) {
         if (embedUrl && !embedUrl.includes("youtube")) {
           const resolvedUrl = yield resolveEmbed(embedUrl, BASE_URL);
           if (resolvedUrl) {
+            const quality = extractQuality(resolvedUrl);
             streams.push({
               url: resolvedUrl,
-              quality: extractQuality(resolvedUrl),
-              title: "MultiMovies",
+              quality,
+              title: formatStreamTitle({
+                title,
+                year,
+                rawText: "MultiMovies",
+                url: resolvedUrl,
+                quality
+              }),
               headers: resolvedUrl.includes(".m3u8") || resolvedUrl.includes(".mp4") ? { Referer: new URL(embedUrl).origin + "/", "User-Agent": HEADERS["User-Agent"] } : void 0,
               subtitles: []
             });

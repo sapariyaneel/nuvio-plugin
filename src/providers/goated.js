@@ -20,6 +20,8 @@
 // Size is still a real, not guessed, number: highest-quality video BANDWIDTH + the default audio
 // track's real bitrate (read from its own playlist's EXT-X-BITRATE tag) x TMDB runtime / 8.
 
+const { formatStreamTitle } = require('../lib/streamFormat');
+
 const TMDB_API_KEY = "1865f43a0549ca50d341dd9ab8b29f49";
 const DOMAINS_URL = "https://raw.githubusercontent.com/sapariyaneel/nuvio-plugin/refs/heads/main/domains.json";
 const FALLBACK_API_HOST = "https://api.reallyfast.xyz";
@@ -224,6 +226,23 @@ async function getAudioBitrateBps(audioPlaylistUrl) {
   }
 }
 
+async function getTmdbTitleYear(tmdbId, mediaType) {
+  try {
+    const url = mediaType === "tv"
+      ? `https://api.themoviedb.org/3/tv/${tmdbId}?api_key=${TMDB_API_KEY}`
+      : `https://api.themoviedb.org/3/movie/${tmdbId}?api_key=${TMDB_API_KEY}`;
+    const resp = await fetch(url, { skipSizeCheck: true });
+    if (!resp.ok) return { title: null, year: null };
+    const data = await resp.json();
+    const title = data.title || data.name || null;
+    const releaseDate = data.release_date || data.first_air_date || "";
+    const year = releaseDate ? releaseDate.split("-")[0] : null;
+    return { title, year };
+  } catch (e) {
+    return { title: null, year: null };
+  }
+}
+
 function qualityLabelFromHeight(height) {
   if (height >= 2000) return "4K";
   if (height <= 0) return "Unknown";
@@ -276,9 +295,10 @@ async function getStreams(tmdbId, mediaType, season, episode) {
 
     const topVariant = variants.slice().sort((a, b) => b.height - a.height)[0];
 
-    const [runtimeSeconds, audioBitrateBps] = await Promise.all([
+    const [runtimeSeconds, audioBitrateBps, titleYear] = await Promise.all([
       getTmdbRuntimeSeconds(numericTmdbId, mediaType, season, episode),
-      getAudioBitrateBps(defaultAudioUrl)
+      getAudioBitrateBps(defaultAudioUrl),
+      getTmdbTitleYear(numericTmdbId, mediaType)
     ]);
 
     let subtitles = [];
@@ -312,11 +332,21 @@ async function getStreams(tmdbId, mediaType, season, episode) {
 
     const totalBitrateBps = topVariant.bandwidth + audioBitrateBps;
     const quality = qualityLabelFromHeight(topVariant.height);
+    const sizeBytes = runtimeSeconds ? (totalBitrateBps * runtimeSeconds) / 8 : undefined;
 
     return [{
       url: resolveData.url,
       quality,
-      title: `Goated ${quality} (Adaptive)`,
+      title: formatStreamTitle({
+        title: titleYear.title,
+        year: titleYear.year,
+        season: isTv ? (season || 1) : undefined,
+        episode: isTv ? (episode || 1) : undefined,
+        rawText: "Adaptive",
+        sizeBytes,
+        url: resolveData.url,
+        quality
+      }),
       name: "Goated",
       size: runtimeSeconds ? formatBytes((totalBitrateBps * runtimeSeconds) / 8) : "Unknown",
       headers: HEADERS,

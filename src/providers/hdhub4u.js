@@ -6,9 +6,10 @@
 // Links: HubCloud/Hubdrive/HUBCDN/Hubcdnn/Hblinks/VidStack(Hubstream, AES) extractor chain
 
 const CryptoJS = typeof require === "function" ? require("crypto-js") : global.CryptoJS;
+const { formatStreamTitle } = require('../lib/streamFormat');
 
 const DOMAINS_URL = "https://raw.githubusercontent.com/sapariyaneel/nuvio-plugin/refs/heads/main/domains.json";
-const FALLBACK_BASE_URL = "https://hdhub4u.glass";
+const FALLBACK_BASE_URL = "https://hdhub4u.ec";
 const TMDB_API_KEY = "1865f43a0549ca50d341dd9ab8b29f49";
 
 const HEADERS = {
@@ -462,6 +463,8 @@ async function getStreams(tmdbId, mediaType, season, episode) {
     const mediaInfo = await (await fetch(tmdbUrl, { skipSizeCheck: true })).json();
     const title = mediaInfo.title || mediaInfo.name;
     if (!title) return [];
+    const releaseDate = mediaInfo.release_date || mediaInfo.first_air_date || "";
+    const year = releaseDate ? releaseDate.split("-")[0] : undefined;
 
     const searchUrl = `https://search.pingora.fyi/collections/post/documents/search?q=${encodeURIComponent(title)}&query_by=post_title,category&query_by_weights=4,2&sort_by=sort_by_date:desc&limit=15&highlight_fields=none&use_cache=true&page=1`;
     const searchJson = await (await fetch(searchUrl, { headers: SEARCH_HEADERS, skipSizeCheck: true })).json();
@@ -529,17 +532,30 @@ async function getStreams(tmdbId, mediaType, season, episode) {
 
     return streams
       .filter(s => s && s.url)
-      .map(s => ({
-        url: s.url,
-        quality: typeof s.quality === "number" ? qualityLabel(s.quality) : (s.quality || "Unknown"),
-        title: s.title || "HDhub4u",
-        name: s.title || "HDhub4u",
-        headers: s.headers || { Referer: baseUrl, "User-Agent": HEADERS["User-Agent"] },
-        subtitles: s.subtitles || [],
-        // s.size is already a formatted string (e.g. "864.97 MB") from the extractor above -
-        // re-running it through formatBytes() treats it as a raw byte count and produces NaN.
-        size: s.size || ""
-      }));
+      .map(s => {
+        const resolvedQuality = typeof s.quality === "number" ? qualityLabel(s.quality) : (s.quality || "Unknown");
+        const richTitle = formatStreamTitle({
+          title,
+          year,
+          season: mediaType === "tv" ? season : undefined,
+          episode: mediaType === "tv" ? episode : undefined,
+          rawText: s.title || "",
+          sizeLabel: s.size || undefined,
+          url: s.url,
+          quality: resolvedQuality
+        });
+        return {
+          url: s.url,
+          quality: resolvedQuality,
+          title: richTitle,
+          name: richTitle,
+          headers: s.headers || { Referer: baseUrl, "User-Agent": HEADERS["User-Agent"] },
+          subtitles: s.subtitles || [],
+          // s.size is already a formatted string (e.g. "864.97 MB") from the extractor above -
+          // re-running it through formatBytes() treats it as a raw byte count and produces NaN.
+          size: s.size || ""
+        };
+      });
   } catch (e) {
     console.error("[HDhub4u]", e);
     return [];

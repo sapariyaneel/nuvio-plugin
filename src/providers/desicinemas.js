@@ -3,6 +3,8 @@
 // Uses a Cloudflare Worker proxy for requests
 // Stream links: found from .MovieList .OptionBx items → iframe extraction
 
+const { formatStreamTitle } = require('../lib/streamFormat');
+
 // No registry key currently exists for this site (checked against our shared domains.json registry) -
 // still wired to the shared registry so it picks up a live domain automatically if one is added later,
 // falling back to the hardcoded domain in the meantime.
@@ -115,10 +117,17 @@ async function getStreams(tmdbId, mediaType, season, episode) {
         const name = $page("p.AAIco-dns", box).text().trim() || "Desicinemas";
         const linkText = linkEl.text().trim();
         const quality = extractQuality(linkText) !== "Unknown" ? extractQuality(linkText) : extractQuality(iframeSrc);
+        const year = (mediaInfo.release_date || mediaInfo.first_air_date || "").slice(0, 4) || undefined;
         streams.push({
           url: iframeSrc,
           quality,
-          title: `Desicinemas [${name}]`,
+          title: formatStreamTitle({
+            title,
+            year,
+            rawText: `${name} ${linkText}`,
+            url: iframeSrc,
+            quality
+          }),
           subtitles: []
         });
       } catch (e) {}

@@ -4,6 +4,8 @@
 // Download links: div.download-item a[href] → redirect URLs → HubCloud extraction
 // TV episodes: div.episodes-list div.season-item → div.episode-download-item → a[href]
 
+const { formatStreamTitle } = require('../lib/streamFormat');
+
 const DOMAINS_URL = "https://raw.githubusercontent.com/sapariyaneel/nuvio-plugin/refs/heads/main/domains.json";
 const FALLBACK_BASE_URL = "https://4khdhub.one";
 const TMDB_API_KEY = "1865f43a0549ca50d341dd9ab8b29f49";
@@ -62,7 +64,7 @@ function formatBytes(bytes) {
   return `${parseFloat((bytes / Math.pow(k, i)).toFixed(1))} ${sizes[i]}`;
 }
 
-async function resolveHubCloud(url) {
+async function resolveHubCloud(url, mediaMeta) {
   try {
     // HubCloud: first get the #download link
     const html1 = await (await fetch(url, { headers: HEADERS, skipSizeCheck: true })).text();
@@ -88,12 +90,24 @@ async function resolveHubCloud(url) {
       label: ($2(a).text() || "").toLowerCase().trim()
     }));
 
+    const meta = mediaMeta || {};
+    const buildTitle = (serverLabel, streamUrl) => formatStreamTitle({
+      title: meta.title,
+      year: meta.year,
+      season: meta.season,
+      episode: meta.episode,
+      rawText: `${header} ${serverLabel || ""}`,
+      sizeBytes: sizeInBytes,
+      url: streamUrl,
+      quality
+    });
+
     const streams = [];
     for (const { link, label } of buttons) {
       if (!link) continue;
       try {
         if (label.includes("fsl server") || label.includes("download file") || label.includes("s3 server") || label.includes("fslv2") || label.includes("mega server")) {
-          streams.push({ url: link, quality, title: `4KHDHUB [${label}]`, size: formatBytes(sizeInBytes )});
+          streams.push({ url: link, quality, title: buildTitle(label, link), size: formatBytes(sizeInBytes )});
         } else if (label.includes("buzzserver")) {
           const resp = await fetch(`${link}/download`, {
             headers: { ...HEADERS, Referer: link },
@@ -101,11 +115,11 @@ async function resolveHubCloud(url) {
             skipSizeCheck: true
           });
           const dlink = resp.headers.get("hx-redirect") || resp.headers.get("HX-Redirect") || "";
-          if (dlink.trim()) streams.push({ url: dlink, quality, title: `4KHDHUB [BuzzServer]`, size: formatBytes(sizeInBytes )});
+          if (dlink.trim()) streams.push({ url: dlink, quality, title: buildTitle("BuzzServer", dlink), size: formatBytes(sizeInBytes )});
         } else if (label.includes("pixeldra") || label.includes("pixelserver") || label.includes("pixel server") || label.includes("pixeldrain")) {
           const base = originOf(link);
           const finalUrl = link.includes("download") ? link : `${base}/api/file/${link.split("/").pop()}?download`;
-          streams.push({ url: finalUrl, quality, title: `4KHDHUB [Pixeldrain]`, size: formatBytes(sizeInBytes )});
+          streams.push({ url: finalUrl, quality, title: buildTitle("Pixeldrain", finalUrl), size: formatBytes(sizeInBytes )});
         } else if (label.includes("10gbps")) {
           let redirectUrl = link;
           let finalLink = null;
@@ -117,9 +131,9 @@ async function resolveHubCloud(url) {
               if (loc) redirectUrl = new URL(loc, redirectUrl).toString();
             } else break;
           }
-          if (finalLink) streams.push({ url: finalLink, quality, title: `4KHDHUB [10Gbps]`, size: formatBytes(sizeInBytes )});
+          if (finalLink) streams.push({ url: finalLink, quality, title: buildTitle("10Gbps", finalLink), size: formatBytes(sizeInBytes )});
         } else if (link.match(/\.(mp4|mkv|m3u8)/i)) {
-          streams.push({ url: link, quality, title: `4KHDHUB [${label}]`, size: formatBytes(sizeInBytes )});
+          streams.push({ url: link, quality, title: buildTitle(label, link), size: formatBytes(sizeInBytes )});
         }
       } catch (e) {}
     }
@@ -180,6 +194,8 @@ async function getStreams(tmdbId, mediaType, season, episode) {
     const mediaInfo = await (await fetch(tmdbUrl, { skipSizeCheck: true })).json();
     const title = mediaInfo.title || mediaInfo.name;
     if (!title) return [];
+    const releaseDate = mediaInfo.release_date || mediaInfo.first_air_date || "";
+    const year = releaseDate ? releaseDate.split("-")[0] : undefined;
 
     // 2. Search
     const searchUrl = `${baseUrl}/?s=${encodeURIComponent(title)}`;
@@ -239,18 +255,29 @@ async function getStreams(tmdbId, mediaType, season, episode) {
           const resolved = await resolveRedirect(href);
 
           if (resolved.toLowerCase().includes("hubcloud")) {
-            const hubStreams = await resolveHubCloud(resolved);
+            const hubStreams = await resolveHubCloud(resolved, { title, year, season, episode });
             if (hubStreams) {
               for (const s of hubStreams) {
-                streams.push({ ...s, title: `4KHDHUB [S${season}E${episode}] ${s.title || ""}`.trim(), subtitles: [] });
+                streams.push({ ...s, subtitles: [] });
               }
             }
           } else {
+            const detectedQuality = extractQuality(epText);
+            const sizeLabel = await probeSize(resolved);
             streams.push({
               url: resolved,
-              quality: extractQuality(epText),
-              title: `4KHDHUB [S${season}E${episode}]`,
-              size: await probeSize(resolved),
+              quality: detectedQuality,
+              title: formatStreamTitle({
+                title,
+                year,
+                season,
+                episode,
+                rawText: epText,
+                sizeLabel,
+                url: resolved,
+                quality: detectedQuality
+              }),
+              size: sizeLabel,
               subtitles: []
             });
           }
@@ -269,18 +296,27 @@ async function getStreams(tmdbId, mediaType, season, episode) {
           const resolved = await resolveRedirect(href);
 
           if (resolved.toLowerCase().includes("hubcloud")) {
-            const hubStreams = await resolveHubCloud(resolved);
+            const hubStreams = await resolveHubCloud(resolved, { title, year });
             if (hubStreams) {
               for (const s of hubStreams) {
                 streams.push({ ...s, subtitles: [] });
               }
             }
           } else {
+            const detectedQuality = extractQuality(resolved);
+            const sizeLabel = await probeSize(resolved);
             streams.push({
               url: resolved,
-              quality: extractQuality(resolved),
-              title: `4KHDHUB`,
-              size: await probeSize(resolved),
+              quality: detectedQuality,
+              title: formatStreamTitle({
+                title,
+                year,
+                rawText: resolved,
+                sizeLabel,
+                url: resolved,
+                quality: detectedQuality
+              }),
+              size: sizeLabel,
               subtitles: []
             });
           }

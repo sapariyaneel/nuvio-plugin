@@ -32,6 +32,8 @@
 // real segment count. Validated against ground truth: every one of Fight Club's 2087 1080p
 // segments was measured individually (2.015 GB actual); this sampler returns 2.14 GB (+6%).
 
+const { formatStreamTitle } = require('../lib/streamFormat');
+
 const TMDB_API_KEY = "1865f43a0549ca50d341dd9ab8b29f49";
 const DOMAINS_URL = "https://raw.githubusercontent.com/sapariyaneel/nuvio-plugin/refs/heads/main/domains.json";
 const FALLBACK_BASE_URL = "https://vixsrc.to";
@@ -294,12 +296,20 @@ async function getStreams(tmdbId, mediaType, season, episode) {
     ]);
 
     const quality = qualityLabelFromHeight(topVariant.height);
-    const titleSuffix = meta ? `${meta.title}${meta.year ? ` (${meta.year})` : ""}` : "";
+    const richTitle = formatStreamTitle({
+      title: meta && meta.title,
+      year: meta && meta.year,
+      season: isTv ? (season || 1) : undefined,
+      episode: isTv ? (episode || 1) : undefined,
+      sizeLabel: size,
+      url: masterUrl,
+      quality
+    });
 
     return [{
       url: masterUrl,
       quality,
-      title: titleSuffix ? `VixSrc ${quality} - ${titleSuffix}` : `VixSrc ${quality}`,
+      title: richTitle,
       name: "VixSrc",
       size,
       headers: HEADERS,

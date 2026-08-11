@@ -5,6 +5,8 @@
 // Content: GET /wp-json/wp/v2/posts/{id} (WP REST API - bypasses theme's client-side download-button gating)
 // Links: nexdrive.fit shortlink pages -> G-Direct(fastdl.zip)/V-Cloud(vcloud.zip->hubcloud.foo) buttons -> HubCloud chain
 
+const { formatStreamTitle } = require('../lib/streamFormat');
+
 const DOMAINS_URL = "https://raw.githubusercontent.com/sapariyaneel/nuvio-plugin/refs/heads/main/domains.json";
 const FALLBACK_BASE_URL = "https://new1.rogmovies.click";
 const TMDB_API_KEY = "1865f43a0549ca50d341dd9ab8b29f49";
@@ -83,6 +85,17 @@ async function getTmdbTitle(tmdbId, mediaType) {
   const url = `https://api.themoviedb.org/3/${mediaType}/${tmdbId}?api_key=${TMDB_API_KEY}`;
   const data = await (await fetch(url, { skipSizeCheck: true })).json();
   return data.title || data.name || null;
+}
+
+async function getTmdbYear(tmdbId, mediaType) {
+  try {
+    const url = `https://api.themoviedb.org/3/${mediaType}/${tmdbId}?api_key=${TMDB_API_KEY}`;
+    const data = await (await fetch(url, { skipSizeCheck: true })).json();
+    const dateStr = data.release_date || data.first_air_date || "";
+    return dateStr ? dateStr.slice(0, 4) : null;
+  } catch (e) {
+    return null;
+  }
 }
 
 async function searchSite(query) {
@@ -328,9 +341,10 @@ async function getStreams(tmdbId, mediaType, season, episode) {
     }
 
     const isTv = mediaType === "tv";
-    const [imdbId, title] = await Promise.all([
+    const [imdbId, title, year] = await Promise.all([
       getImdbId(tmdbId, mediaType),
-      getTmdbTitle(tmdbId, mediaType)
+      getTmdbTitle(tmdbId, mediaType),
+      getTmdbYear(tmdbId, mediaType)
     ]);
     if (!title) {
       return [];
@@ -364,10 +378,20 @@ async function getStreams(tmdbId, mediaType, season, episode) {
         for (const mirror of nexdriveLinks) {
           const resolved = await resolveMirrorLink(mirror.href, mirror.label);
           for (const s of resolved) {
+            const resolvedQuality = qualityLabel(s.quality || quality);
             streams.push({
               url: s.url,
-              quality: qualityLabel(s.quality || quality),
-              title: `RogMovies ${block.heading}`.trim(),
+              quality: resolvedQuality,
+              title: formatStreamTitle({
+                title,
+                year,
+                season: isTv ? season : undefined,
+                episode: isTv ? episode : undefined,
+                rawText: `${block.heading} ${s.title || ""}`,
+                sizeLabel: s.size || undefined,
+                quality: resolvedQuality,
+                url: s.url
+              }),
               name: s.title || "RogMovies",
               subtitles: [],
               // s.size is already a formatted string from the extractor above - re-running it

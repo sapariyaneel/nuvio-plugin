@@ -37,6 +37,7 @@ var __async = (__this, __arguments, generator) => {
     step((generator = generator.apply(__this, __arguments)).next());
   });
 };
+const { formatStreamTitle } = require("../lib/streamFormat");
 const DOMAINS_URL = "https://raw.githubusercontent.com/sapariyaneel/nuvio-plugin/refs/heads/main/domains.json";
 const FALLBACK_BASE_URL = "https://uhdmovies.autos";
 const TMDB_API_KEY = "1865f43a0549ca50d341dd9ab8b29f49";
@@ -490,10 +491,21 @@ function getStreams(tmdbId, mediaType, season, episode) {
         const extracted = yield resolveSourceLink(link);
         streams.push(...extracted);
       }
+      const year = (mediaInfo.release_date || mediaInfo.first_air_date || "").slice(0, 4) || void 0;
+      const isTv = mediaType === "tv";
       return streams.filter((s) => s && s.url).map((s) => ({
         url: s.url,
         quality: s.quality || "Unknown",
-        title: s.title || "UHDmovies",
+        title: formatStreamTitle({
+          title,
+          year,
+          season: isTv ? season : void 0,
+          episode: isTv ? episode : void 0,
+          rawText: s.title || "",
+          sizeLabel: s.size || void 0,
+          quality: s.quality || void 0,
+          url: s.url
+        }),
         name: s.title || "UHDmovies",
         headers: s.headers || { Referer: baseUrl, "User-Agent": HEADERS["User-Agent"] },
         subtitles: [],

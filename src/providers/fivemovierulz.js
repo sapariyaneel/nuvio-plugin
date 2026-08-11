@@ -6,8 +6,10 @@
 // No registry key currently exists for this site (checked against our shared domains.json registry) -
 // still wired to the shared registry so it picks up a live domain automatically if one is added later,
 // falling back to the hardcoded domain in the meantime.
+const { formatStreamTitle } = require('../lib/streamFormat');
+
 const DOMAINS_URL = "https://raw.githubusercontent.com/sapariyaneel/nuvio-plugin/refs/heads/main/domains.json";
-const FALLBACK_BASE_URL = "https://www.5movierulz.vote";
+const FALLBACK_BASE_URL = "https://www.5movierulz.vacations";
 const TMDB_API_KEY = "1865f43a0549ca50d341dd9ab8b29f49";
 const HEADERS = {
   "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/120.0.0.0 Safari/537.36",
@@ -66,6 +68,8 @@ async function getStreams(tmdbId, mediaType, season, episode) {
     const mediaInfo = await (await fetch(tmdbUrl, { skipSizeCheck: true })).json();
     const title = mediaInfo.title || mediaInfo.name;
     if (!title) return [];
+    const releaseDate = mediaInfo.release_date || mediaInfo.first_air_date || "";
+    const year = releaseDate ? releaseDate.split("-")[0] : undefined;
 
     // 2. Search
     const searchUrl = `${baseUrl}/?s=${encodeURIComponent(title)}`;
@@ -102,10 +106,19 @@ async function getStreams(tmdbId, mediaType, season, episode) {
         // The quality (e.g. "1080p"/"720p") is embedded in the link's own label text
         // ("Watch Online 1080p HEVC"), not in the href - check the label first and only
         // fall back to the href if the label itself has no quality marker.
+        const detectedQuality = extractQuality(rawText) !== "Unknown" ? extractQuality(rawText) : extractQuality(href);
         streams.push({
           url: href,
-          quality: extractQuality(rawText) !== "Unknown" ? extractQuality(rawText) : extractQuality(href),
-          title: `5movierulz [${rawText}]`,
+          quality: detectedQuality,
+          title: formatStreamTitle({
+            title,
+            year,
+            season,
+            episode,
+            rawText,
+            url: href,
+            quality: detectedQuality
+          }),
           subtitles: []
         });
       }

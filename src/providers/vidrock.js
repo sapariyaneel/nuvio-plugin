@@ -30,6 +30,8 @@
 // 404 unless BOTH Referer and Origin are vidrock.net, and cdn1.1shows.app returns 403 without a
 // Referer - so HEADERS is attached to every returned stream.
 
+const { formatStreamTitle } = require('../lib/streamFormat');
+
 const TMDB_API_KEY = "1865f43a0549ca50d341dd9ab8b29f49";
 const DOMAINS_URL = "https://raw.githubusercontent.com/sapariyaneel/nuvio-plugin/refs/heads/main/domains.json";
 const FALLBACK_BASE_URL = "https://vidrock.net";
@@ -270,6 +272,25 @@ async function getTmdbRuntimeSeconds(tmdbId, mediaType, season, episode) {
   }
 }
 
+// Movie details (title/year) come free off the same TMDB response used for runtime, so this is
+// only a genuinely separate request for TV (series title isn't on the season/episode endpoint).
+async function getTmdbTitleInfo(tmdbId, mediaType) {
+  try {
+    const url = mediaType === "tv"
+      ? `https://api.themoviedb.org/3/tv/${tmdbId}?api_key=${TMDB_API_KEY}`
+      : `https://api.themoviedb.org/3/movie/${tmdbId}?api_key=${TMDB_API_KEY}`;
+    const resp = await fetch(url, { skipSizeCheck: true });
+    if (!resp.ok) return null;
+    const data = await resp.json();
+    const title = mediaType === "tv" ? data.name : data.title;
+    const dateStr = mediaType === "tv" ? data.first_air_date : data.release_date;
+    const year = dateStr ? dateStr.slice(0, 4) : null;
+    return title ? { title, year } : null;
+  } catch (e) {
+    return null;
+  }
+}
+
 // Some of these CDNs letterbox into the encoded frame (e.g. 1280x534 for a scope-ratio 720p
 // master), so height alone under-reports quality. Width is the reliable axis; height is only a
 // fallback for the rare variant that omits a resolution width.
@@ -322,7 +343,7 @@ function parseMasterTopVariant(text, baseUrl) {
 // Resolves one server entry into a stream, or null when its playlist is dead/unreadable. The
 // master URL is what gets returned so the player keeps its ABR ladder; only the metadata is taken
 // from the top variant.
-async function buildStream(serverName, entry, runtimeSeconds) {
+async function buildStream(serverName, entry, runtimeSeconds, mediaInfo) {
   try {
     const masterUrl = decryptStreamUrl(entry.url);
     if (!/^https?:\/\//i.test(masterUrl)) return null;
@@ -334,15 +355,25 @@ async function buildStream(serverName, entry, runtimeSeconds) {
 
     const quality = qualityLabelFromResolution(topVariant.width, topVariant.height);
     const language = entry.language || "Original";
+    const sizeLabel = (runtimeSeconds && topVariant.bandwidth)
+      ? formatBytes((topVariant.bandwidth * runtimeSeconds) / 8)
+      : "Unknown";
 
     return {
       url: masterUrl,
       quality,
-      title: `Vidrock ${serverName} ${quality} (${language})`,
+      title: formatStreamTitle({
+        title: mediaInfo && mediaInfo.title,
+        year: mediaInfo && mediaInfo.year,
+        season: mediaInfo && mediaInfo.season,
+        episode: mediaInfo && mediaInfo.episode,
+        rawText: `${serverName} ${language}`,
+        sizeLabel,
+        url: masterUrl,
+        quality
+      }),
       name: "Vidrock",
-      size: (runtimeSeconds && topVariant.bandwidth)
-        ? formatBytes((topVariant.bandwidth * runtimeSeconds) / 8)
-        : "Unknown",
+      size: sizeLabel,
       headers: HEADERS,
       subtitles: []
     };
@@ -380,9 +411,18 @@ async function getStreams(tmdbId, mediaType, season, episode) {
       .filter(e => e.entry && typeof e.entry === "object" && e.entry.url);
     if (!entries.length) return [];
 
-    const runtimeSeconds = await getTmdbRuntimeSeconds(numericTmdbId, mediaType, season, episode);
+    const [runtimeSeconds, titleInfo] = await Promise.all([
+      getTmdbRuntimeSeconds(numericTmdbId, mediaType, season, episode),
+      getTmdbTitleInfo(numericTmdbId, mediaType)
+    ]);
+    const mediaInfo = {
+      title: titleInfo && titleInfo.title,
+      year: titleInfo && titleInfo.year,
+      season: isTv ? (season || 1) : undefined,
+      episode: isTv ? (episode || 1) : undefined
+    };
 
-    const resolved = await Promise.all(entries.map(e => buildStream(e.name, e.entry, runtimeSeconds)));
+    const resolved = await Promise.all(entries.map(e => buildStream(e.name, e.entry, runtimeSeconds, mediaInfo)));
 
     const seenUrls = {};
     const streams = [];

@@ -2,6 +2,7 @@
 // React Native compatible version with full original functionality
 
 const cheerio = require('cheerio-without-node-native');
+const { formatStreamTitle } = require('../lib/streamFormat');
 
 // TMDB API Configuration
 const TMDB_API_KEY = '439c478a771f35c05022f9feabcca01c';
@@ -1416,20 +1417,6 @@ function getStreams(tmdbId, mediaType = 'movie', season = null, episode = null) 
                         return link && link.url;
                     })
                     .map(function (link) {
-                        let mediaTitle;
-                        if (link.fileName && link.fileName !== 'Unknown') {
-                            mediaTitle = link.fileName;
-                        } else if (mediaType === 'tv' && season && episode) {
-                            mediaTitle =
-                                `${mediaInfo.title} ` +
-                                `S${String(season).padStart(2, '0')}` +
-                                `E${String(episode).padStart(2, '0')}`;
-                        } else if (mediaInfo.year) {
-                            mediaTitle = `${mediaInfo.title} (${mediaInfo.year})`;
-                        } else {
-                            mediaTitle = mediaInfo.title;
-                        }
-
                         // Size & server
                         const formattedSize = formatBytes(link.size);
                         const serverName = extractServerName(link.source);
@@ -1443,6 +1430,17 @@ function getStreams(tmdbId, mediaType = 'movie', season = null, episode = null) 
                         else if (link.quality >= 480) qualityStr = '480p';
                         else if (link.quality >= 360) qualityStr = '360p';
                         else qualityStr = '240p';
+
+                        const mediaTitle = formatStreamTitle({
+                            title: mediaInfo.title,
+                            year: mediaInfo.year,
+                            season: (mediaType === 'tv' && season) ? season : undefined,
+                            episode: (mediaType === 'tv' && episode) ? episode : undefined,
+                            rawText: (link.fileName && link.fileName !== 'Unknown') ? link.fileName : '',
+                            sizeLabel: formattedSize,
+                            url: link.url,
+                            quality: qualityStr
+                        });
 
                         return {
                             name: `Moviesdrive ${serverName}`,

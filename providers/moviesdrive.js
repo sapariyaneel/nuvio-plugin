@@ -38,6 +38,7 @@ var __async = (__this, __arguments, generator) => {
   });
 };
 const cheerio = require("cheerio-without-node-native");
+const { formatStreamTitle } = require("../lib/streamFormat");
 const TMDB_API_KEY = "439c478a771f35c05022f9feabcca01c";
 const TMDB_BASE_URL = "https://api.themoviedb.org/3";
 let MAIN_URL = "https://new1.moviesdrive.christmas";
@@ -1094,16 +1095,6 @@ function getStreams(tmdbId, mediaType = "movie", season = null, episode = null) 
             console.log("[Moviesdrive] Processing link from source:", link2.source);
             return link2 && link2.url;
           }).map(function(link2) {
-            let mediaTitle;
-            if (link2.fileName && link2.fileName !== "Unknown") {
-              mediaTitle = link2.fileName;
-            } else if (mediaType === "tv" && season && episode) {
-              mediaTitle = `${mediaInfo.title} S${String(season).padStart(2, "0")}E${String(episode).padStart(2, "0")}`;
-            } else if (mediaInfo.year) {
-              mediaTitle = `${mediaInfo.title} (${mediaInfo.year})`;
-            } else {
-              mediaTitle = mediaInfo.title;
-            }
             const formattedSize = formatBytes(link2.size);
             const serverName = extractServerName(link2.source);
             let qualityStr = "Unknown";
@@ -1121,6 +1112,16 @@ function getStreams(tmdbId, mediaType = "movie", season = null, episode = null) 
               qualityStr = "360p";
             else
               qualityStr = "240p";
+            const mediaTitle = formatStreamTitle({
+              title: mediaInfo.title,
+              year: mediaInfo.year,
+              season: mediaType === "tv" && season ? season : void 0,
+              episode: mediaType === "tv" && episode ? episode : void 0,
+              rawText: link2.fileName && link2.fileName !== "Unknown" ? link2.fileName : "",
+              sizeLabel: formattedSize,
+              url: link2.url,
+              quality: qualityStr
+            });
             return {
               name: `Moviesdrive ${serverName}`,
               title: mediaTitle,
