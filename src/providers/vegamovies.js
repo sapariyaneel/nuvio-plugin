@@ -207,10 +207,25 @@ async function fastdlExtractor(url) {
     const u = new URL(url);
     const downloadParam = u.searchParams.get("download");
     if (!downloadParam) return [];
+
     const res = await fetchWithTimeout(url, { headers: HEADERS, redirect: "manual", skipSizeCheck: true });
+
+    // fastdl.zip serves the /embed page as a 200 with a JS-driven redirect
+    // (`var reurl = "https://fastdl.zip/dl.php?link=<direct url>"`) instead of a
+    // 3xx Location header, so the header is only a fallback for older responses.
     const loc = res.headers.get("location");
     if (loc) return [{ url: loc, quality: 0, title: "G-Direct" }];
-    return [];
+
+    const html = await res.text();
+    const m = html.match(/var\s+reurl\s*=\s*["']([^"']+)["']/);
+    if (!m) return [];
+
+    const reurl = m[1];
+    const idx = reurl.indexOf("link=");
+    const direct = idx === -1 ? reurl : reurl.slice(idx + 5);
+    if (!direct.startsWith("http")) return [];
+
+    return [{ url: direct, quality: 0, title: "G-Direct" }];
   } catch (e) {
     return [];
   }

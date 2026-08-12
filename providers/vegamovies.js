@@ -258,7 +258,16 @@ function fastdlExtractor(url) {
       const loc = res.headers.get("location");
       if (loc)
         return [{ url: loc, quality: 0, title: "G-Direct" }];
-      return [];
+      const html = yield res.text();
+      const m = html.match(/var\s+reurl\s*=\s*["']([^"']+)["']/);
+      if (!m)
+        return [];
+      const reurl = m[1];
+      const idx = reurl.indexOf("link=");
+      const direct = idx === -1 ? reurl : reurl.slice(idx + 5);
+      if (!direct.startsWith("http"))
+        return [];
+      return [{ url: direct, quality: 0, title: "G-Direct" }];
     } catch (e) {
       return [];
     }
