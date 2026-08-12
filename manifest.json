@@ -6,7 +6,7 @@
       "id": "MoviesDrive",
       "name": "MoviesDrive",
       "description": "MoviesDrive streaming with multiple quality options and versions",
-      "version": "1.1.1",
+      "version": "1.1.2",
       "author": "CENSORED",
       "supportedTypes": [
         "movie",
@@ -27,7 +27,7 @@
       "id": "Zinkmovies",
       "name": "Zinkmovies",
       "description": "Zinkmovies Hindi/Indian movie & series streaming via HubCloud mirror chain",
-      "version": "1.0.0",
+      "version": "1.0.1",
       "author": "CENSORED",
       "supportedTypes": [
         "movie",
@@ -49,7 +49,7 @@
       "id": "HDhub4u",
       "name": "HDhub4u",
       "description": "HDhub4u Hindi movie streaming via HubCloud mirror chain",
-      "version": "1.0.0",
+      "version": "1.0.1",
       "author": "CENSORED",
       "supportedTypes": [
         "movie",
@@ -71,7 +71,7 @@
       "id": "UHDmovies",
       "name": "UHDmovies",
       "description": "UHDmovies 4K Hindi/English movie streaming via Driveseed/Driveleech chain",
-      "version": "1.0.0",
+      "version": "1.0.1",
       "author": "CENSORED",
       "supportedTypes": [
         "movie",
@@ -93,7 +93,7 @@
       "id": "Desicinemas",
       "name": "Desicinemas",
       "description": "Desicinemas Hindi/Punjabi/Bollywood movie site",
-      "version": "1.0.0",
+      "version": "1.0.1",
       "author": "CENSORED",
       "supportedTypes": [
         "movie",
@@ -115,7 +115,7 @@
       "id": "DudeFilms",
       "name": "DudeFilms",
       "description": "DudeFilms Hindi/Bollywood/South Indian movie & series site",
-      "version": "1.0.0",
+      "version": "1.0.1",
       "author": "CENSORED",
       "supportedTypes": [
         "movie",
@@ -137,7 +137,7 @@
       "id": "Fivemovierulz",
       "name": "5movierulz",
       "description": "5movierulz South Indian/Bollywood movie site",
-      "version": "1.0.0",
+      "version": "1.0.1",
       "author": "CENSORED",
       "supportedTypes": [
         "movie"
@@ -158,7 +158,7 @@
       "id": "FourKHDHub",
       "name": "4KHDHub",
       "description": "4KHDHub high quality movie & series site via HubCloud extraction",
-      "version": "1.0.0",
+      "version": "1.0.1",
       "author": "CENSORED",
       "supportedTypes": [
         "movie",
@@ -180,7 +180,7 @@
       "id": "Hindmoviez",
       "name": "Hindmoviez",
       "description": "Hindmoviez Hindi movie & web series site",
-      "version": "1.0.0",
+      "version": "1.0.1",
       "author": "CENSORED",
       "supportedTypes": [
         "movie",
@@ -201,7 +201,7 @@
       "id": "MultiMovies",
       "name": "MultiMovies",
       "description": "MultiMovies Hindi/Bollywood/Anime provider",
-      "version": "1.0.0",
+      "version": "1.0.1",
       "author": "CENSORED",
       "supportedTypes": [
         "movie",
@@ -224,7 +224,7 @@
       "id": "Vegamovies",
       "name": "Vegamovies",
       "description": "Vegamovies Hindi/English movie & series site, Typesense search + WP REST API + V-Cloud/HubCloud mirror chain",
-      "version": "1.0.0",
+      "version": "1.0.1",
       "author": "CENSORED",
       "supportedTypes": [
         "movie",
@@ -246,7 +246,7 @@
       "id": "MoviesMod",
       "name": "MoviesMod",
       "description": "MoviesMod Hindi/English Bollywood & Hollywood movie & series site",
-      "version": "1.0.0",
+      "version": "1.0.1",
       "author": "CENSORED",
       "supportedTypes": [
         "movie",
@@ -268,7 +268,7 @@
       "id": "RogMovies",
       "name": "RogMovies",
       "description": "RogMovies Hindi/English movie & series site (Vegamovies-family backend)",
-      "version": "1.0.0",
+      "version": "1.0.1",
       "author": "CENSORED",
       "supportedTypes": [
         "movie",
@@ -287,30 +287,10 @@
       ]
     },
     {
-      "id": "Vidcodin",
-      "name": "Vidcodin",
-      "description": "Vidcodin TMDB-id-based movie & TV streaming with AES-GCM encrypted quality links",
-      "version": "1.0.0",
-      "author": "CENSORED",
-      "supportedTypes": [
-        "movie",
-        "tv"
-      ],
-      "filename": "providers/vidcodin.js",
-      "enabled": true,
-      "formats": [
-        "mp4"
-      ],
-      "logo": "https://i.imgur.com/9bGkGMi.png",
-      "contentLanguage": [
-        "en"
-      ]
-    },
-    {
       "id": "Cineby",
       "name": "Cineby",
       "description": "Cineby TMDB-id-based movie & TV streaming with quality, estimated size and subtitles",
-      "version": "1.0.0",
+      "version": "1.0.1",
       "author": "CENSORED",
       "supportedTypes": [
         "movie",
@@ -330,7 +310,7 @@
       "id": "Goated",
       "name": "Goated",
       "description": "Goated TMDB-id-based movie & TV streaming with adaptive quality, real size and subtitles",
-      "version": "1.0.0",
+      "version": "1.0.1",
       "author": "CENSORED",
       "supportedTypes": [
         "movie",
@@ -350,7 +330,7 @@
       "id": "Vidrock",
       "name": "Vidrock",
       "description": "Vidrock TMDB-id-based movie & TV streaming across multiple servers with real quality and size",
-      "version": "1.0.0",
+      "version": "1.0.1",
       "author": "CENSORED",
       "supportedTypes": [
         "movie",
@@ -371,7 +351,7 @@
       "id": "VixSrc",
       "name": "VixSrc",
       "description": "VixSrc TMDB-id-based movie & TV streaming with real quality, measured size and multi-language subtitles",
-      "version": "1.0.0",
+      "version": "1.0.1",
       "author": "CENSORED",
       "supportedTypes": [
         "movie",
@@ -415,7 +395,7 @@
       "id": "AllMovieLand",
       "name": "AllMovieLand",
       "description": "AllMovieLand multi-language movie & series streaming site",
-      "version": "1.0.0",
+      "version": "1.0.1",
       "author": "CENSORED",
       "supportedTypes": [
         "movie",
@@ -438,7 +418,7 @@
       "id": "BollyFlix",
       "name": "BollyFlix",
       "description": "BollyFlix Hindi/Bollywood/South Indian movie & series site",
-      "version": "1.0.0",
+      "version": "1.0.1",
       "author": "CENSORED",
       "supportedTypes": [
         "movie",
@@ -488,7 +468,7 @@
       "id": "Castle",
       "name": "Castle",
       "description": "Castle TMDB-id-based movie & TV streaming site",
-      "version": "1.0.0",
+      "version": "1.0.1",
       "author": "CENSORED",
       "supportedTypes": [
         "movie",
@@ -531,7 +511,7 @@
       "id": "CineMM",
       "name": "CineMM",
       "description": "CineMM movie & series streaming site",
-      "version": "1.0.0",
+      "version": "1.0.1",
       "author": "CENSORED",
       "supportedTypes": [
         "movie",
@@ -552,7 +532,7 @@
       "id": "DahmerMovies",
       "name": "Dahmermovies",
       "description": "DahmerMovies movie & series streaming site",
-      "version": "1.0.0",
+      "version": "1.0.1",
       "author": "CENSORED",
       "supportedTypes": [
         "movie",
@@ -574,7 +554,7 @@
       "id": "DahmermoviesTV",
       "name": "Dahmermovies-TV",
       "description": "DahmerMovies alternate 4K/Android-TV endpoint",
-      "version": "1.0.0",
+      "version": "1.0.1",
       "author": "CENSORED",
       "supportedTypes": [
         "movie",
@@ -596,7 +576,7 @@
       "id": "HDFilme",
       "name": "HDFilme",
       "description": "HDFilme German movie & series streaming site",
-      "version": "1.0.0",
+      "version": "1.0.1",
       "author": "CENSORED",
       "supportedTypes": [
         "movie",
@@ -637,7 +617,7 @@
       "id": "HindMovie",
       "name": "HindMovie",
       "description": "HindMovie Hindi movie & series site via HubCloud mirror chain",
-      "version": "1.0.0",
+      "version": "1.0.1",
       "author": "CENSORED",
       "supportedTypes": [
         "movie",
@@ -660,7 +640,7 @@
       "id": "Mapple",
       "name": "Mapple",
       "description": "Mapple movie & series streaming site",
-      "version": "1.0.0",
+      "version": "1.0.1",
       "author": "CENSORED",
       "supportedTypes": [
         "movie",
@@ -681,7 +661,7 @@
       "id": "MoonFlix",
       "name": "MoonFlix",
       "description": "MoonFlix Hindi/English movie & series streaming site",
-      "version": "1.0.0",
+      "version": "1.0.1",
       "author": "CENSORED",
       "supportedTypes": [
         "movie",
@@ -703,7 +683,7 @@
       "id": "MovieBlast",
       "name": "MovieBlast",
       "description": "MovieBlast multi-language movie & series streaming site",
-      "version": "1.0.0",
+      "version": "1.0.1",
       "author": "CENSORED",
       "supportedTypes": [
         "movie",
@@ -728,7 +708,7 @@
       "id": "MoviesHunt",
       "name": "MoviesHunt",
       "description": "MoviesHunt Hindi/English/Tamil/Telugu movie & series site",
-      "version": "1.0.0",
+      "version": "1.0.1",
       "author": "CENSORED",
       "supportedTypes": [
         "movie",
@@ -752,7 +732,7 @@
       "id": "Movix",
       "name": "Movix",
       "description": "Movix French/English movie & series streaming site",
-      "version": "1.0.0",
+      "version": "1.0.1",
       "author": "CENSORED",
       "supportedTypes": [
         "movie",
@@ -774,7 +754,7 @@
       "id": "MyflixerExtractor",
       "name": "Myflixer-extractor",
       "description": "Myflixer (watch32.sx / videostr.net) TMDB-based extractor",
-      "version": "1.0.0",
+      "version": "1.0.1",
       "author": "CENSORED",
       "supportedTypes": [
         "movie",
@@ -794,7 +774,7 @@
       "id": "NetMirror",
       "name": "NetMirror",
       "description": "NetMirror multi-language movie & series streaming site",
-      "version": "1.0.0",
+      "version": "1.0.1",
       "author": "CENSORED",
       "supportedTypes": [
         "movie",
@@ -819,7 +799,7 @@
       "id": "PlayIMDb",
       "name": "PlayIMDb",
       "description": "PlayIMDb TMDB-id-based movie & TV streaming site",
-      "version": "1.0.0",
+      "version": "1.0.1",
       "author": "CENSORED",
       "supportedTypes": [
         "movie",
@@ -842,7 +822,7 @@
       "id": "StreamFlix",
       "name": "StreamFlix",
       "description": "StreamFlix movie & series streaming site",
-      "version": "1.0.0",
+      "version": "1.0.1",
       "author": "CENSORED",
       "supportedTypes": [
         "movie",
@@ -889,7 +869,7 @@
       "id": "VidFast",
       "name": "VidFast",
       "description": "VidFast TMDB-id-based movie & TV streaming site",
-      "version": "1.0.0",
+      "version": "1.0.1",
       "author": "CENSORED",
       "supportedTypes": [
         "movie",
@@ -910,7 +890,7 @@
       "id": "VidLove",
       "name": "VidLove",
       "description": "VidLove TMDB-id-based movie & TV streaming site",
-      "version": "1.0.0",
+      "version": "1.0.1",
       "author": "CENSORED",
       "supportedTypes": [
         "movie",
@@ -932,7 +912,7 @@
       "id": "Vidlink",
       "name": "VidLink",
       "description": "VidLink TMDB-id-based movie & TV streaming site",
-      "version": "1.0.0",
+      "version": "1.0.1",
       "author": "CENSORED",
       "supportedTypes": [
         "movie",
@@ -953,7 +933,7 @@
       "id": "Vidnest",
       "name": "Vidnest",
       "description": "Vidnest movie & series streaming site",
-      "version": "1.0.0",
+      "version": "1.0.1",
       "author": "CENSORED",
       "supportedTypes": [
         "movie",
@@ -974,7 +954,7 @@
       "id": "Yflix",
       "name": "Yflix",
       "description": "Yflix movie & series streaming site",
-      "version": "1.0.0",
+      "version": "1.0.1",
       "author": "CENSORED",
       "supportedTypes": [
         "movie",
