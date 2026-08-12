@@ -12,13 +12,66 @@ const HEADERS = {
   "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36"
 };
 
+// DEBUG INSTRUMENTATION - temporary, for diagnosing the desktop-only failure.
+// Remove once the root cause is found.
+const DEBUG = true;
+let reqSeq = 0;
+
+function dbg(msg) {
+  if (DEBUG) console.log("[VEGA-DBG] " + msg);
+}
+
+// Errors thrown in the sandbox do not always stringify usefully via console.log,
+// so pull the fields out by hand.
+function describeError(e) {
+  if (!e) return "null/undefined";
+  const parts = [];
+  if (e.name) parts.push("name=" + e.name);
+  if (e.message) parts.push("message=" + e.message);
+  if (e.code) parts.push("code=" + e.code);
+  if (e.cause) {
+    const c = e.cause;
+    parts.push("cause=" + (c.code || c.message || String(c)));
+  }
+  if (!parts.length) parts.push("raw=" + String(e));
+  if (e.stack) parts.push("stack=" + String(e.stack).split("\n").slice(0, 3).join(" | "));
+  return parts.join(" ");
+}
+
 // The app runs providers in a QuickJS sandbox that provides fetch, cheerio,
 // URL, crypto and base64 but no timer functions - there is no setTimeout to
 // build a timeout race on, and the host fetch is synchronous, so any such race
 // rejects every request with "setTimeout is not defined". The host already
 // applies its own request timeout, so call fetch directly.
 function fetchWithTimeout(url, options = {}) {
-  return fetch(url, options);
+  if (!DEBUG) return fetch(url, options);
+  const id = ++reqSeq;
+  dbg("REQ #" + id + " -> " + url);
+  let res;
+  try {
+    res = fetch(url, options);
+  } catch (e) {
+    // A synchronous throw from the host bridge - this is what a Kotlin-side
+    // failure looks like if it never becomes a rejected promise.
+    dbg("REQ #" + id + " SYNC-THREW " + describeError(e));
+    throw e;
+  }
+  if (!res || typeof res.then !== "function") {
+    dbg("REQ #" + id + " returned non-promise: " + typeof res);
+    return res;
+  }
+  return res.then(
+    r => {
+      dbg("REQ #" + id + " <- status=" + (r && r.status) + " ok=" + (r && r.ok) +
+        " finalUrl=" + ((r && r.url) || "n/a") +
+        " ctype=" + ((r && r.headers && r.headers.get && r.headers.get("content-type")) || "n/a"));
+      return r;
+    },
+    e => {
+      dbg("REQ #" + id + " REJECTED " + describeError(e));
+      throw e;
+    }
+  );
 }
 
 // Several quality blocks link to the same nexdrive/vcloud page, so the same URL
@@ -49,7 +102,10 @@ async function getDomains() {
   try {
     const resp = await fetchWithTimeout(DOMAINS_URL, { skipSizeCheck: true });
     cachedDomains = await resp.json();
+    dbg("domains.json parsed, vegamovies=" + JSON.stringify(cachedDomains && cachedDomains.vegamovies) +
+      " rogmovies=" + JSON.stringify(cachedDomains && cachedDomains.rogmovies));
   } catch (e) {
+    dbg("domains.json FAILED, using fallback: " + describeError(e));
     cachedDomains = {};
   }
   return cachedDomains;
@@ -57,7 +113,9 @@ async function getDomains() {
 
 async function getBaseUrl() {
   const d = await getDomains();
-  return d.vegamovies || FALLBACK_BASE_URL;
+  const base = d.vegamovies || FALLBACK_BASE_URL;
+  dbg("baseUrl=" + base + (d.vegamovies ? " (from domains.json)" : " (FALLBACK)"));
+  return base;
 }
 
 function originOf(url) {
@@ -118,9 +176,26 @@ async function searchSite(query) {
   const baseUrl = await getBaseUrl();
   const url = `${baseUrl}/search.php?q=${encodeURIComponent(query)}&page=1`;
   const res = await fetchWithTimeout(url, { headers: HEADERS, skipSizeCheck: true });
-  if (!res.ok) return [];
-  const data = await res.json().catch(() => null);
-  if (!data || !Array.isArray(data.hits)) return [];
+  if (!res.ok) {
+    dbg("searchSite EXIT: status not ok (" + res.status + ")");
+    return [];
+  }
+  // Read as text first so a non-JSON body (block page, HTML challenge) is
+  // visible instead of collapsing into a silent null.
+  const raw = await res.text();
+  dbg("searchSite body len=" + (raw ? raw.length : 0) + " first160=" + JSON.stringify((raw || "").slice(0, 160)));
+  let data = null;
+  try {
+    data = JSON.parse(raw);
+  } catch (e) {
+    dbg("searchSite EXIT: body is not JSON: " + describeError(e));
+    return [];
+  }
+  if (!data || !Array.isArray(data.hits)) {
+    dbg("searchSite EXIT: no hits array. found=" + (data && data.found) + " keys=" + (data ? Object.keys(data).join(",") : "n/a"));
+    return [];
+  }
+  dbg("searchSite OK: found=" + data.found + " hits=" + data.hits.length);
   return data.hits.map(h => h.document).filter(Boolean);
 }
 
@@ -149,17 +224,27 @@ function hasDownloadMarkers(html) {
 }
 
 async function getPostContentHtml(permalink) {
-  if (!permalink) return null;
+  if (!permalink) {
+    dbg("getPostContentHtml EXIT: no permalink");
+    return null;
+  }
   const baseUrl = await getBaseUrl();
   const url = permalink.startsWith("http") ? permalink : `${baseUrl}${permalink.startsWith("/") ? "" : "/"}${permalink}`;
   try {
     const res = await fetchWithTimeout(url, { headers: HEADERS, skipSizeCheck: true });
-    if (!res.ok) return null;
+    if (!res.ok) {
+      dbg("getPostContentHtml EXIT: status " + res.status);
+      return null;
+    }
     const html = await res.text();
+    dbg("getPostContentHtml html len=" + (html ? html.length : 0));
     const $ = cheerio.load(html);
     const article = $("article").html() || $(".entry-content").html() || $(".post-content").html();
+    dbg("getPostContentHtml article len=" + (article ? article.length : 0) +
+      " hasMarkers=" + hasDownloadMarkers(article));
     return article && hasDownloadMarkers(article) ? article : null;
   } catch (e) {
+    dbg("getPostContentHtml THREW " + describeError(e));
     return null;
   }
 }
@@ -170,11 +255,24 @@ async function getPostContent(id, permalink) {
   try {
     const res = await fetchWithTimeout(url, { headers: HEADERS, skipSizeCheck: true });
     if (res.ok) {
-      const data = await res.json().catch(() => null);
+      const raw = await res.text();
+      let data = null;
+      try {
+        data = JSON.parse(raw);
+      } catch (e) {
+        dbg("getPostContent wp-json not JSON, first160=" + JSON.stringify((raw || "").slice(0, 160)));
+      }
       const html = data && data.content ? data.content.rendered : null;
+      dbg("getPostContent wp-json html len=" + (html ? html.length : 0) +
+        " hasMarkers=" + hasDownloadMarkers(html));
       if (html && hasDownloadMarkers(html)) return html;
+    } else {
+      dbg("getPostContent wp-json status " + res.status);
     }
-  } catch (e) {}
+  } catch (e) {
+    dbg("getPostContent wp-json THREW " + describeError(e));
+  }
+  dbg("getPostContent falling back to post page HTML");
   return getPostContentHtml(permalink);
 }
 
@@ -449,6 +547,11 @@ async function resolveImdbToTmdb(imdbId, mediaType) {
 
 async function getStreams(tmdbId, mediaType, season, episode) {
   pageCache = {};
+  reqSeq = 0;
+  dbg("=== getStreams START tmdbId=" + tmdbId + " mediaType=" + mediaType +
+    " season=" + season + " episode=" + episode +
+    " | fetch=" + typeof fetch + " cheerio=" + typeof cheerio +
+    " URL=" + typeof URL + " setTimeout=" + typeof setTimeout + " ===");
   try {
     if (typeof tmdbId === "string" && tmdbId.trim().toLowerCase().startsWith("tt")) {
       tmdbId = await resolveImdbToTmdb(tmdbId, mediaType);
@@ -461,27 +564,36 @@ async function getStreams(tmdbId, mediaType, season, episode) {
       getImdbId(tmdbId, mediaType),
       getTmdbTitle(tmdbId, mediaType)
     ]);
+    dbg("tmdb resolved: imdbId=" + imdbId + " title=" + JSON.stringify(title));
     if (!title) {
+      dbg("EXIT stage=tmdb-title (no title from TMDB)");
       return [];
     }
 
     const hits = await searchSite(title);
     if (!hits.length) {
+      dbg("EXIT stage=search (0 hits for " + JSON.stringify(title) + ")");
       return [];
     }
 
     const candidate = pickCandidate(hits, imdbId, isTv, season);
+    dbg("candidate=" + (candidate ? "id=" + candidate.id + " imdb=" + candidate.imdb_id + " permalink=" + candidate.permalink : "none"));
     if (!candidate || !candidate.id) {
+      dbg("EXIT stage=candidate (no usable candidate)");
       return [];
     }
 
     const content = await getPostContent(candidate.id, candidate.permalink);
     if (!content) {
+      dbg("EXIT stage=content (no post content with download markers)");
       return [];
     }
+    dbg("content len=" + content.length);
 
     let blocks = extractQualityBlocks(content);
+    dbg("quality blocks=" + blocks.length + " headings=" + JSON.stringify(blocks.map(b => b.heading)));
     if (!blocks.length) {
+      dbg("EXIT stage=blocks (no quality blocks parsed)");
       return [];
     }
 
@@ -532,14 +644,19 @@ async function getStreams(tmdbId, mediaType, season, episode) {
     // The same file is often reachable from more than one quality block, so drop
     // repeats rather than showing the user the same link several times.
     const seenUrls = {};
-    return perBlock
+    const out = perBlock
       .reduce((acc, list) => acc.concat(list), [])
       .filter(s => {
         if (!s || !s.url || seenUrls[s.url]) return false;
         seenUrls[s.url] = true;
         return true;
       });
+    dbg("=== getStreams DONE streams=" + out.length + " requests=" + reqSeq + " ===");
+    return out;
   } catch (e) {
+    // describeError() first: the sandbox's console.error can render an Error as
+    // "[object Object]" and lose the reason entirely.
+    dbg("=== getStreams THREW " + describeError(e) + " (after " + reqSeq + " requests) ===");
     console.error("[Vegamovies]", e);
     return [];
   }
