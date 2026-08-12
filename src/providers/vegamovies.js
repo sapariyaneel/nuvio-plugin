@@ -155,7 +155,7 @@ async function resolveNexdrive(nexdriveUrl) {
     $("a[href]").each((i, el) => {
       const href = $(el).attr("href") || "";
       const label = $(el).text().trim();
-      if (/vcloud\.zip|fastdl\.zip|hubcloud|hubdrive/i.test(href)) {
+      if (/vcloud\.(zip|fit)|fastdl\.zip|hubcloud|hubdrive/i.test(href)) {
         links.push({ href, label });
       }
     });
@@ -220,7 +220,7 @@ async function hubCloudExtractor(url, referer) {
     let currentUrl = url;
     if (currentUrl.includes("hubcloud.ink")) currentUrl = currentUrl.replace("hubcloud.ink", "hubcloud.dad");
 
-    if (/vcloud\.zip/i.test(currentUrl)) {
+    if (/vcloud\.(zip|fit)/i.test(currentUrl)) {
       currentUrl = await resolveVcloudToken(currentUrl);
     }
 
@@ -228,7 +228,7 @@ async function hubCloudExtractor(url, referer) {
     if (!baseUrl) return [];
 
     let href;
-    if (currentUrl.includes("hubcloud.php") || /vcloud\.zip/i.test(currentUrl)) {
+    if (currentUrl.includes("hubcloud.php") || /vcloud\.(zip|fit)/i.test(currentUrl)) {
       href = currentUrl;
     } else {
       const html = await (await fetch(currentUrl, { headers: HEADERS, skipSizeCheck: true })).text();
@@ -301,7 +301,7 @@ async function hubCloudExtractor(url, referer) {
 async function resolveMirrorLink(href, label) {
   try {
     if (/fastdl\.zip/i.test(href)) return fastdlExtractor(href);
-    if (/vcloud\.zip|hubcloud|hubdrive/i.test(href)) return hubCloudExtractor(href, "V-Cloud");
+    if (/vcloud\.(zip|fit)|hubcloud|hubdrive/i.test(href)) return hubCloudExtractor(href, "V-Cloud");
     return [];
   } catch (e) {
     return [];
