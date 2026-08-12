@@ -164,6 +164,9 @@ function extractQualityBlocks(html) {
   $("h3, h5").each((i, el) => {
     const heading = $(el).text().trim();
     if (!heading) return;
+    // The comment section and the info box sit under the same heading levels as
+    // the download blocks; their links are not mirrors.
+    if (/^\d+\s+comments?$/i.test(heading) || /(Movie|Series)\s+Info|SYNOPSIS|PLOT|Screenshots/i.test(heading)) return;
     const links = [];
     let next = $(el).next();
     let hops = 0;
@@ -184,19 +187,47 @@ function extractQualityBlocks(html) {
   return blocks;
 }
 
-async function resolveNexdrive(nexdriveUrl) {
+const MIRROR_HOST_RE = /vcloud\.(zip|fit)|fastdl\.zip|hubcloud|hubdrive/i;
+
+// Season pages list every episode on one nexdrive page under "-:Episodes: N:-"
+// headings (the number is written both padded and unpadded). Without honouring
+// them a single-episode request resolves every episode's mirrors, which returns
+// the wrong streams and multiplies the work by the episode count.
+function nexdriveEpisodeOf(text) {
+  const m = (text || "").match(/Episode[s]?\s*[:\-]?\s*(\d{1,3})/i);
+  return m ? parseInt(m[1], 10) : null;
+}
+
+async function resolveNexdrive(nexdriveUrl, episode) {
   try {
     const html = await (await fetchWithTimeout(nexdriveUrl, { headers: HEADERS, skipSizeCheck: true })).text();
     const $ = cheerio.load(html);
-    const links = [];
-    $("a[href]").each((i, el) => {
-      const href = $(el).attr("href") || "";
-      const label = $(el).text().trim();
-      if (/vcloud\.(zip|fit)|fastdl\.zip|hubcloud|hubdrive/i.test(href)) {
-        links.push({ href, label });
+
+    const wanted = episode ? parseInt(episode, 10) : null;
+    const all = [];
+    let current = null;
+
+    // Walk the rendered body in document order so each link inherits the most
+    // recent episode heading above it.
+    $("h1, h2, h3, h4, h5, h6, a[href]").each((i, el) => {
+      const node = $(el);
+      if (el.tagName && el.tagName.toLowerCase() === "a") {
+        const href = node.attr("href") || "";
+        if (MIRROR_HOST_RE.test(href)) {
+          all.push({ href, label: node.text().trim(), episode: current });
+        }
+        return;
       }
+      const ep = nexdriveEpisodeOf(node.text());
+      if (ep !== null) current = ep;
     });
-    return links;
+
+    if (!wanted) return all;
+
+    const matched = all.filter(l => l.episode === wanted);
+    // Movie-style pages carry no episode headings at all - fall back to every
+    // mirror rather than returning nothing.
+    return matched.length ? matched : all.filter(l => l.episode === null);
   } catch (e) {
     return [];
   }
@@ -379,6 +410,7 @@ async function getStreams(tmdbId, mediaType, season, episode) {
     }
 
     const isTv = mediaType === "tv";
+    const baseUrl = await getBaseUrl();
     const [imdbId, title] = await Promise.all([
       getImdbId(tmdbId, mediaType),
       getTmdbTitle(tmdbId, mediaType)
@@ -407,30 +439,32 @@ async function getStreams(tmdbId, mediaType, season, episode) {
       return [];
     }
 
-    const streams = [];
-    for (const block of blocks) {
+    // Each quality block is independent, so resolve them concurrently. Doing this
+    // serially walks the nexdrive -> mirror -> hoster chain one hop at a time and
+    // pushes the provider well past the 15s budget the app allows for a scrape,
+    // which makes it return nothing at all rather than a partial list.
+    const perBlock = await Promise.all(blocks.map(async block => {
       const quality = indexQuality(block.heading);
-      for (const link of block.links) {
-        const nexdriveLinks = await resolveNexdrive(link.href);
-        for (const mirror of nexdriveLinks) {
-          const resolved = await resolveMirrorLink(mirror.href, mirror.label);
-          for (const s of resolved) {
-            streams.push({
-              url: s.url,
-              quality: qualityLabel(s.quality || quality),
-              title: `Vegamovies ${block.heading}`.trim(),
-              name: s.title || "Vegamovies",
-              subtitles: [],
-              // s.size is already a formatted string from the extractor above - re-running it
-              // through formatBytes() treats it as a raw byte count and produces NaN.
-              size: s.size || ""
-            });
-          }
-        }
-      }
-    }
+      const mirrorLists = await Promise.all(block.links.map(link => resolveNexdrive(link.href, isTv ? episode : null)));
+      const mirrors = mirrorLists.reduce((acc, list) => acc.concat(list), []);
+      const resolvedLists = await Promise.all(mirrors.map(m => resolveMirrorLink(m.href, m.label)));
 
-    return streams;
+      return resolvedLists.reduce((acc, list) => acc.concat(list), []).map(s => ({
+        url: s.url,
+        quality: qualityLabel(s.quality || quality),
+        title: `Vegamovies ${block.heading}`.trim(),
+        name: s.title || "Vegamovies",
+        headers: { Referer: baseUrl, "User-Agent": HEADERS["User-Agent"] },
+        subtitles: [],
+        // s.size is already a formatted string from the extractor above - re-running it
+        // through formatBytes() treats it as a raw byte count and produces NaN.
+        size: s.size || ""
+      }));
+    }));
+
+    return perBlock
+      .reduce((acc, list) => acc.concat(list), [])
+      .filter(s => s && s.url);
   } catch (e) {
     console.error("[Vegamovies]", e);
     return [];

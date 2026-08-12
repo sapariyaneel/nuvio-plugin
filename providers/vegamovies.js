@@ -206,6 +206,8 @@ function extractQualityBlocks(html) {
     const heading = $(el).text().trim();
     if (!heading)
       return;
+    if (/^\d+\s+comments?$/i.test(heading) || /(Movie|Series)\s+Info|SYNOPSIS|PLOT|Screenshots/i.test(heading))
+      return;
     const links = [];
     let next = $(el).next();
     let hops = 0;
@@ -228,20 +230,36 @@ function extractQualityBlocks(html) {
   });
   return blocks;
 }
-function resolveNexdrive(nexdriveUrl) {
+const MIRROR_HOST_RE = /vcloud\.(zip|fit)|fastdl\.zip|hubcloud|hubdrive/i;
+function nexdriveEpisodeOf(text) {
+  const m = (text || "").match(/Episode[s]?\s*[:\-]?\s*(\d{1,3})/i);
+  return m ? parseInt(m[1], 10) : null;
+}
+function resolveNexdrive(nexdriveUrl, episode) {
   return __async(this, null, function* () {
     try {
       const html = yield (yield fetchWithTimeout(nexdriveUrl, { headers: HEADERS, skipSizeCheck: true })).text();
       const $ = cheerio.load(html);
-      const links = [];
-      $("a[href]").each((i, el) => {
-        const href = $(el).attr("href") || "";
-        const label = $(el).text().trim();
-        if (/vcloud\.(zip|fit)|fastdl\.zip|hubcloud|hubdrive/i.test(href)) {
-          links.push({ href, label });
+      const wanted = episode ? parseInt(episode, 10) : null;
+      const all = [];
+      let current = null;
+      $("h1, h2, h3, h4, h5, h6, a[href]").each((i, el) => {
+        const node = $(el);
+        if (el.tagName && el.tagName.toLowerCase() === "a") {
+          const href = node.attr("href") || "";
+          if (MIRROR_HOST_RE.test(href)) {
+            all.push({ href, label: node.text().trim(), episode: current });
+          }
+          return;
         }
+        const ep = nexdriveEpisodeOf(node.text());
+        if (ep !== null)
+          current = ep;
       });
-      return links;
+      if (!wanted)
+        return all;
+      const matched = all.filter((l) => l.episode === wanted);
+      return matched.length ? matched : all.filter((l) => l.episode === null);
     } catch (e) {
       return [];
     }
@@ -433,6 +451,7 @@ function getStreams(tmdbId, mediaType, season, episode) {
           return [];
       }
       const isTv = mediaType === "tv";
+      const baseUrl = yield getBaseUrl();
       const [imdbId, title] = yield Promise.all([
         getImdbId(tmdbId, mediaType),
         getTmdbTitle(tmdbId, mediaType)
@@ -456,29 +475,24 @@ function getStreams(tmdbId, mediaType, season, episode) {
       if (!blocks.length) {
         return [];
       }
-      const streams = [];
-      for (const block of blocks) {
+      const perBlock = yield Promise.all(blocks.map((block) => __async(this, null, function* () {
         const quality = indexQuality(block.heading);
-        for (const link of block.links) {
-          const nexdriveLinks = yield resolveNexdrive(link.href);
-          for (const mirror of nexdriveLinks) {
-            const resolved = yield resolveMirrorLink(mirror.href, mirror.label);
-            for (const s of resolved) {
-              streams.push({
-                url: s.url,
-                quality: qualityLabel(s.quality || quality),
-                title: `Vegamovies ${block.heading}`.trim(),
-                name: s.title || "Vegamovies",
-                subtitles: [],
-                // s.size is already a formatted string from the extractor above - re-running it
-                // through formatBytes() treats it as a raw byte count and produces NaN.
-                size: s.size || ""
-              });
-            }
-          }
-        }
-      }
-      return streams;
+        const mirrorLists = yield Promise.all(block.links.map((link) => resolveNexdrive(link.href, isTv ? episode : null)));
+        const mirrors = mirrorLists.reduce((acc, list) => acc.concat(list), []);
+        const resolvedLists = yield Promise.all(mirrors.map((m) => resolveMirrorLink(m.href, m.label)));
+        return resolvedLists.reduce((acc, list) => acc.concat(list), []).map((s) => ({
+          url: s.url,
+          quality: qualityLabel(s.quality || quality),
+          title: `Vegamovies ${block.heading}`.trim(),
+          name: s.title || "Vegamovies",
+          headers: { Referer: baseUrl, "User-Agent": HEADERS["User-Agent"] },
+          subtitles: [],
+          // s.size is already a formatted string from the extractor above - re-running it
+          // through formatBytes() treats it as a raw byte count and produces NaN.
+          size: s.size || ""
+        }));
+      })));
+      return perBlock.reduce((acc, list) => acc.concat(list), []).filter((s) => s && s.url);
     } catch (e) {
       console.error("[Vegamovies]", e);
       return [];
