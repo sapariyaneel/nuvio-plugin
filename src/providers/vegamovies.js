@@ -12,13 +12,13 @@ const HEADERS = {
   "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36"
 };
 
-const REQUEST_TIMEOUT_MS = 15000;
-
+// The app runs providers in a QuickJS sandbox that provides fetch, cheerio,
+// URL, crypto and base64 but no timer functions - there is no setTimeout to
+// build a timeout race on, and the host fetch is synchronous, so any such race
+// rejects every request with "setTimeout is not defined". The host already
+// applies its own request timeout, so call fetch directly.
 function fetchWithTimeout(url, options = {}) {
-  return Promise.race([
-    fetch(url, options),
-    new Promise((_, reject) => setTimeout(() => reject(new Error("timeout")), REQUEST_TIMEOUT_MS))
-  ]);
+  return fetch(url, options);
 }
 
 let cachedDomains = null;
@@ -157,32 +157,53 @@ async function getPostContent(id, permalink) {
   return getPostContentHtml(permalink);
 }
 
-function extractQualityBlocks(html) {
-  const $ = cheerio.load(html);
-  const blocks = [];
+// Pulls every anchor out of a raw HTML fragment, optionally keeping only the
+// hosts matching a pattern. Done on the raw markup because the app's cheerio
+// shim exposes no tagName and no is(), so sibling/tag walking is not portable.
+function anchorsIn(fragment, hostPattern) {
+  const links = [];
+  const anchorRe = /<a\b[^>]*href=["']([^"']+)["'][^>]*>([\s\S]*?)<\/a>/gi;
+  let m;
+  while ((m = anchorRe.exec(fragment)) !== null) {
+    const href = m[1];
+    if (hostPattern && !hostPattern.test(href)) continue;
+    links.push({ href, label: m[2].replace(/<[^>]*>/g, "").replace(/\s+/g, " ").trim() });
+  }
+  return links;
+}
 
-  $("h3, h5").each((i, el) => {
-    const heading = $(el).text().trim();
-    if (!heading) return;
-    // The comment section and the info box sit under the same heading levels as
-    // the download blocks; their links are not mirrors.
-    if (/^\d+\s+comments?$/i.test(heading) || /(Movie|Series)\s+Info|SYNOPSIS|PLOT|Screenshots/i.test(heading)) return;
-    const links = [];
-    let next = $(el).next();
-    let hops = 0;
-    while (next.length && hops < 3) {
-      if (next.is("h3") || next.is("h5")) break;
-      next.find("a[href]").each((j, a) => {
-        const href = $(a).attr("href");
-        const label = $(a).text().trim();
-        if (href) links.push({ href, label });
-      });
-      if (links.length) break;
-      next = next.next();
-      hops++;
-    }
+const NEXDRIVE_HOST_RE = /nexdrive|vcloud\.(zip|fit)|fastdl\.zip|hubcloud|hubdrive/i;
+
+function isDownloadHeading(heading) {
+  // The comment section and the info box sit under the same heading levels as
+  // the download blocks; their links are not mirrors.
+  if (/^\d+\s+comments?$/i.test(heading)) return false;
+  return !/(Movie|Series)\s+Info|SYNOPSIS|PLOT|Screenshots/i.test(heading);
+}
+
+// Slices the post body on its h3/h5 headings and keeps the links that follow
+// each one. Done on the raw HTML because the app's cheerio shim has no is() and
+// no tagName, so walking siblings to find the next heading is not portable.
+function extractQualityBlocks(html) {
+  const blocks = [];
+  const headingRe = /<h[35]\b[^>]*>([\s\S]*?)<\/h[35]>/gi;
+  const found = [];
+  let m;
+  while ((m = headingRe.exec(html)) !== null) {
+    found.push({
+      heading: m[1].replace(/<[^>]*>/g, "").replace(/&#?\w+;/g, " ").replace(/\s+/g, " ").trim(),
+      start: headingRe.lastIndex,
+      index: m.index
+    });
+  }
+
+  for (let i = 0; i < found.length; i++) {
+    const { heading, start } = found[i];
+    if (!heading || !isDownloadHeading(heading)) continue;
+    const end = i + 1 < found.length ? found[i + 1].index : html.length;
+    const links = anchorsIn(html.slice(start, end), NEXDRIVE_HOST_RE);
     if (links.length) blocks.push({ heading, links });
-  });
+  }
 
   return blocks;
 }
@@ -198,36 +219,39 @@ function nexdriveEpisodeOf(text) {
   return m ? parseInt(m[1], 10) : null;
 }
 
+function mirrorLinksIn(fragment) {
+  return anchorsIn(fragment, MIRROR_HOST_RE);
+}
+
 async function resolveNexdrive(nexdriveUrl, episode) {
   try {
     const html = await (await fetchWithTimeout(nexdriveUrl, { headers: HEADERS, skipSizeCheck: true })).text();
-    const $ = cheerio.load(html);
-
     const wanted = episode ? parseInt(episode, 10) : null;
-    const all = [];
-    let current = null;
+    if (!wanted) return mirrorLinksIn(html);
 
-    // Walk the rendered body in document order so each link inherits the most
-    // recent episode heading above it.
-    $("h1, h2, h3, h4, h5, h6, a[href]").each((i, el) => {
-      const node = $(el);
-      if (el.tagName && el.tagName.toLowerCase() === "a") {
-        const href = node.attr("href") || "";
-        if (MIRROR_HOST_RE.test(href)) {
-          all.push({ href, label: node.text().trim(), episode: current });
-        }
-        return;
-      }
-      const ep = nexdriveEpisodeOf(node.text());
-      if (ep !== null) current = ep;
-    });
+    // Split on every heading so each section carries the episode it belongs to.
+    const headingRe = /<h[1-6]\b[^>]*>([\s\S]*?)<\/h[1-6]>/gi;
+    const sections = [];
+    let last = null;
+    let cursor = 0;
+    let h;
+    while ((h = headingRe.exec(html)) !== null) {
+      if (last) sections.push({ episode: last.episode, html: html.slice(last.end, h.index) });
+      const ep = nexdriveEpisodeOf(h[1].replace(/<[^>]*>/g, ""));
+      last = { episode: ep, end: headingRe.lastIndex };
+      cursor = headingRe.lastIndex;
+    }
+    if (last) sections.push({ episode: last.episode, html: html.slice(last.end) });
 
-    if (!wanted) return all;
+    const matched = [];
+    for (const section of sections) {
+      if (section.episode === wanted) matched.push(...mirrorLinksIn(section.html));
+    }
+    if (matched.length) return matched;
 
-    const matched = all.filter(l => l.episode === wanted);
     // Movie-style pages carry no episode headings at all - fall back to every
     // mirror rather than returning nothing.
-    return matched.length ? matched : all.filter(l => l.episode === null);
+    return cursor === 0 ? mirrorLinksIn(html) : [];
   } catch (e) {
     return [];
   }

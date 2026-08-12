@@ -43,12 +43,8 @@ const TMDB_API_KEY = "1865f43a0549ca50d341dd9ab8b29f49";
 const HEADERS = {
   "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36"
 };
-const REQUEST_TIMEOUT_MS = 15e3;
 function fetchWithTimeout(url, options = {}) {
-  return Promise.race([
-    fetch(url, options),
-    new Promise((_, reject) => setTimeout(() => reject(new Error("timeout")), REQUEST_TIMEOUT_MS))
-  ]);
+  return fetch(url, options);
 }
 let cachedDomains = null;
 function getDomains() {
@@ -199,35 +195,45 @@ function getPostContent(id, permalink) {
     return getPostContentHtml(permalink);
   });
 }
+function anchorsIn(fragment, hostPattern) {
+  const links = [];
+  const anchorRe = /<a\b[^>]*href=["']([^"']+)["'][^>]*>([\s\S]*?)<\/a>/gi;
+  let m;
+  while ((m = anchorRe.exec(fragment)) !== null) {
+    const href = m[1];
+    if (hostPattern && !hostPattern.test(href))
+      continue;
+    links.push({ href, label: m[2].replace(/<[^>]*>/g, "").replace(/\s+/g, " ").trim() });
+  }
+  return links;
+}
+const NEXDRIVE_HOST_RE = /nexdrive|vcloud\.(zip|fit)|fastdl\.zip|hubcloud|hubdrive/i;
+function isDownloadHeading(heading) {
+  if (/^\d+\s+comments?$/i.test(heading))
+    return false;
+  return !/(Movie|Series)\s+Info|SYNOPSIS|PLOT|Screenshots/i.test(heading);
+}
 function extractQualityBlocks(html) {
-  const $ = cheerio.load(html);
   const blocks = [];
-  $("h3, h5").each((i, el) => {
-    const heading = $(el).text().trim();
-    if (!heading)
-      return;
-    if (/^\d+\s+comments?$/i.test(heading) || /(Movie|Series)\s+Info|SYNOPSIS|PLOT|Screenshots/i.test(heading))
-      return;
-    const links = [];
-    let next = $(el).next();
-    let hops = 0;
-    while (next.length && hops < 3) {
-      if (next.is("h3") || next.is("h5"))
-        break;
-      next.find("a[href]").each((j, a) => {
-        const href = $(a).attr("href");
-        const label = $(a).text().trim();
-        if (href)
-          links.push({ href, label });
-      });
-      if (links.length)
-        break;
-      next = next.next();
-      hops++;
-    }
+  const headingRe = /<h[35]\b[^>]*>([\s\S]*?)<\/h[35]>/gi;
+  const found = [];
+  let m;
+  while ((m = headingRe.exec(html)) !== null) {
+    found.push({
+      heading: m[1].replace(/<[^>]*>/g, "").replace(/&#?\w+;/g, " ").replace(/\s+/g, " ").trim(),
+      start: headingRe.lastIndex,
+      index: m.index
+    });
+  }
+  for (let i = 0; i < found.length; i++) {
+    const { heading, start } = found[i];
+    if (!heading || !isDownloadHeading(heading))
+      continue;
+    const end = i + 1 < found.length ? found[i + 1].index : html.length;
+    const links = anchorsIn(html.slice(start, end), NEXDRIVE_HOST_RE);
     if (links.length)
       blocks.push({ heading, links });
-  });
+  }
   return blocks;
 }
 const MIRROR_HOST_RE = /vcloud\.(zip|fit)|fastdl\.zip|hubcloud|hubdrive/i;
@@ -235,31 +241,38 @@ function nexdriveEpisodeOf(text) {
   const m = (text || "").match(/Episode[s]?\s*[:\-]?\s*(\d{1,3})/i);
   return m ? parseInt(m[1], 10) : null;
 }
+function mirrorLinksIn(fragment) {
+  return anchorsIn(fragment, MIRROR_HOST_RE);
+}
 function resolveNexdrive(nexdriveUrl, episode) {
   return __async(this, null, function* () {
     try {
       const html = yield (yield fetchWithTimeout(nexdriveUrl, { headers: HEADERS, skipSizeCheck: true })).text();
-      const $ = cheerio.load(html);
       const wanted = episode ? parseInt(episode, 10) : null;
-      const all = [];
-      let current = null;
-      $("h1, h2, h3, h4, h5, h6, a[href]").each((i, el) => {
-        const node = $(el);
-        if (el.tagName && el.tagName.toLowerCase() === "a") {
-          const href = node.attr("href") || "";
-          if (MIRROR_HOST_RE.test(href)) {
-            all.push({ href, label: node.text().trim(), episode: current });
-          }
-          return;
-        }
-        const ep = nexdriveEpisodeOf(node.text());
-        if (ep !== null)
-          current = ep;
-      });
       if (!wanted)
-        return all;
-      const matched = all.filter((l) => l.episode === wanted);
-      return matched.length ? matched : all.filter((l) => l.episode === null);
+        return mirrorLinksIn(html);
+      const headingRe = /<h[1-6]\b[^>]*>([\s\S]*?)<\/h[1-6]>/gi;
+      const sections = [];
+      let last = null;
+      let cursor = 0;
+      let h;
+      while ((h = headingRe.exec(html)) !== null) {
+        if (last)
+          sections.push({ episode: last.episode, html: html.slice(last.end, h.index) });
+        const ep = nexdriveEpisodeOf(h[1].replace(/<[^>]*>/g, ""));
+        last = { episode: ep, end: headingRe.lastIndex };
+        cursor = headingRe.lastIndex;
+      }
+      if (last)
+        sections.push({ episode: last.episode, html: html.slice(last.end) });
+      const matched = [];
+      for (const section of sections) {
+        if (section.episode === wanted)
+          matched.push(...mirrorLinksIn(section.html));
+      }
+      if (matched.length)
+        return matched;
+      return cursor === 0 ? mirrorLinksIn(html) : [];
     } catch (e) {
       return [];
     }
