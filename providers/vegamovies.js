@@ -38,7 +38,7 @@ var __async = (__this, __arguments, generator) => {
   });
 };
 const DOMAINS_URL = "https://raw.githubusercontent.com/sapariyaneel/nuvio-plugin/refs/heads/main/domains.json";
-const FALLBACK_BASE_URL = "https://vegamovies.catering";
+const FALLBACK_BASE_URL = "https://new1.vegamovies.futbol";
 const TMDB_API_KEY = "1865f43a0549ca50d341dd9ab8b29f49";
 const HEADERS = {
   "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36"
