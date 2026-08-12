@@ -43,13 +43,20 @@ const TMDB_API_KEY = "1865f43a0549ca50d341dd9ab8b29f49";
 const HEADERS = {
   "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36"
 };
+const REQUEST_TIMEOUT_MS = 15e3;
+function fetchWithTimeout(url, options = {}) {
+  return Promise.race([
+    fetch(url, options),
+    new Promise((_, reject) => setTimeout(() => reject(new Error("timeout")), REQUEST_TIMEOUT_MS))
+  ]);
+}
 let cachedDomains = null;
 function getDomains() {
   return __async(this, null, function* () {
     if (cachedDomains)
       return cachedDomains;
     try {
-      const resp = yield fetch(DOMAINS_URL, { skipSizeCheck: true });
+      const resp = yield fetchWithTimeout(DOMAINS_URL, { skipSizeCheck: true });
       cachedDomains = yield resp.json();
     } catch (e) {
       cachedDomains = {};
@@ -112,14 +119,14 @@ function cleanTitle(raw) {
 function getImdbId(tmdbId, mediaType) {
   return __async(this, null, function* () {
     const url = `https://api.themoviedb.org/3/${mediaType}/${tmdbId}/external_ids?api_key=${TMDB_API_KEY}`;
-    const data = yield (yield fetch(url, { skipSizeCheck: true })).json();
+    const data = yield (yield fetchWithTimeout(url, { skipSizeCheck: true })).json();
     return data && data.imdb_id ? data.imdb_id : null;
   });
 }
 function getTmdbTitle(tmdbId, mediaType) {
   return __async(this, null, function* () {
     const url = `https://api.themoviedb.org/3/${mediaType}/${tmdbId}?api_key=${TMDB_API_KEY}`;
-    const data = yield (yield fetch(url, { skipSizeCheck: true })).json();
+    const data = yield (yield fetchWithTimeout(url, { skipSizeCheck: true })).json();
     return data.title || data.name || null;
   });
 }
@@ -127,7 +134,7 @@ function searchSite(query) {
   return __async(this, null, function* () {
     const baseUrl = yield getBaseUrl();
     const url = `${baseUrl}/search.php?q=${encodeURIComponent(query)}&page=1`;
-    const res = yield fetch(url, { headers: HEADERS, skipSizeCheck: true });
+    const res = yield fetchWithTimeout(url, { headers: HEADERS, skipSizeCheck: true });
     if (!res.ok)
       return [];
     const data = yield res.json().catch(() => null);
@@ -153,15 +160,43 @@ function pickCandidate(hits, imdbId, isTv, season) {
   }
   return pool[0];
 }
-function getPostContent(id) {
+function hasDownloadMarkers(html) {
+  return /nexdrive|vcloud|hubcloud|fastdl|genxfm/i.test(html || "");
+}
+function getPostContentHtml(permalink) {
+  return __async(this, null, function* () {
+    if (!permalink)
+      return null;
+    const baseUrl = yield getBaseUrl();
+    const url = permalink.startsWith("http") ? permalink : `${baseUrl}${permalink.startsWith("/") ? "" : "/"}${permalink}`;
+    try {
+      const res = yield fetchWithTimeout(url, { headers: HEADERS, skipSizeCheck: true });
+      if (!res.ok)
+        return null;
+      const html = yield res.text();
+      const $ = cheerio.load(html);
+      const article = $("article").html() || $(".entry-content").html() || $(".post-content").html();
+      return article && hasDownloadMarkers(article) ? article : null;
+    } catch (e) {
+      return null;
+    }
+  });
+}
+function getPostContent(id, permalink) {
   return __async(this, null, function* () {
     const baseUrl = yield getBaseUrl();
     const url = `${baseUrl}/wp-json/wp/v2/posts/${id}`;
-    const res = yield fetch(url, { headers: HEADERS, skipSizeCheck: true });
-    if (!res.ok)
-      return null;
-    const data = yield res.json().catch(() => null);
-    return data && data.content ? data.content.rendered : null;
+    try {
+      const res = yield fetchWithTimeout(url, { headers: HEADERS, skipSizeCheck: true });
+      if (res.ok) {
+        const data = yield res.json().catch(() => null);
+        const html = data && data.content ? data.content.rendered : null;
+        if (html && hasDownloadMarkers(html))
+          return html;
+      }
+    } catch (e) {
+    }
+    return getPostContentHtml(permalink);
   });
 }
 function extractQualityBlocks(html) {
@@ -196,7 +231,7 @@ function extractQualityBlocks(html) {
 function resolveNexdrive(nexdriveUrl) {
   return __async(this, null, function* () {
     try {
-      const html = yield (yield fetch(nexdriveUrl, { headers: HEADERS, skipSizeCheck: true })).text();
+      const html = yield (yield fetchWithTimeout(nexdriveUrl, { headers: HEADERS, skipSizeCheck: true })).text();
       const $ = cheerio.load(html);
       const links = [];
       $("a[href]").each((i, el) => {
@@ -219,7 +254,7 @@ function fastdlExtractor(url) {
       const downloadParam = u.searchParams.get("download");
       if (!downloadParam)
         return [];
-      const res = yield fetch(url, { headers: HEADERS, redirect: "manual", skipSizeCheck: true });
+      const res = yield fetchWithTimeout(url, { headers: HEADERS, redirect: "manual", skipSizeCheck: true });
       const loc = res.headers.get("location");
       if (loc)
         return [{ url: loc, quality: 0, title: "G-Direct" }];
@@ -253,7 +288,7 @@ function base64Decode(value) {
 function resolveVcloudToken(vcloudUrl) {
   return __async(this, null, function* () {
     try {
-      const html = yield (yield fetch(vcloudUrl, { headers: HEADERS, skipSizeCheck: true })).text();
+      const html = yield (yield fetchWithTimeout(vcloudUrl, { headers: HEADERS, skipSizeCheck: true })).text();
       const m = html.match(/atob\(atob\('([A-Za-z0-9+/=]+)'\)\)/);
       if (!m)
         return vcloudUrl;
@@ -282,7 +317,7 @@ function hubCloudExtractor(url, referer) {
       if (currentUrl.includes("hubcloud.php") || /vcloud\.(zip|fit)/i.test(currentUrl)) {
         href = currentUrl;
       } else {
-        const html = yield (yield fetch(currentUrl, { headers: HEADERS, skipSizeCheck: true })).text();
+        const html = yield (yield fetchWithTimeout(currentUrl, { headers: HEADERS, skipSizeCheck: true })).text();
         const $first = cheerio.load(html);
         const raw = $first("#download").attr("href") || "";
         if (!raw)
@@ -291,7 +326,7 @@ function hubCloudExtractor(url, referer) {
       }
       if (!href.trim())
         return [];
-      const pageHtml = yield (yield fetch(href, { headers: HEADERS, skipSizeCheck: true })).text();
+      const pageHtml = yield (yield fetchWithTimeout(href, { headers: HEADERS, skipSizeCheck: true })).text();
       const $ = cheerio.load(pageHtml);
       const size = $("i#size").first().text() || "";
       const header = $("div.card-header").first().text() || "";
@@ -315,7 +350,7 @@ function hubCloudExtractor(url, referer) {
           if (label.includes("fsl server") || label.includes("download file") || label.includes("s3 server") || label.includes("fslv2") || label.includes("mega server")) {
             streams.push({ url: link, quality, title: `${ref} ${labelExtras}`.trim(), size: formatBytes(sizeInBytes) });
           } else if (label.includes("buzzserver")) {
-            const resp = yield fetch(`${link}/download`, {
+            const resp = yield fetchWithTimeout(`${link}/download`, {
               headers: __spreadProps(__spreadValues({}, HEADERS), { Referer: link }),
               redirect: "manual",
               skipSizeCheck: true
@@ -331,7 +366,7 @@ function hubCloudExtractor(url, referer) {
             let redirectUrl = link;
             let finalLink = null;
             for (let i = 0; i < 5; i++) {
-              const r = yield fetch(redirectUrl, { redirect: "manual", skipSizeCheck: true });
+              const r = yield fetchWithTimeout(redirectUrl, { redirect: "manual", skipSizeCheck: true });
               if (r.status >= 300 && r.status < 400) {
                 const loc = r.headers.get("location");
                 if (loc && loc.includes("link=")) {
@@ -372,7 +407,7 @@ function resolveImdbToTmdb(imdbId, mediaType) {
   return __async(this, null, function* () {
     try {
       const url = `https://api.themoviedb.org/3/find/${imdbId}?api_key=${TMDB_API_KEY}&external_source=imdb_id`;
-      const data = yield (yield fetch(url, { skipSizeCheck: true })).json();
+      const data = yield (yield fetchWithTimeout(url, { skipSizeCheck: true })).json();
       const results = mediaType === "tv" ? data.tv_results : data.movie_results;
       return results && results.length ? results[0].id : null;
     } catch (e) {
@@ -404,7 +439,7 @@ function getStreams(tmdbId, mediaType, season, episode) {
       if (!candidate || !candidate.id) {
         return [];
       }
-      const content = yield getPostContent(candidate.id);
+      const content = yield getPostContent(candidate.id, candidate.permalink);
       if (!content) {
         return [];
       }

@@ -12,12 +12,21 @@ const HEADERS = {
   "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36"
 };
 
+const REQUEST_TIMEOUT_MS = 15000;
+
+function fetchWithTimeout(url, options = {}) {
+  return Promise.race([
+    fetch(url, options),
+    new Promise((_, reject) => setTimeout(() => reject(new Error("timeout")), REQUEST_TIMEOUT_MS))
+  ]);
+}
+
 let cachedDomains = null;
 
 async function getDomains() {
   if (cachedDomains) return cachedDomains;
   try {
-    const resp = await fetch(DOMAINS_URL, { skipSizeCheck: true });
+    const resp = await fetchWithTimeout(DOMAINS_URL, { skipSizeCheck: true });
     cachedDomains = await resp.json();
   } catch (e) {
     cachedDomains = {};
@@ -74,20 +83,20 @@ function cleanTitle(raw) {
 
 async function getImdbId(tmdbId, mediaType) {
   const url = `https://api.themoviedb.org/3/${mediaType}/${tmdbId}/external_ids?api_key=${TMDB_API_KEY}`;
-  const data = await (await fetch(url, { skipSizeCheck: true })).json();
+  const data = await (await fetchWithTimeout(url, { skipSizeCheck: true })).json();
   return data && data.imdb_id ? data.imdb_id : null;
 }
 
 async function getTmdbTitle(tmdbId, mediaType) {
   const url = `https://api.themoviedb.org/3/${mediaType}/${tmdbId}?api_key=${TMDB_API_KEY}`;
-  const data = await (await fetch(url, { skipSizeCheck: true })).json();
+  const data = await (await fetchWithTimeout(url, { skipSizeCheck: true })).json();
   return data.title || data.name || null;
 }
 
 async function searchSite(query) {
   const baseUrl = await getBaseUrl();
   const url = `${baseUrl}/search.php?q=${encodeURIComponent(query)}&page=1`;
-  const res = await fetch(url, { headers: HEADERS, skipSizeCheck: true });
+  const res = await fetchWithTimeout(url, { headers: HEADERS, skipSizeCheck: true });
   if (!res.ok) return [];
   const data = await res.json().catch(() => null);
   if (!data || !Array.isArray(data.hits)) return [];
@@ -111,13 +120,41 @@ function pickCandidate(hits, imdbId, isTv, season) {
   return pool[0];
 }
 
-async function getPostContent(id) {
+// wp-json sometimes serves a stale cached copy of the post missing the actual
+// download buttons (confirmed against community reference implementations of
+// this same WP theme) - detect that and fall back to the live post page HTML.
+function hasDownloadMarkers(html) {
+  return /nexdrive|vcloud|hubcloud|fastdl|genxfm/i.test(html || "");
+}
+
+async function getPostContentHtml(permalink) {
+  if (!permalink) return null;
+  const baseUrl = await getBaseUrl();
+  const url = permalink.startsWith("http") ? permalink : `${baseUrl}${permalink.startsWith("/") ? "" : "/"}${permalink}`;
+  try {
+    const res = await fetchWithTimeout(url, { headers: HEADERS, skipSizeCheck: true });
+    if (!res.ok) return null;
+    const html = await res.text();
+    const $ = cheerio.load(html);
+    const article = $("article").html() || $(".entry-content").html() || $(".post-content").html();
+    return article && hasDownloadMarkers(article) ? article : null;
+  } catch (e) {
+    return null;
+  }
+}
+
+async function getPostContent(id, permalink) {
   const baseUrl = await getBaseUrl();
   const url = `${baseUrl}/wp-json/wp/v2/posts/${id}`;
-  const res = await fetch(url, { headers: HEADERS, skipSizeCheck: true });
-  if (!res.ok) return null;
-  const data = await res.json().catch(() => null);
-  return data && data.content ? data.content.rendered : null;
+  try {
+    const res = await fetchWithTimeout(url, { headers: HEADERS, skipSizeCheck: true });
+    if (res.ok) {
+      const data = await res.json().catch(() => null);
+      const html = data && data.content ? data.content.rendered : null;
+      if (html && hasDownloadMarkers(html)) return html;
+    }
+  } catch (e) {}
+  return getPostContentHtml(permalink);
 }
 
 function extractQualityBlocks(html) {
@@ -149,7 +186,7 @@ function extractQualityBlocks(html) {
 
 async function resolveNexdrive(nexdriveUrl) {
   try {
-    const html = await (await fetch(nexdriveUrl, { headers: HEADERS, skipSizeCheck: true })).text();
+    const html = await (await fetchWithTimeout(nexdriveUrl, { headers: HEADERS, skipSizeCheck: true })).text();
     const $ = cheerio.load(html);
     const links = [];
     $("a[href]").each((i, el) => {
@@ -170,7 +207,7 @@ async function fastdlExtractor(url) {
     const u = new URL(url);
     const downloadParam = u.searchParams.get("download");
     if (!downloadParam) return [];
-    const res = await fetch(url, { headers: HEADERS, redirect: "manual", skipSizeCheck: true });
+    const res = await fetchWithTimeout(url, { headers: HEADERS, redirect: "manual", skipSizeCheck: true });
     const loc = res.headers.get("location");
     if (loc) return [{ url: loc, quality: 0, title: "G-Direct" }];
     return [];
@@ -203,7 +240,7 @@ function base64Decode(value) {
 // rather than a real API call (confirmed directly in the site's own JS comments).
 async function resolveVcloudToken(vcloudUrl) {
   try {
-    const html = await (await fetch(vcloudUrl, { headers: HEADERS, skipSizeCheck: true })).text();
+    const html = await (await fetchWithTimeout(vcloudUrl, { headers: HEADERS, skipSizeCheck: true })).text();
     const m = html.match(/atob\(atob\('([A-Za-z0-9+/=]+)'\)\)/);
     if (!m) return vcloudUrl;
     const once = base64Decode(m[1]);
@@ -231,7 +268,7 @@ async function hubCloudExtractor(url, referer) {
     if (currentUrl.includes("hubcloud.php") || /vcloud\.(zip|fit)/i.test(currentUrl)) {
       href = currentUrl;
     } else {
-      const html = await (await fetch(currentUrl, { headers: HEADERS, skipSizeCheck: true })).text();
+      const html = await (await fetchWithTimeout(currentUrl, { headers: HEADERS, skipSizeCheck: true })).text();
       const $first = cheerio.load(html);
       const raw = $first("#download").attr("href") || "";
       if (!raw) return [];
@@ -241,7 +278,7 @@ async function hubCloudExtractor(url, referer) {
     }
     if (!href.trim()) return [];
 
-    const pageHtml = await (await fetch(href, { headers: HEADERS, skipSizeCheck: true })).text();
+    const pageHtml = await (await fetchWithTimeout(href, { headers: HEADERS, skipSizeCheck: true })).text();
     const $ = cheerio.load(pageHtml);
 
     const size = $("i#size").first().text() || "";
@@ -266,7 +303,7 @@ async function hubCloudExtractor(url, referer) {
         if (label.includes("fsl server") || label.includes("download file") || label.includes("s3 server") || label.includes("fslv2") || label.includes("mega server")) {
           streams.push({ url: link, quality, title: `${ref} ${labelExtras}`.trim(), size: formatBytes(sizeInBytes )});
         } else if (label.includes("buzzserver")) {
-          const resp = await fetch(`${link}/download`, {
+          const resp = await fetchWithTimeout(`${link}/download`, {
             headers: { ...HEADERS, Referer: link },
             redirect: "manual",
             skipSizeCheck: true
@@ -281,7 +318,7 @@ async function hubCloudExtractor(url, referer) {
           let redirectUrl = link;
           let finalLink = null;
           for (let i = 0; i < 5; i++) {
-            const r = await fetch(redirectUrl, { redirect: "manual", skipSizeCheck: true });
+            const r = await fetchWithTimeout(redirectUrl, { redirect: "manual", skipSizeCheck: true });
             if (r.status >= 300 && r.status < 400) {
               const loc = r.headers.get("location");
               if (loc && loc.includes("link=")) { finalLink = loc.split("link=")[1]; break; }
@@ -311,7 +348,7 @@ async function resolveMirrorLink(href, label) {
 async function resolveImdbToTmdb(imdbId, mediaType) {
   try {
     const url = `https://api.themoviedb.org/3/find/${imdbId}?api_key=${TMDB_API_KEY}&external_source=imdb_id`;
-    const data = await (await fetch(url, { skipSizeCheck: true })).json();
+    const data = await (await fetchWithTimeout(url, { skipSizeCheck: true })).json();
     const results = mediaType === "tv" ? data.tv_results : data.movie_results;
     return results && results.length ? results[0].id : null;
   } catch (e) {
@@ -345,7 +382,7 @@ async function getStreams(tmdbId, mediaType, season, episode) {
       return [];
     }
 
-    const content = await getPostContent(candidate.id);
+    const content = await getPostContent(candidate.id, candidate.permalink);
     if (!content) {
       return [];
     }
