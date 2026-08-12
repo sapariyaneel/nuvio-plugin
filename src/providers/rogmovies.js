@@ -13,12 +13,42 @@ const HEADERS = {
   "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36"
 };
 
+// The app runs providers in a QuickJS sandbox that provides fetch, cheerio,
+// URL, crypto and base64 but no timer functions - there is no setTimeout to
+// build a timeout race on, and the host fetch is synchronous, so any such race
+// rejects every request with "setTimeout is not defined". The host already
+// applies its own request timeout, so call fetch directly.
+function fetchWithTimeout(url, options = {}) {
+  return fetch(url, options);
+}
+
+// Several quality blocks link to the same nexdrive/vcloud page, so the same URL
+// gets walked repeatedly - on a season page that was 49 of 87 requests. The
+// desktop host runs fetch through runBlocking, so Promise.all buys no
+// parallelism there and every duplicate is paid for serially against the 60s
+// plugin timeout. Cache GET bodies for the lifetime of one getStreams() call.
+let pageCache = null;
+
+function fetchTextCached(url, options = {}) {
+  if (!pageCache) return fetchWithTimeout(url, options).then(r => r.text());
+  const hit = pageCache[url];
+  if (hit) return hit;
+  const pending = fetchWithTimeout(url, options)
+    .then(r => r.text())
+    .catch(e => {
+      delete pageCache[url];
+      throw e;
+    });
+  pageCache[url] = pending;
+  return pending;
+}
+
 let cachedDomains = null;
 
 async function getDomains() {
   if (cachedDomains) return cachedDomains;
   try {
-    const resp = await fetch(DOMAINS_URL, { skipSizeCheck: true });
+    const resp = await fetchWithTimeout(DOMAINS_URL, { skipSizeCheck: true });
     cachedDomains = await resp.json();
   } catch (e) {
     cachedDomains = {};
@@ -75,20 +105,20 @@ function cleanTitle(raw) {
 
 async function getImdbId(tmdbId, mediaType) {
   const url = `https://api.themoviedb.org/3/${mediaType}/${tmdbId}/external_ids?api_key=${TMDB_API_KEY}`;
-  const data = await (await fetch(url, { skipSizeCheck: true })).json();
+  const data = await (await fetchWithTimeout(url, { skipSizeCheck: true })).json();
   return data && data.imdb_id ? data.imdb_id : null;
 }
 
 async function getTmdbTitle(tmdbId, mediaType) {
   const url = `https://api.themoviedb.org/3/${mediaType}/${tmdbId}?api_key=${TMDB_API_KEY}`;
-  const data = await (await fetch(url, { skipSizeCheck: true })).json();
+  const data = await (await fetchWithTimeout(url, { skipSizeCheck: true })).json();
   return data.title || data.name || null;
 }
 
 async function searchSite(query) {
   const baseUrl = await getBaseUrl();
   const url = `${baseUrl}/search.php?q=${encodeURIComponent(query)}&page=1`;
-  const res = await fetch(url, { headers: HEADERS, skipSizeCheck: true });
+  const res = await fetchWithTimeout(url, { headers: HEADERS, skipSizeCheck: true });
   if (!res.ok) return [];
   const data = await res.json().catch(() => null);
   if (!data || !Array.isArray(data.hits)) return [];
@@ -112,55 +142,138 @@ function pickCandidate(hits, imdbId, isTv, season) {
   return pool[0];
 }
 
-async function getPostContent(id) {
-  const baseUrl = await getBaseUrl();
-  const url = `${baseUrl}/wp-json/wp/v2/posts/${id}`;
-  const res = await fetch(url, { headers: HEADERS, skipSizeCheck: true });
-  if (!res.ok) return null;
-  const data = await res.json().catch(() => null);
-  return data && data.content ? data.content.rendered : null;
+// wp-json sometimes serves a stale cached copy of the post missing the actual
+// download buttons (confirmed against community reference implementations of
+// this same WP theme) - detect that and fall back to the live post page HTML.
+function hasDownloadMarkers(html) {
+  return /nexdrive|vcloud|hubcloud|fastdl|genxfm/i.test(html || "");
 }
 
-function extractQualityBlocks(html) {
-  const $ = cheerio.load(html);
-  const blocks = [];
+async function getPostContentHtml(permalink) {
+  if (!permalink) return null;
+  const baseUrl = await getBaseUrl();
+  const url = permalink.startsWith("http") ? permalink : `${baseUrl}${permalink.startsWith("/") ? "" : "/"}${permalink}`;
+  try {
+    const res = await fetchWithTimeout(url, { headers: HEADERS, skipSizeCheck: true });
+    if (!res.ok) return null;
+    const html = await res.text();
+    const $ = cheerio.load(html);
+    const article = $("article").html() || $(".entry-content").html() || $(".post-content").html();
+    return article && hasDownloadMarkers(article) ? article : null;
+  } catch (e) {
+    return null;
+  }
+}
 
-  $("h3, h5").each((i, el) => {
-    const heading = $(el).text().trim();
-    if (!heading) return;
-    const links = [];
-    let next = $(el).next();
-    let hops = 0;
-    while (next.length && hops < 3) {
-      if (next.is("h3") || next.is("h5")) break;
-      next.find("a[href]").each((j, a) => {
-        const href = $(a).attr("href");
-        const label = $(a).text().trim();
-        if (href) links.push({ href, label });
-      });
-      if (links.length) break;
-      next = next.next();
-      hops++;
+async function getPostContent(id, permalink) {
+  const baseUrl = await getBaseUrl();
+  const url = `${baseUrl}/wp-json/wp/v2/posts/${id}`;
+  try {
+    const res = await fetchWithTimeout(url, { headers: HEADERS, skipSizeCheck: true });
+    if (res.ok) {
+      const data = await res.json().catch(() => null);
+      const html = data && data.content ? data.content.rendered : null;
+      if (html && hasDownloadMarkers(html)) return html;
     }
+  } catch (e) {}
+  return getPostContentHtml(permalink);
+}
+
+// Pulls every anchor out of a raw HTML fragment, optionally keeping only the
+// hosts matching a pattern. Done on the raw markup because the app's cheerio
+// shim exposes no tagName and no is(), so sibling/tag walking is not portable.
+function anchorsIn(fragment, hostPattern) {
+  const links = [];
+  const anchorRe = /<a\b[^>]*href=["']([^"']+)["'][^>]*>([\s\S]*?)<\/a>/gi;
+  let m;
+  while ((m = anchorRe.exec(fragment)) !== null) {
+    const href = m[1];
+    if (hostPattern && !hostPattern.test(href)) continue;
+    links.push({ href, label: m[2].replace(/<[^>]*>/g, "").replace(/\s+/g, " ").trim() });
+  }
+  return links;
+}
+
+const NEXDRIVE_HOST_RE = /nexdrive|vcloud\.(zip|fit)|fastdl\.zip|hubcloud|hubdrive/i;
+
+function isDownloadHeading(heading) {
+  // The comment section and the info box sit under the same heading levels as
+  // the download blocks; their links are not mirrors.
+  if (/^\d+\s+comments?$/i.test(heading)) return false;
+  return !/(Movie|Series)\s+Info|SYNOPSIS|PLOT|Screenshots/i.test(heading);
+}
+
+// Slices the post body on its h3/h5 headings and keeps the links that follow
+// each one. Done on the raw HTML because the app's cheerio shim has no is() and
+// no tagName, so walking siblings to find the next heading is not portable.
+function extractQualityBlocks(html) {
+  const blocks = [];
+  const headingRe = /<h[35]\b[^>]*>([\s\S]*?)<\/h[35]>/gi;
+  const found = [];
+  let m;
+  while ((m = headingRe.exec(html)) !== null) {
+    found.push({
+      heading: m[1].replace(/<[^>]*>/g, "").replace(/&#?\w+;/g, " ").replace(/\s+/g, " ").trim(),
+      start: headingRe.lastIndex,
+      index: m.index
+    });
+  }
+
+  for (let i = 0; i < found.length; i++) {
+    const { heading, start } = found[i];
+    if (!heading || !isDownloadHeading(heading)) continue;
+    const end = i + 1 < found.length ? found[i + 1].index : html.length;
+    const links = anchorsIn(html.slice(start, end), NEXDRIVE_HOST_RE);
     if (links.length) blocks.push({ heading, links });
-  });
+  }
 
   return blocks;
 }
 
-async function resolveNexdrive(nexdriveUrl) {
+const MIRROR_HOST_RE = /vcloud\.(zip|fit)|fastdl\.zip|hubcloud|hubdrive/i;
+
+// Season pages list every episode on one nexdrive page under "-:Episodes: N:-"
+// headings (the number is written both padded and unpadded). Without honouring
+// them a single-episode request resolves every episode's mirrors, which returns
+// the wrong streams and multiplies the work by the episode count.
+function nexdriveEpisodeOf(text) {
+  const m = (text || "").match(/Episode[s]?\s*[:\-]?\s*(\d{1,3})/i);
+  return m ? parseInt(m[1], 10) : null;
+}
+
+function mirrorLinksIn(fragment) {
+  return anchorsIn(fragment, MIRROR_HOST_RE);
+}
+
+async function resolveNexdrive(nexdriveUrl, episode) {
   try {
-    const html = await (await fetch(nexdriveUrl, { headers: HEADERS, skipSizeCheck: true })).text();
-    const $ = cheerio.load(html);
-    const links = [];
-    $("a[href]").each((i, el) => {
-      const href = $(el).attr("href") || "";
-      const label = $(el).text().trim();
-      if (/vcloud\.zip|fastdl\.zip|hubcloud|hubdrive/i.test(href)) {
-        links.push({ href, label });
-      }
-    });
-    return links;
+    const html = await fetchTextCached(nexdriveUrl, { headers: HEADERS, skipSizeCheck: true });
+    const wanted = episode ? parseInt(episode, 10) : null;
+    if (!wanted) return mirrorLinksIn(html);
+
+    // Split on every heading so each section carries the episode it belongs to.
+    const headingRe = /<h[1-6]\b[^>]*>([\s\S]*?)<\/h[1-6]>/gi;
+    const sections = [];
+    let last = null;
+    let cursor = 0;
+    let h;
+    while ((h = headingRe.exec(html)) !== null) {
+      if (last) sections.push({ episode: last.episode, html: html.slice(last.end, h.index) });
+      const ep = nexdriveEpisodeOf(h[1].replace(/<[^>]*>/g, ""));
+      last = { episode: ep, end: headingRe.lastIndex };
+      cursor = headingRe.lastIndex;
+    }
+    if (last) sections.push({ episode: last.episode, html: html.slice(last.end) });
+
+    const matched = [];
+    for (const section of sections) {
+      if (section.episode === wanted) matched.push(...mirrorLinksIn(section.html));
+    }
+    if (matched.length) return matched;
+
+    // Movie-style pages carry no episode headings at all - fall back to every
+    // mirror rather than returning nothing.
+    return cursor === 0 ? mirrorLinksIn(html) : [];
   } catch (e) {
     return [];
   }
@@ -171,10 +284,25 @@ async function fastdlExtractor(url) {
     const u = new URL(url);
     const downloadParam = u.searchParams.get("download");
     if (!downloadParam) return [];
-    const res = await fetch(url, { headers: HEADERS, redirect: "manual", skipSizeCheck: true });
+
+    const res = await fetchWithTimeout(url, { headers: HEADERS, redirect: "manual", skipSizeCheck: true });
+
+    // fastdl.zip serves the /embed page as a 200 with a JS-driven redirect
+    // (`var reurl = "https://fastdl.zip/dl.php?link=<direct url>"`) instead of a
+    // 3xx Location header, so the header is only a fallback for older responses.
     const loc = res.headers.get("location");
     if (loc) return [{ url: loc, quality: 0, title: "G-Direct" }];
-    return [];
+
+    const html = await res.text();
+    const m = html.match(/var\s+reurl\s*=\s*["']([^"']+)["']/);
+    if (!m) return [];
+
+    const reurl = m[1];
+    const idx = reurl.indexOf("link=");
+    const direct = idx === -1 ? reurl : reurl.slice(idx + 5);
+    if (!direct.startsWith("http")) return [];
+
+    return [{ url: direct, quality: 0, title: "G-Direct" }];
   } catch (e) {
     return [];
   }
@@ -204,7 +332,7 @@ function base64Decode(value) {
 // rather than a real API call (confirmed directly in the site's own JS comments).
 async function resolveVcloudToken(vcloudUrl) {
   try {
-    const html = await (await fetch(vcloudUrl, { headers: HEADERS, skipSizeCheck: true })).text();
+    const html = await fetchTextCached(vcloudUrl, { headers: HEADERS, skipSizeCheck: true });
     const m = html.match(/atob\(atob\('([A-Za-z0-9+/=]+)'\)\)/);
     if (!m) return vcloudUrl;
     const once = base64Decode(m[1]);
@@ -221,7 +349,7 @@ async function hubCloudExtractor(url, referer) {
     let currentUrl = url;
     if (currentUrl.includes("hubcloud.ink")) currentUrl = currentUrl.replace("hubcloud.ink", "hubcloud.dad");
 
-    if (/vcloud\.zip/i.test(currentUrl)) {
+    if (/vcloud\.(zip|fit)/i.test(currentUrl)) {
       currentUrl = await resolveVcloudToken(currentUrl);
     }
 
@@ -229,10 +357,10 @@ async function hubCloudExtractor(url, referer) {
     if (!baseUrl) return [];
 
     let href;
-    if (currentUrl.includes("hubcloud.php") || /vcloud\.zip/i.test(currentUrl)) {
+    if (currentUrl.includes("hubcloud.php") || /vcloud\.(zip|fit)/i.test(currentUrl)) {
       href = currentUrl;
     } else {
-      const html = await (await fetch(currentUrl, { headers: HEADERS, skipSizeCheck: true })).text();
+      const html = await fetchTextCached(currentUrl, { headers: HEADERS, skipSizeCheck: true });
       const $first = cheerio.load(html);
       const raw = $first("#download").attr("href") || "";
       if (!raw) return [];
@@ -242,7 +370,7 @@ async function hubCloudExtractor(url, referer) {
     }
     if (!href.trim()) return [];
 
-    const pageHtml = await (await fetch(href, { headers: HEADERS, skipSizeCheck: true })).text();
+    const pageHtml = await fetchTextCached(href, { headers: HEADERS, skipSizeCheck: true });
     const $ = cheerio.load(pageHtml);
 
     const size = $("i#size").first().text() || "";
@@ -267,7 +395,7 @@ async function hubCloudExtractor(url, referer) {
         if (label.includes("fsl server") || label.includes("download file") || label.includes("s3 server") || label.includes("fslv2") || label.includes("mega server")) {
           streams.push({ url: link, quality, title: `${ref} ${labelExtras}`.trim(), size: formatBytes(sizeInBytes )});
         } else if (label.includes("buzzserver")) {
-          const resp = await fetch(`${link}/download`, {
+          const resp = await fetchWithTimeout(`${link}/download`, {
             headers: { ...HEADERS, Referer: link },
             redirect: "manual",
             skipSizeCheck: true
@@ -282,7 +410,7 @@ async function hubCloudExtractor(url, referer) {
           let redirectUrl = link;
           let finalLink = null;
           for (let i = 0; i < 5; i++) {
-            const r = await fetch(redirectUrl, { redirect: "manual", skipSizeCheck: true });
+            const r = await fetchWithTimeout(redirectUrl, { redirect: "manual", skipSizeCheck: true });
             if (r.status >= 300 && r.status < 400) {
               const loc = r.headers.get("location");
               if (loc && loc.includes("link=")) { finalLink = loc.split("link=")[1]; break; }
@@ -302,7 +430,7 @@ async function hubCloudExtractor(url, referer) {
 async function resolveMirrorLink(href, label) {
   try {
     if (/fastdl\.zip/i.test(href)) return fastdlExtractor(href);
-    if (/vcloud\.zip|hubcloud|hubdrive/i.test(href)) return hubCloudExtractor(href, "V-Cloud");
+    if (/vcloud\.(zip|fit)|hubcloud|hubdrive/i.test(href)) return hubCloudExtractor(href, "V-Cloud");
     return [];
   } catch (e) {
     return [];
@@ -312,7 +440,7 @@ async function resolveMirrorLink(href, label) {
 async function resolveImdbToTmdb(imdbId, mediaType) {
   try {
     const url = `https://api.themoviedb.org/3/find/${imdbId}?api_key=${TMDB_API_KEY}&external_source=imdb_id`;
-    const data = await (await fetch(url, { skipSizeCheck: true })).json();
+    const data = await (await fetchWithTimeout(url, { skipSizeCheck: true })).json();
     const results = mediaType === "tv" ? data.tv_results : data.movie_results;
     return results && results.length ? results[0].id : null;
   } catch (e) {
@@ -321,6 +449,7 @@ async function resolveImdbToTmdb(imdbId, mediaType) {
 }
 
 async function getStreams(tmdbId, mediaType, season, episode) {
+  pageCache = {};
   try {
     if (typeof tmdbId === "string" && tmdbId.trim().toLowerCase().startsWith("tt")) {
       tmdbId = await resolveImdbToTmdb(tmdbId, mediaType);
@@ -328,6 +457,7 @@ async function getStreams(tmdbId, mediaType, season, episode) {
     }
 
     const isTv = mediaType === "tv";
+    const baseUrl = await getBaseUrl();
     const [imdbId, title] = await Promise.all([
       getImdbId(tmdbId, mediaType),
       getTmdbTitle(tmdbId, mediaType)
@@ -346,40 +476,70 @@ async function getStreams(tmdbId, mediaType, season, episode) {
       return [];
     }
 
-    const content = await getPostContent(candidate.id);
+    const content = await getPostContent(candidate.id, candidate.permalink);
     if (!content) {
       return [];
     }
 
-    const blocks = extractQualityBlocks(content);
+    let blocks = extractQualityBlocks(content);
     if (!blocks.length) {
       return [];
     }
 
-    const streams = [];
-    for (const block of blocks) {
-      const quality = indexQuality(block.heading);
-      for (const link of block.links) {
-        const nexdriveLinks = await resolveNexdrive(link.href);
-        for (const mirror of nexdriveLinks) {
-          const resolved = await resolveMirrorLink(mirror.href, mirror.label);
-          for (const s of resolved) {
-            streams.push({
-              url: s.url,
-              quality: qualityLabel(s.quality || quality),
-              title: `RogMovies ${block.heading}`.trim(),
-              name: s.title || "RogMovies",
-              subtitles: [],
-              // s.size is already a formatted string from the extractor above - re-running it
-              // through formatBytes() treats it as a raw byte count and produces NaN.
-              size: s.size || ""
-            });
-          }
-        }
-      }
+    // A season post often carries the other seasons' download blocks too (a
+    // "Season 1" post also listing Season 2). Walking those costs a nexdrive ->
+    // mirror -> hoster chain each and yields streams for the wrong season, so
+    // keep only the requested one when the headings say which season they are.
+    if (isTv) {
+      const wantedSeason = season ? parseInt(season, 10) : 1;
+      const sameSeason = blocks.filter(b => {
+        const m = b.heading.match(/Season\s*(\d{1,3})/i);
+        return m && parseInt(m[1], 10) === wantedSeason;
+      });
+      if (sameSeason.length) blocks = sameSeason;
     }
 
-    return streams;
+    // Each quality block is independent, so resolve them concurrently. Doing this
+    // serially walks the nexdrive -> mirror -> hoster chain one hop at a time and
+    // pushes the provider well past the 15s budget the app allows for a scrape,
+    // which makes it return nothing at all rather than a partial list.
+    const perBlock = await Promise.all(blocks.map(async block => {
+      const quality = indexQuality(block.heading);
+      const mirrorLists = await Promise.all(block.links.map(link => resolveNexdrive(link.href, isTv ? episode : null)));
+      const mirrors = mirrorLists.reduce((acc, list) => acc.concat(list), []);
+      // A block can list the same mirror twice (and the page-level cache only
+      // covers the fetch, not the extractor walk behind it).
+      const seenMirrors = {};
+      const uniqueMirrors = mirrors.filter(m => {
+        if (!m || !m.href || seenMirrors[m.href]) return false;
+        seenMirrors[m.href] = true;
+        return true;
+      });
+      const resolvedLists = await Promise.all(uniqueMirrors.map(m => resolveMirrorLink(m.href, m.label)));
+
+      return resolvedLists.reduce((acc, list) => acc.concat(list), []).map(s => ({
+        url: s.url,
+        quality: qualityLabel(s.quality || quality),
+        title: `RogMovies ${block.heading}`.trim(),
+        name: s.title || "RogMovies",
+        headers: { Referer: baseUrl, "User-Agent": HEADERS["User-Agent"] },
+        subtitles: [],
+        // s.size is already a formatted string from the extractor above - re-running it
+        // through formatBytes() treats it as a raw byte count and produces NaN.
+        size: s.size || ""
+      }));
+    }));
+
+    // The same file is often reachable from more than one quality block, so drop
+    // repeats rather than showing the user the same link several times.
+    const seenUrls = {};
+    return perBlock
+      .reduce((acc, list) => acc.concat(list), [])
+      .filter(s => {
+        if (!s || !s.url || seenUrls[s.url]) return false;
+        seenUrls[s.url] = true;
+        return true;
+      });
   } catch (e) {
     console.error("[RogMovies]", e);
     return [];

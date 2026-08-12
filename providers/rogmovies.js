@@ -43,13 +43,30 @@ const TMDB_API_KEY = "1865f43a0549ca50d341dd9ab8b29f49";
 const HEADERS = {
   "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36"
 };
+function fetchWithTimeout(url, options = {}) {
+  return fetch(url, options);
+}
+let pageCache = null;
+function fetchTextCached(url, options = {}) {
+  if (!pageCache)
+    return fetchWithTimeout(url, options).then((r) => r.text());
+  const hit = pageCache[url];
+  if (hit)
+    return hit;
+  const pending = fetchWithTimeout(url, options).then((r) => r.text()).catch((e) => {
+    delete pageCache[url];
+    throw e;
+  });
+  pageCache[url] = pending;
+  return pending;
+}
 let cachedDomains = null;
 function getDomains() {
   return __async(this, null, function* () {
     if (cachedDomains)
       return cachedDomains;
     try {
-      const resp = yield fetch(DOMAINS_URL, { skipSizeCheck: true });
+      const resp = yield fetchWithTimeout(DOMAINS_URL, { skipSizeCheck: true });
       cachedDomains = yield resp.json();
     } catch (e) {
       cachedDomains = {};
@@ -112,14 +129,14 @@ function cleanTitle(raw) {
 function getImdbId(tmdbId, mediaType) {
   return __async(this, null, function* () {
     const url = `https://api.themoviedb.org/3/${mediaType}/${tmdbId}/external_ids?api_key=${TMDB_API_KEY}`;
-    const data = yield (yield fetch(url, { skipSizeCheck: true })).json();
+    const data = yield (yield fetchWithTimeout(url, { skipSizeCheck: true })).json();
     return data && data.imdb_id ? data.imdb_id : null;
   });
 }
 function getTmdbTitle(tmdbId, mediaType) {
   return __async(this, null, function* () {
     const url = `https://api.themoviedb.org/3/${mediaType}/${tmdbId}?api_key=${TMDB_API_KEY}`;
-    const data = yield (yield fetch(url, { skipSizeCheck: true })).json();
+    const data = yield (yield fetchWithTimeout(url, { skipSizeCheck: true })).json();
     return data.title || data.name || null;
   });
 }
@@ -127,7 +144,7 @@ function searchSite(query) {
   return __async(this, null, function* () {
     const baseUrl = yield getBaseUrl();
     const url = `${baseUrl}/search.php?q=${encodeURIComponent(query)}&page=1`;
-    const res = yield fetch(url, { headers: HEADERS, skipSizeCheck: true });
+    const res = yield fetchWithTimeout(url, { headers: HEADERS, skipSizeCheck: true });
     if (!res.ok)
       return [];
     const data = yield res.json().catch(() => null);
@@ -153,60 +170,123 @@ function pickCandidate(hits, imdbId, isTv, season) {
   }
   return pool[0];
 }
-function getPostContent(id) {
+function hasDownloadMarkers(html) {
+  return /nexdrive|vcloud|hubcloud|fastdl|genxfm/i.test(html || "");
+}
+function getPostContentHtml(permalink) {
+  return __async(this, null, function* () {
+    if (!permalink)
+      return null;
+    const baseUrl = yield getBaseUrl();
+    const url = permalink.startsWith("http") ? permalink : `${baseUrl}${permalink.startsWith("/") ? "" : "/"}${permalink}`;
+    try {
+      const res = yield fetchWithTimeout(url, { headers: HEADERS, skipSizeCheck: true });
+      if (!res.ok)
+        return null;
+      const html = yield res.text();
+      const $ = cheerio.load(html);
+      const article = $("article").html() || $(".entry-content").html() || $(".post-content").html();
+      return article && hasDownloadMarkers(article) ? article : null;
+    } catch (e) {
+      return null;
+    }
+  });
+}
+function getPostContent(id, permalink) {
   return __async(this, null, function* () {
     const baseUrl = yield getBaseUrl();
     const url = `${baseUrl}/wp-json/wp/v2/posts/${id}`;
-    const res = yield fetch(url, { headers: HEADERS, skipSizeCheck: true });
-    if (!res.ok)
-      return null;
-    const data = yield res.json().catch(() => null);
-    return data && data.content ? data.content.rendered : null;
+    try {
+      const res = yield fetchWithTimeout(url, { headers: HEADERS, skipSizeCheck: true });
+      if (res.ok) {
+        const data = yield res.json().catch(() => null);
+        const html = data && data.content ? data.content.rendered : null;
+        if (html && hasDownloadMarkers(html))
+          return html;
+      }
+    } catch (e) {
+    }
+    return getPostContentHtml(permalink);
   });
+}
+function anchorsIn(fragment, hostPattern) {
+  const links = [];
+  const anchorRe = /<a\b[^>]*href=["']([^"']+)["'][^>]*>([\s\S]*?)<\/a>/gi;
+  let m;
+  while ((m = anchorRe.exec(fragment)) !== null) {
+    const href = m[1];
+    if (hostPattern && !hostPattern.test(href))
+      continue;
+    links.push({ href, label: m[2].replace(/<[^>]*>/g, "").replace(/\s+/g, " ").trim() });
+  }
+  return links;
+}
+const NEXDRIVE_HOST_RE = /nexdrive|vcloud\.(zip|fit)|fastdl\.zip|hubcloud|hubdrive/i;
+function isDownloadHeading(heading) {
+  if (/^\d+\s+comments?$/i.test(heading))
+    return false;
+  return !/(Movie|Series)\s+Info|SYNOPSIS|PLOT|Screenshots/i.test(heading);
 }
 function extractQualityBlocks(html) {
-  const $ = cheerio.load(html);
   const blocks = [];
-  $("h3, h5").each((i, el) => {
-    const heading = $(el).text().trim();
-    if (!heading)
-      return;
-    const links = [];
-    let next = $(el).next();
-    let hops = 0;
-    while (next.length && hops < 3) {
-      if (next.is("h3") || next.is("h5"))
-        break;
-      next.find("a[href]").each((j, a) => {
-        const href = $(a).attr("href");
-        const label = $(a).text().trim();
-        if (href)
-          links.push({ href, label });
-      });
-      if (links.length)
-        break;
-      next = next.next();
-      hops++;
-    }
+  const headingRe = /<h[35]\b[^>]*>([\s\S]*?)<\/h[35]>/gi;
+  const found = [];
+  let m;
+  while ((m = headingRe.exec(html)) !== null) {
+    found.push({
+      heading: m[1].replace(/<[^>]*>/g, "").replace(/&#?\w+;/g, " ").replace(/\s+/g, " ").trim(),
+      start: headingRe.lastIndex,
+      index: m.index
+    });
+  }
+  for (let i = 0; i < found.length; i++) {
+    const { heading, start } = found[i];
+    if (!heading || !isDownloadHeading(heading))
+      continue;
+    const end = i + 1 < found.length ? found[i + 1].index : html.length;
+    const links = anchorsIn(html.slice(start, end), NEXDRIVE_HOST_RE);
     if (links.length)
       blocks.push({ heading, links });
-  });
+  }
   return blocks;
 }
-function resolveNexdrive(nexdriveUrl) {
+const MIRROR_HOST_RE = /vcloud\.(zip|fit)|fastdl\.zip|hubcloud|hubdrive/i;
+function nexdriveEpisodeOf(text) {
+  const m = (text || "").match(/Episode[s]?\s*[:\-]?\s*(\d{1,3})/i);
+  return m ? parseInt(m[1], 10) : null;
+}
+function mirrorLinksIn(fragment) {
+  return anchorsIn(fragment, MIRROR_HOST_RE);
+}
+function resolveNexdrive(nexdriveUrl, episode) {
   return __async(this, null, function* () {
     try {
-      const html = yield (yield fetch(nexdriveUrl, { headers: HEADERS, skipSizeCheck: true })).text();
-      const $ = cheerio.load(html);
-      const links = [];
-      $("a[href]").each((i, el) => {
-        const href = $(el).attr("href") || "";
-        const label = $(el).text().trim();
-        if (/vcloud\.zip|fastdl\.zip|hubcloud|hubdrive/i.test(href)) {
-          links.push({ href, label });
-        }
-      });
-      return links;
+      const html = yield fetchTextCached(nexdriveUrl, { headers: HEADERS, skipSizeCheck: true });
+      const wanted = episode ? parseInt(episode, 10) : null;
+      if (!wanted)
+        return mirrorLinksIn(html);
+      const headingRe = /<h[1-6]\b[^>]*>([\s\S]*?)<\/h[1-6]>/gi;
+      const sections = [];
+      let last = null;
+      let cursor = 0;
+      let h;
+      while ((h = headingRe.exec(html)) !== null) {
+        if (last)
+          sections.push({ episode: last.episode, html: html.slice(last.end, h.index) });
+        const ep = nexdriveEpisodeOf(h[1].replace(/<[^>]*>/g, ""));
+        last = { episode: ep, end: headingRe.lastIndex };
+        cursor = headingRe.lastIndex;
+      }
+      if (last)
+        sections.push({ episode: last.episode, html: html.slice(last.end) });
+      const matched = [];
+      for (const section of sections) {
+        if (section.episode === wanted)
+          matched.push(...mirrorLinksIn(section.html));
+      }
+      if (matched.length)
+        return matched;
+      return cursor === 0 ? mirrorLinksIn(html) : [];
     } catch (e) {
       return [];
     }
@@ -219,11 +299,20 @@ function fastdlExtractor(url) {
       const downloadParam = u.searchParams.get("download");
       if (!downloadParam)
         return [];
-      const res = yield fetch(url, { headers: HEADERS, redirect: "manual", skipSizeCheck: true });
+      const res = yield fetchWithTimeout(url, { headers: HEADERS, redirect: "manual", skipSizeCheck: true });
       const loc = res.headers.get("location");
       if (loc)
         return [{ url: loc, quality: 0, title: "G-Direct" }];
-      return [];
+      const html = yield res.text();
+      const m = html.match(/var\s+reurl\s*=\s*["']([^"']+)["']/);
+      if (!m)
+        return [];
+      const reurl = m[1];
+      const idx = reurl.indexOf("link=");
+      const direct = idx === -1 ? reurl : reurl.slice(idx + 5);
+      if (!direct.startsWith("http"))
+        return [];
+      return [{ url: direct, quality: 0, title: "G-Direct" }];
     } catch (e) {
       return [];
     }
@@ -253,7 +342,7 @@ function base64Decode(value) {
 function resolveVcloudToken(vcloudUrl) {
   return __async(this, null, function* () {
     try {
-      const html = yield (yield fetch(vcloudUrl, { headers: HEADERS, skipSizeCheck: true })).text();
+      const html = yield fetchTextCached(vcloudUrl, { headers: HEADERS, skipSizeCheck: true });
       const m = html.match(/atob\(atob\('([A-Za-z0-9+/=]+)'\)\)/);
       if (!m)
         return vcloudUrl;
@@ -272,17 +361,17 @@ function hubCloudExtractor(url, referer) {
       let currentUrl = url;
       if (currentUrl.includes("hubcloud.ink"))
         currentUrl = currentUrl.replace("hubcloud.ink", "hubcloud.dad");
-      if (/vcloud\.zip/i.test(currentUrl)) {
+      if (/vcloud\.(zip|fit)/i.test(currentUrl)) {
         currentUrl = yield resolveVcloudToken(currentUrl);
       }
       const baseUrl = originOf(currentUrl);
       if (!baseUrl)
         return [];
       let href;
-      if (currentUrl.includes("hubcloud.php") || /vcloud\.zip/i.test(currentUrl)) {
+      if (currentUrl.includes("hubcloud.php") || /vcloud\.(zip|fit)/i.test(currentUrl)) {
         href = currentUrl;
       } else {
-        const html = yield (yield fetch(currentUrl, { headers: HEADERS, skipSizeCheck: true })).text();
+        const html = yield fetchTextCached(currentUrl, { headers: HEADERS, skipSizeCheck: true });
         const $first = cheerio.load(html);
         const raw = $first("#download").attr("href") || "";
         if (!raw)
@@ -291,7 +380,7 @@ function hubCloudExtractor(url, referer) {
       }
       if (!href.trim())
         return [];
-      const pageHtml = yield (yield fetch(href, { headers: HEADERS, skipSizeCheck: true })).text();
+      const pageHtml = yield fetchTextCached(href, { headers: HEADERS, skipSizeCheck: true });
       const $ = cheerio.load(pageHtml);
       const size = $("i#size").first().text() || "";
       const header = $("div.card-header").first().text() || "";
@@ -315,7 +404,7 @@ function hubCloudExtractor(url, referer) {
           if (label.includes("fsl server") || label.includes("download file") || label.includes("s3 server") || label.includes("fslv2") || label.includes("mega server")) {
             streams.push({ url: link, quality, title: `${ref} ${labelExtras}`.trim(), size: formatBytes(sizeInBytes) });
           } else if (label.includes("buzzserver")) {
-            const resp = yield fetch(`${link}/download`, {
+            const resp = yield fetchWithTimeout(`${link}/download`, {
               headers: __spreadProps(__spreadValues({}, HEADERS), { Referer: link }),
               redirect: "manual",
               skipSizeCheck: true
@@ -331,7 +420,7 @@ function hubCloudExtractor(url, referer) {
             let redirectUrl = link;
             let finalLink = null;
             for (let i = 0; i < 5; i++) {
-              const r = yield fetch(redirectUrl, { redirect: "manual", skipSizeCheck: true });
+              const r = yield fetchWithTimeout(redirectUrl, { redirect: "manual", skipSizeCheck: true });
               if (r.status >= 300 && r.status < 400) {
                 const loc = r.headers.get("location");
                 if (loc && loc.includes("link=")) {
@@ -360,7 +449,7 @@ function resolveMirrorLink(href, label) {
     try {
       if (/fastdl\.zip/i.test(href))
         return fastdlExtractor(href);
-      if (/vcloud\.zip|hubcloud|hubdrive/i.test(href))
+      if (/vcloud\.(zip|fit)|hubcloud|hubdrive/i.test(href))
         return hubCloudExtractor(href, "V-Cloud");
       return [];
     } catch (e) {
@@ -372,7 +461,7 @@ function resolveImdbToTmdb(imdbId, mediaType) {
   return __async(this, null, function* () {
     try {
       const url = `https://api.themoviedb.org/3/find/${imdbId}?api_key=${TMDB_API_KEY}&external_source=imdb_id`;
-      const data = yield (yield fetch(url, { skipSizeCheck: true })).json();
+      const data = yield (yield fetchWithTimeout(url, { skipSizeCheck: true })).json();
       const results = mediaType === "tv" ? data.tv_results : data.movie_results;
       return results && results.length ? results[0].id : null;
     } catch (e) {
@@ -382,6 +471,7 @@ function resolveImdbToTmdb(imdbId, mediaType) {
 }
 function getStreams(tmdbId, mediaType, season, episode) {
   return __async(this, null, function* () {
+    pageCache = {};
     try {
       if (typeof tmdbId === "string" && tmdbId.trim().toLowerCase().startsWith("tt")) {
         tmdbId = yield resolveImdbToTmdb(tmdbId, mediaType);
@@ -389,6 +479,7 @@ function getStreams(tmdbId, mediaType, season, episode) {
           return [];
       }
       const isTv = mediaType === "tv";
+      const baseUrl = yield getBaseUrl();
       const [imdbId, title] = yield Promise.all([
         getImdbId(tmdbId, mediaType),
         getTmdbTitle(tmdbId, mediaType)
@@ -404,37 +495,54 @@ function getStreams(tmdbId, mediaType, season, episode) {
       if (!candidate || !candidate.id) {
         return [];
       }
-      const content = yield getPostContent(candidate.id);
+      const content = yield getPostContent(candidate.id, candidate.permalink);
       if (!content) {
         return [];
       }
-      const blocks = extractQualityBlocks(content);
+      let blocks = extractQualityBlocks(content);
       if (!blocks.length) {
         return [];
       }
-      const streams = [];
-      for (const block of blocks) {
-        const quality = indexQuality(block.heading);
-        for (const link of block.links) {
-          const nexdriveLinks = yield resolveNexdrive(link.href);
-          for (const mirror of nexdriveLinks) {
-            const resolved = yield resolveMirrorLink(mirror.href, mirror.label);
-            for (const s of resolved) {
-              streams.push({
-                url: s.url,
-                quality: qualityLabel(s.quality || quality),
-                title: `RogMovies ${block.heading}`.trim(),
-                name: s.title || "RogMovies",
-                subtitles: [],
-                // s.size is already a formatted string from the extractor above - re-running it
-                // through formatBytes() treats it as a raw byte count and produces NaN.
-                size: s.size || ""
-              });
-            }
-          }
-        }
+      if (isTv) {
+        const wantedSeason = season ? parseInt(season, 10) : 1;
+        const sameSeason = blocks.filter((b) => {
+          const m = b.heading.match(/Season\s*(\d{1,3})/i);
+          return m && parseInt(m[1], 10) === wantedSeason;
+        });
+        if (sameSeason.length)
+          blocks = sameSeason;
       }
-      return streams;
+      const perBlock = yield Promise.all(blocks.map((block) => __async(this, null, function* () {
+        const quality = indexQuality(block.heading);
+        const mirrorLists = yield Promise.all(block.links.map((link) => resolveNexdrive(link.href, isTv ? episode : null)));
+        const mirrors = mirrorLists.reduce((acc, list) => acc.concat(list), []);
+        const seenMirrors = {};
+        const uniqueMirrors = mirrors.filter((m) => {
+          if (!m || !m.href || seenMirrors[m.href])
+            return false;
+          seenMirrors[m.href] = true;
+          return true;
+        });
+        const resolvedLists = yield Promise.all(uniqueMirrors.map((m) => resolveMirrorLink(m.href, m.label)));
+        return resolvedLists.reduce((acc, list) => acc.concat(list), []).map((s) => ({
+          url: s.url,
+          quality: qualityLabel(s.quality || quality),
+          title: `RogMovies ${block.heading}`.trim(),
+          name: s.title || "RogMovies",
+          headers: { Referer: baseUrl, "User-Agent": HEADERS["User-Agent"] },
+          subtitles: [],
+          // s.size is already a formatted string from the extractor above - re-running it
+          // through formatBytes() treats it as a raw byte count and produces NaN.
+          size: s.size || ""
+        }));
+      })));
+      const seenUrls = {};
+      return perBlock.reduce((acc, list) => acc.concat(list), []).filter((s) => {
+        if (!s || !s.url || seenUrls[s.url])
+          return false;
+        seenUrls[s.url] = true;
+        return true;
+      });
     } catch (e) {
       console.error("[RogMovies]", e);
       return [];

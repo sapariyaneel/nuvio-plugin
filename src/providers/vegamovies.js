@@ -21,6 +21,27 @@ function fetchWithTimeout(url, options = {}) {
   return fetch(url, options);
 }
 
+// Several quality blocks link to the same nexdrive/vcloud page, so the same URL
+// gets walked repeatedly - on a season page that was 49 of 87 requests. The
+// desktop host runs fetch through runBlocking, so Promise.all buys no
+// parallelism there and every duplicate is paid for serially against the 60s
+// plugin timeout. Cache GET bodies for the lifetime of one getStreams() call.
+let pageCache = null;
+
+function fetchTextCached(url, options = {}) {
+  if (!pageCache) return fetchWithTimeout(url, options).then(r => r.text());
+  const hit = pageCache[url];
+  if (hit) return hit;
+  const pending = fetchWithTimeout(url, options)
+    .then(r => r.text())
+    .catch(e => {
+      delete pageCache[url];
+      throw e;
+    });
+  pageCache[url] = pending;
+  return pending;
+}
+
 let cachedDomains = null;
 
 async function getDomains() {
@@ -225,7 +246,7 @@ function mirrorLinksIn(fragment) {
 
 async function resolveNexdrive(nexdriveUrl, episode) {
   try {
-    const html = await (await fetchWithTimeout(nexdriveUrl, { headers: HEADERS, skipSizeCheck: true })).text();
+    const html = await fetchTextCached(nexdriveUrl, { headers: HEADERS, skipSizeCheck: true });
     const wanted = episode ? parseInt(episode, 10) : null;
     if (!wanted) return mirrorLinksIn(html);
 
@@ -310,7 +331,7 @@ function base64Decode(value) {
 // rather than a real API call (confirmed directly in the site's own JS comments).
 async function resolveVcloudToken(vcloudUrl) {
   try {
-    const html = await (await fetchWithTimeout(vcloudUrl, { headers: HEADERS, skipSizeCheck: true })).text();
+    const html = await fetchTextCached(vcloudUrl, { headers: HEADERS, skipSizeCheck: true });
     const m = html.match(/atob\(atob\('([A-Za-z0-9+/=]+)'\)\)/);
     if (!m) return vcloudUrl;
     const once = base64Decode(m[1]);
@@ -338,7 +359,7 @@ async function hubCloudExtractor(url, referer) {
     if (currentUrl.includes("hubcloud.php") || /vcloud\.(zip|fit)/i.test(currentUrl)) {
       href = currentUrl;
     } else {
-      const html = await (await fetchWithTimeout(currentUrl, { headers: HEADERS, skipSizeCheck: true })).text();
+      const html = await fetchTextCached(currentUrl, { headers: HEADERS, skipSizeCheck: true });
       const $first = cheerio.load(html);
       const raw = $first("#download").attr("href") || "";
       if (!raw) return [];
@@ -348,7 +369,7 @@ async function hubCloudExtractor(url, referer) {
     }
     if (!href.trim()) return [];
 
-    const pageHtml = await (await fetchWithTimeout(href, { headers: HEADERS, skipSizeCheck: true })).text();
+    const pageHtml = await fetchTextCached(href, { headers: HEADERS, skipSizeCheck: true });
     const $ = cheerio.load(pageHtml);
 
     const size = $("i#size").first().text() || "";
@@ -427,6 +448,7 @@ async function resolveImdbToTmdb(imdbId, mediaType) {
 }
 
 async function getStreams(tmdbId, mediaType, season, episode) {
+  pageCache = {};
   try {
     if (typeof tmdbId === "string" && tmdbId.trim().toLowerCase().startsWith("tt")) {
       tmdbId = await resolveImdbToTmdb(tmdbId, mediaType);
@@ -458,9 +480,22 @@ async function getStreams(tmdbId, mediaType, season, episode) {
       return [];
     }
 
-    const blocks = extractQualityBlocks(content);
+    let blocks = extractQualityBlocks(content);
     if (!blocks.length) {
       return [];
+    }
+
+    // A season post often carries the other seasons' download blocks too (a
+    // "Season 1" post also listing Season 2). Walking those costs a nexdrive ->
+    // mirror -> hoster chain each and yields streams for the wrong season, so
+    // keep only the requested one when the headings say which season they are.
+    if (isTv) {
+      const wantedSeason = season ? parseInt(season, 10) : 1;
+      const sameSeason = blocks.filter(b => {
+        const m = b.heading.match(/Season\s*(\d{1,3})/i);
+        return m && parseInt(m[1], 10) === wantedSeason;
+      });
+      if (sameSeason.length) blocks = sameSeason;
     }
 
     // Each quality block is independent, so resolve them concurrently. Doing this
@@ -471,7 +506,15 @@ async function getStreams(tmdbId, mediaType, season, episode) {
       const quality = indexQuality(block.heading);
       const mirrorLists = await Promise.all(block.links.map(link => resolveNexdrive(link.href, isTv ? episode : null)));
       const mirrors = mirrorLists.reduce((acc, list) => acc.concat(list), []);
-      const resolvedLists = await Promise.all(mirrors.map(m => resolveMirrorLink(m.href, m.label)));
+      // A block can list the same mirror twice (and the page-level cache only
+      // covers the fetch, not the extractor walk behind it).
+      const seenMirrors = {};
+      const uniqueMirrors = mirrors.filter(m => {
+        if (!m || !m.href || seenMirrors[m.href]) return false;
+        seenMirrors[m.href] = true;
+        return true;
+      });
+      const resolvedLists = await Promise.all(uniqueMirrors.map(m => resolveMirrorLink(m.href, m.label)));
 
       return resolvedLists.reduce((acc, list) => acc.concat(list), []).map(s => ({
         url: s.url,
@@ -486,9 +529,16 @@ async function getStreams(tmdbId, mediaType, season, episode) {
       }));
     }));
 
+    // The same file is often reachable from more than one quality block, so drop
+    // repeats rather than showing the user the same link several times.
+    const seenUrls = {};
     return perBlock
       .reduce((acc, list) => acc.concat(list), [])
-      .filter(s => s && s.url);
+      .filter(s => {
+        if (!s || !s.url || seenUrls[s.url]) return false;
+        seenUrls[s.url] = true;
+        return true;
+      });
   } catch (e) {
     console.error("[Vegamovies]", e);
     return [];

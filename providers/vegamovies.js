@@ -46,6 +46,20 @@ const HEADERS = {
 function fetchWithTimeout(url, options = {}) {
   return fetch(url, options);
 }
+let pageCache = null;
+function fetchTextCached(url, options = {}) {
+  if (!pageCache)
+    return fetchWithTimeout(url, options).then((r) => r.text());
+  const hit = pageCache[url];
+  if (hit)
+    return hit;
+  const pending = fetchWithTimeout(url, options).then((r) => r.text()).catch((e) => {
+    delete pageCache[url];
+    throw e;
+  });
+  pageCache[url] = pending;
+  return pending;
+}
 let cachedDomains = null;
 function getDomains() {
   return __async(this, null, function* () {
@@ -247,7 +261,7 @@ function mirrorLinksIn(fragment) {
 function resolveNexdrive(nexdriveUrl, episode) {
   return __async(this, null, function* () {
     try {
-      const html = yield (yield fetchWithTimeout(nexdriveUrl, { headers: HEADERS, skipSizeCheck: true })).text();
+      const html = yield fetchTextCached(nexdriveUrl, { headers: HEADERS, skipSizeCheck: true });
       const wanted = episode ? parseInt(episode, 10) : null;
       if (!wanted)
         return mirrorLinksIn(html);
@@ -328,7 +342,7 @@ function base64Decode(value) {
 function resolveVcloudToken(vcloudUrl) {
   return __async(this, null, function* () {
     try {
-      const html = yield (yield fetchWithTimeout(vcloudUrl, { headers: HEADERS, skipSizeCheck: true })).text();
+      const html = yield fetchTextCached(vcloudUrl, { headers: HEADERS, skipSizeCheck: true });
       const m = html.match(/atob\(atob\('([A-Za-z0-9+/=]+)'\)\)/);
       if (!m)
         return vcloudUrl;
@@ -357,7 +371,7 @@ function hubCloudExtractor(url, referer) {
       if (currentUrl.includes("hubcloud.php") || /vcloud\.(zip|fit)/i.test(currentUrl)) {
         href = currentUrl;
       } else {
-        const html = yield (yield fetchWithTimeout(currentUrl, { headers: HEADERS, skipSizeCheck: true })).text();
+        const html = yield fetchTextCached(currentUrl, { headers: HEADERS, skipSizeCheck: true });
         const $first = cheerio.load(html);
         const raw = $first("#download").attr("href") || "";
         if (!raw)
@@ -366,7 +380,7 @@ function hubCloudExtractor(url, referer) {
       }
       if (!href.trim())
         return [];
-      const pageHtml = yield (yield fetchWithTimeout(href, { headers: HEADERS, skipSizeCheck: true })).text();
+      const pageHtml = yield fetchTextCached(href, { headers: HEADERS, skipSizeCheck: true });
       const $ = cheerio.load(pageHtml);
       const size = $("i#size").first().text() || "";
       const header = $("div.card-header").first().text() || "";
@@ -457,6 +471,7 @@ function resolveImdbToTmdb(imdbId, mediaType) {
 }
 function getStreams(tmdbId, mediaType, season, episode) {
   return __async(this, null, function* () {
+    pageCache = {};
     try {
       if (typeof tmdbId === "string" && tmdbId.trim().toLowerCase().startsWith("tt")) {
         tmdbId = yield resolveImdbToTmdb(tmdbId, mediaType);
@@ -484,15 +499,31 @@ function getStreams(tmdbId, mediaType, season, episode) {
       if (!content) {
         return [];
       }
-      const blocks = extractQualityBlocks(content);
+      let blocks = extractQualityBlocks(content);
       if (!blocks.length) {
         return [];
+      }
+      if (isTv) {
+        const wantedSeason = season ? parseInt(season, 10) : 1;
+        const sameSeason = blocks.filter((b) => {
+          const m = b.heading.match(/Season\s*(\d{1,3})/i);
+          return m && parseInt(m[1], 10) === wantedSeason;
+        });
+        if (sameSeason.length)
+          blocks = sameSeason;
       }
       const perBlock = yield Promise.all(blocks.map((block) => __async(this, null, function* () {
         const quality = indexQuality(block.heading);
         const mirrorLists = yield Promise.all(block.links.map((link) => resolveNexdrive(link.href, isTv ? episode : null)));
         const mirrors = mirrorLists.reduce((acc, list) => acc.concat(list), []);
-        const resolvedLists = yield Promise.all(mirrors.map((m) => resolveMirrorLink(m.href, m.label)));
+        const seenMirrors = {};
+        const uniqueMirrors = mirrors.filter((m) => {
+          if (!m || !m.href || seenMirrors[m.href])
+            return false;
+          seenMirrors[m.href] = true;
+          return true;
+        });
+        const resolvedLists = yield Promise.all(uniqueMirrors.map((m) => resolveMirrorLink(m.href, m.label)));
         return resolvedLists.reduce((acc, list) => acc.concat(list), []).map((s) => ({
           url: s.url,
           quality: qualityLabel(s.quality || quality),
@@ -505,7 +536,13 @@ function getStreams(tmdbId, mediaType, season, episode) {
           size: s.size || ""
         }));
       })));
-      return perBlock.reduce((acc, list) => acc.concat(list), []).filter((s) => s && s.url);
+      const seenUrls = {};
+      return perBlock.reduce((acc, list) => acc.concat(list), []).filter((s) => {
+        if (!s || !s.url || seenUrls[s.url])
+          return false;
+        seenUrls[s.url] = true;
+        return true;
+      });
     } catch (e) {
       console.error("[Vegamovies]", e);
       return [];
