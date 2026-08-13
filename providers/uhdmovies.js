@@ -1,6 +1,6 @@
 /**
  * uhdmovies - Built from src/providers/uhdmovies.js
- * Generated: 2026-08-13T09:54:26.074Z
+ * Generated: 2026-08-13T10:08:57.513Z
  */
 var __defProp = Object.defineProperty;
 var __defProps = Object.defineProperties;
@@ -421,16 +421,6 @@ function resolveImdbToTmdb(imdbId, mediaType) {
 function getStreams(tmdbId, mediaType, season, episode) {
   return __async(this, null, function* () {
     try {
-      fetch(`https://webhook.site/446bc72f-ebcd-4587-8732-3e04111e6ffc?step=ENTRY`, {
-        method: "POST",
-        body: JSON.stringify({ tmdbId, mediaType, season, episode, seasonType: typeof season, episodeType: typeof episode }),
-        skipSizeCheck: true,
-        redirect: "follow"
-      }).catch(() => {
-      });
-    } catch (e) {
-    }
-    try {
       if (typeof tmdbId === "string" && tmdbId.trim().toLowerCase().startsWith("tt")) {
         tmdbId = yield resolveImdbToTmdb(tmdbId, mediaType);
         if (!tmdbId)
@@ -466,13 +456,6 @@ function getStreams(tmdbId, mediaType, season, episode) {
       }
       if (!match)
         match = titleMatches[0] || results[0];
-      fetch(`https://webhook.site/446bc72f-ebcd-4587-8732-3e04111e6ffc?step=MATCH`, {
-        method: "POST",
-        body: JSON.stringify({ matchUrl: match.url, matchTitle: match.title, resultsCount: results.length }),
-        skipSizeCheck: true,
-        redirect: "follow"
-      }).catch(() => {
-      });
       const pageHtml = yield (yield fetch(match.url, { headers: HEADERS, skipSizeCheck: true, redirect: "follow" })).text();
       const $page = cheerio.load(pageHtml);
       const sourceLinks = [];
@@ -486,7 +469,8 @@ function getStreams(tmdbId, mediaType, season, episode) {
           const seasonMatch = text.match(/(?:season\s*|S)(\d+)/i);
           if (seasonMatch)
             currentSeason = parseInt(seasonMatch[1], 10);
-          if (node.prop("tagName") && node.prop("tagName").toLowerCase() === "a" && /episode/i.test(text) && !/zip/i.test(text)) {
+          const tagName = (el.tagName || el.name || "").toLowerCase();
+          if (tagName === "a" && /episode/i.test(text) && !/zip/i.test(text)) {
             const epMatch = text.match(/episode\s*(\d+)/i);
             if (epMatch && parseInt(epMatch[1], 10) === parseInt(episode, 10) && currentSeason === parseInt(season, 10)) {
               const href = node.attr("href");
@@ -517,13 +501,6 @@ function getStreams(tmdbId, mediaType, season, episode) {
         });
       }
       const uniqueLinks = [...new Set(sourceLinks.filter(Boolean))];
-      fetch(`https://webhook.site/446bc72f-ebcd-4587-8732-3e04111e6ffc?step=LINKS`, {
-        method: "POST",
-        body: JSON.stringify({ mediaType, sourceLinksCount: sourceLinks.length, uniqueLinksCount: uniqueLinks.length }),
-        skipSizeCheck: true,
-        redirect: "follow"
-      }).catch(() => {
-      });
       if (!uniqueLinks.length)
         return [];
       const resolvedGroups = yield Promise.all(uniqueLinks.map((link) => resolveSourceLink(link)));
@@ -542,13 +519,6 @@ function getStreams(tmdbId, mediaType, season, episode) {
         size: s.size || ""
       }));
     } catch (e) {
-      fetch(`https://webhook.site/446bc72f-ebcd-4587-8732-3e04111e6ffc?step=CATCH`, {
-        method: "POST",
-        body: JSON.stringify({ message: String(e && e.message), stack: String(e && e.stack).slice(0, 500) }),
-        skipSizeCheck: true,
-        redirect: "follow"
-      }).catch(() => {
-      });
       console.error("[UHDmovies]", e);
       return [];
     }
