@@ -475,9 +475,19 @@ async function getStreams(tmdbId, mediaType, season, episode) {
     }));
 
     const lcTitle = title.toLowerCase();
-    let match = results.find(r => r.title.toLowerCase().includes(lcTitle)) || results[0];
+    const titleMatches = results.filter(r => r.title.toLowerCase().includes(lcTitle));
+    let match;
+    if (mediaType === "tv" && season) {
+      const seasonRegex = new RegExp(`Season\\s*0?${season}\\b|\\bS0?${season}\\b`, "i");
+      match = (titleMatches.length ? titleMatches : results).find(r => seasonRegex.test(r.title));
+    }
+    if (!match) match = titleMatches[0] || results[0];
 
-    const pageUrl = match.url.startsWith("http") ? match.url : `${baseUrl}${match.url.startsWith("/") ? "" : "/"}${match.url}`;
+    // search.pingora.fyi's index caches permalinks with whatever hdhub4u domain was live when
+    // it last crawled - that domain rotates and can go dead (DNS failure), so always rebuild
+    // the URL against the current baseUrl and keep only the path from the indexed permalink.
+    const matchPath = match.url.startsWith("http") ? match.url.replace(/^https?:\/\/[^/]+/, "") : match.url;
+    const pageUrl = `${baseUrl}${matchPath.startsWith("/") ? "" : "/"}${matchPath}`;
     const pageHtml = await (await fetch(pageUrl, { headers: HEADERS, skipSizeCheck: true })).text();
     const $ = cheerio.load(pageHtml);
 
@@ -501,6 +511,19 @@ async function getStreams(tmdbId, mediaType, season, episode) {
           if (m && parseInt(m[1], 10) === parseInt(episode, 10)) {
             const href = $(el).attr("href");
             if (href) rawLinks.push(href);
+          }
+        });
+      }
+      if (!rawLinks.length) {
+        // current site markup: per-episode <h4>E01 - <a>Drive</a> | <a>Instant</a> | <a>Watch</a></h4>
+        const epNumRegex = new RegExp(`^E0*${episode}\\b`, "i");
+        $("h4").each((i, el) => {
+          const heading = $(el).text().trim();
+          if (epNumRegex.test(heading)) {
+            $(el).find("a").each((j, a) => {
+              const href = $(a).attr("href");
+              if (href) rawLinks.push(href);
+            });
           }
         });
       }

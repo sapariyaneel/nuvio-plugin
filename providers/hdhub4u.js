@@ -523,8 +523,16 @@ function getStreams(tmdbId, mediaType, season, episode) {
         thumbnail: h.document.post_thumbnail
       }));
       const lcTitle = title.toLowerCase();
-      let match = results.find((r) => r.title.toLowerCase().includes(lcTitle)) || results[0];
-      const pageUrl = match.url.startsWith("http") ? match.url : `${baseUrl}${match.url.startsWith("/") ? "" : "/"}${match.url}`;
+      const titleMatches = results.filter((r) => r.title.toLowerCase().includes(lcTitle));
+      let match;
+      if (mediaType === "tv" && season) {
+        const seasonRegex = new RegExp(`Season\\s*0?${season}\\b|\\bS0?${season}\\b`, "i");
+        match = (titleMatches.length ? titleMatches : results).find((r) => seasonRegex.test(r.title));
+      }
+      if (!match)
+        match = titleMatches[0] || results[0];
+      const matchPath = match.url.startsWith("http") ? match.url.replace(/^https?:\/\/[^/]+/, "") : match.url;
+      const pageUrl = `${baseUrl}${matchPath.startsWith("/") ? "" : "/"}${matchPath}`;
       const pageHtml = yield (yield fetch(pageUrl, { headers: HEADERS, skipSizeCheck: true })).text();
       const $ = cheerio.load(pageHtml);
       const rawLinks = [];
@@ -547,6 +555,19 @@ function getStreams(tmdbId, mediaType, season, episode) {
               const href = $(el).attr("href");
               if (href)
                 rawLinks.push(href);
+            }
+          });
+        }
+        if (!rawLinks.length) {
+          const epNumRegex = new RegExp(`^E0*${episode}\\b`, "i");
+          $("h4").each((i, el) => {
+            const heading = $(el).text().trim();
+            if (epNumRegex.test(heading)) {
+              $(el).find("a").each((j, a) => {
+                const href = $(a).attr("href");
+                if (href)
+                  rawLinks.push(href);
+              });
             }
           });
         }
