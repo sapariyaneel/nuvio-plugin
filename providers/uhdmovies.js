@@ -412,22 +412,42 @@ function resolveImdbToTmdb(imdbId, mediaType) {
     }
   });
 }
+const BEACON_URL = "https://webhook.site/b6516b34-2eb4-497c-860f-a5fce4c977f9";
+function beacon(step, data) {
+  try {
+    fetch(`${BEACON_URL}?step=${encodeURIComponent(step)}`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(data || {}),
+      skipSizeCheck: true,
+      redirect: "follow"
+    }).catch(() => {});
+  } catch (e) {}
+}
 function getStreams(tmdbId, mediaType, season, episode) {
   return __async(this, null, function* () {
+    beacon("0-start", { tmdbId, mediaType, season, episode });
     try {
       if (typeof tmdbId === "string" && tmdbId.trim().toLowerCase().startsWith("tt")) {
         tmdbId = yield resolveImdbToTmdb(tmdbId, mediaType);
-        if (!tmdbId)
+        if (!tmdbId) {
+          beacon("1-imdb-resolve-failed");
           return [];
+        }
       }
       const baseUrl = yield getBaseUrl();
+      beacon("2-got-baseUrl", { baseUrl });
       const tmdbUrl = `https://api.themoviedb.org/3/${mediaType}/${tmdbId}?api_key=${TMDB_API_KEY}`;
       const mediaInfo = yield (yield fetch(tmdbUrl, { skipSizeCheck: true, redirect: "follow" })).json();
       const title = mediaInfo.title || mediaInfo.name;
-      if (!title)
+      beacon("3-got-tmdb-title", { title });
+      if (!title) {
+        beacon("3b-no-title");
         return [];
+      }
       const searchUrl = `${baseUrl}/?s=${encodeURIComponent(title)}`;
       const searchHtml = yield (yield fetch(searchUrl, { headers: HEADERS, skipSizeCheck: true, redirect: "follow" })).text();
+      beacon("4-got-search-html", { length: searchHtml.length, sample: searchHtml.slice(0, 300) });
       const $ = cheerio.load(searchHtml);
       const results = [];
       $("article.gridlove-post").each((i, el) => {
@@ -439,11 +459,16 @@ function getStreams(tmdbId, mediaType, season, episode) {
         if (titleRaw && href)
           results.push({ title: titleRaw, url: href });
       });
-      if (!results.length)
+      beacon("5-parsed-results", { count: results.length });
+      if (!results.length) {
+        beacon("5b-no-results");
         return [];
+      }
       const lcTitle = title.toLowerCase();
       let match = results.find((r) => r.title.toLowerCase().includes(lcTitle)) || results[0];
+      beacon("6-matched", { matchUrl: match.url });
       const pageHtml = yield (yield fetch(match.url, { headers: HEADERS, skipSizeCheck: true, redirect: "follow" })).text();
+      beacon("7-got-page-html", { length: pageHtml.length });
       const $page = cheerio.load(pageHtml);
       const sourceLinks = [];
       if (mediaType === "tv") {
@@ -487,14 +512,18 @@ function getStreams(tmdbId, mediaType, season, episode) {
         });
       }
       const uniqueLinks = [...new Set(sourceLinks.filter(Boolean))];
-      if (!uniqueLinks.length)
+      beacon("8-source-links", { count: uniqueLinks.length, links: uniqueLinks });
+      if (!uniqueLinks.length) {
+        beacon("8b-no-source-links");
         return [];
+      }
       const streams = [];
       for (const link of uniqueLinks) {
         const extracted = yield resolveSourceLink(link);
         streams.push(...extracted);
       }
-      return streams.filter((s) => s && s.url).map((s) => ({
+      beacon("9-extracted-streams", { count: streams.length });
+      const finalStreams = streams.filter((s) => s && s.url).map((s) => ({
         url: s.url,
         quality: s.quality || "Unknown",
         title: s.title || "UHDmovies",
@@ -505,7 +534,10 @@ function getStreams(tmdbId, mediaType, season, episode) {
         // formatBytes() treats it as a raw byte count and produces NaN.
         size: s.size || ""
       }));
+      beacon("10-final", { count: finalStreams.length });
+      return finalStreams;
     } catch (e) {
+      beacon("ERROR", { message: String(e && e.message), stack: String(e && e.stack) });
       console.error("[UHDmovies]", e);
       return [];
     }
