@@ -381,6 +381,58 @@ async function resolveSourceLink(link) {
   }
 }
 
+// Finds every "Episode N" anchor for the requested season, working on the raw HTML string
+// instead of walking the cheerio DOM. The app's bundled cheerio shim does not implement
+// .prop()/.tagName/.is() consistently (confirmed: the same class of bug already worked around
+// in vegamovies.js's extractQualityBlocks), and every attempt to fix cross-season leakage by
+// tracking "current season" during a stateful $(...).each() walk has broken the provider
+// completely once deployed - three separate times, each verified correct locally beforehand.
+// Slicing the raw HTML on season markers first sidesteps that whole class of DOM-shim gap.
+function extractSeasonEpisodeLinks(html, wantedSeason, wantedEpisode) {
+  // Every place in the raw HTML that names a season: a "Season N ..." divider between quality
+  // blocks, or "S0N" embedded in a quality heading's release-name text (e.g. "...S01.1080p...").
+  const seasonMarkerRe = /Season\s*0?(\d{1,3})\b|\bS0?(\d{1,3})(?=[.\s]|$)/gi;
+  const markers = [];
+  let m;
+  while ((m = seasonMarkerRe.exec(html)) !== null) {
+    const num = parseInt(m[1] || m[2], 10);
+    if (num) markers.push({ index: m.index, season: num });
+  }
+
+  // Slice the page into per-season regions using consecutive markers as boundaries. Text before
+  // the first marker belongs to season 1 (uhdmovies pages open directly with season 1's content,
+  // no leading "Season 1" divider).
+  const regions = [];
+  let regionStart = 0;
+  let regionSeason = 1;
+  for (const marker of markers) {
+    if (marker.season !== regionSeason) {
+      regions.push({ season: regionSeason, html: html.slice(regionStart, marker.index) });
+      regionStart = marker.index;
+      regionSeason = marker.season;
+    }
+  }
+  regions.push({ season: regionSeason, html: html.slice(regionStart) });
+
+  const wanted = regions.filter(r => r.season === wantedSeason);
+  if (!wanted.length) return [];
+
+  const episodeAnchorRe = /<a\b[^>]*href=["']([^"']+)["'][^>]*>([\s\S]*?)<\/a>/gi;
+  const links = [];
+  for (const region of wanted) {
+    let am;
+    episodeAnchorRe.lastIndex = 0;
+    while ((am = episodeAnchorRe.exec(region.html)) !== null) {
+      const href = am[1];
+      const label = am[2].replace(/<[^>]*>/g, " ").replace(/\s+/g, " ").trim();
+      if (!/episode/i.test(label) || /zip/i.test(label)) continue;
+      const epMatch = label.match(/episode\s*(\d+)/i);
+      if (epMatch && parseInt(epMatch[1], 10) === wantedEpisode) links.push(href);
+    }
+  }
+  return links;
+}
+
 async function resolveImdbToTmdb(imdbId, mediaType) {
   try {
     const url = `https://api.themoviedb.org/3/find/${imdbId}?api_key=${TMDB_API_KEY}&external_source=imdb_id`;
@@ -450,34 +502,10 @@ async function getStreams(tmdbId, mediaType, season, episode) {
     const sourceLinks = [];
 
     if (mediaType === "tv") {
-      const wantedSeason = parseInt(season, 10);
-      const wantedEpisode = parseInt(episode, 10);
-      let currentSeason = 1;
-
-      // Single walk over the same selector every other pass in this file already relies on (no
-      // second DOM query with a different selector - that's what broke this twice before, for
-      // reasons that were never reproducible locally). Every episode link found here is gated on
-      // currentSeason matching what was asked for, so a multi-season page can no longer leak
-      // episode 1 from every season the way the old season-blind fallback did.
-      $page("div.entry-content").find("pre, p, a").each((i, el) => {
-        const node = $page(el);
-        const text = node.text();
-        const seasonMatch = text.match(/(?:season\s*|S)(\d+)/i);
-        if (seasonMatch) currentSeason = parseInt(seasonMatch[1], 10);
-        if (currentSeason !== wantedSeason) return;
-
-        // node.prop("tagName") isn't implemented the same way across cheerio builds/forks - the
-        // host app's bundled cheerio throws "not a function" on it. The raw DOM node's own
-        // tagName property is a plain string every cheerio implementation exposes identically.
-        const tagName = (el.tagName || el.name || "").toLowerCase();
-        if (tagName !== "a" || !/episode/i.test(text) || /zip/i.test(text)) return;
-
-        const epMatch = text.match(/episode\s*(\d+)/i);
-        if (!epMatch || parseInt(epMatch[1], 10) !== wantedEpisode) return;
-
-        const href = node.attr("href");
-        if (href) sourceLinks.push(href);
-      });
+      // Raw-HTML extraction (see extractSeasonEpisodeLinks) instead of a stateful cheerio
+      // .each() walk - see the function's own comment for why.
+      const found = extractSeasonEpisodeLinks(pageHtml, parseInt(season, 10), parseInt(episode, 10));
+      for (const href of found) sourceLinks.push(href);
     } else {
       $page("div.entry-content > p").each((i, el) => {
         const node = $page(el);

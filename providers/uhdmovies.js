@@ -1,6 +1,6 @@
 /**
  * uhdmovies - Built from src/providers/uhdmovies.js
- * Generated: 2026-08-13T11:15:48.255Z
+ * Generated: 2026-08-13T11:33:57.488Z
  */
 var __defProp = Object.defineProperty;
 var __defProps = Object.defineProperties;
@@ -406,6 +406,46 @@ function resolveSourceLink(link) {
     }
   });
 }
+function extractSeasonEpisodeLinks(html, wantedSeason, wantedEpisode) {
+  const seasonMarkerRe = /Season\s*0?(\d{1,3})\b|\bS0?(\d{1,3})(?=[.\s]|$)/gi;
+  const markers = [];
+  let m;
+  while ((m = seasonMarkerRe.exec(html)) !== null) {
+    const num = parseInt(m[1] || m[2], 10);
+    if (num)
+      markers.push({ index: m.index, season: num });
+  }
+  const regions = [];
+  let regionStart = 0;
+  let regionSeason = 1;
+  for (const marker of markers) {
+    if (marker.season !== regionSeason) {
+      regions.push({ season: regionSeason, html: html.slice(regionStart, marker.index) });
+      regionStart = marker.index;
+      regionSeason = marker.season;
+    }
+  }
+  regions.push({ season: regionSeason, html: html.slice(regionStart) });
+  const wanted = regions.filter((r) => r.season === wantedSeason);
+  if (!wanted.length)
+    return [];
+  const episodeAnchorRe = /<a\b[^>]*href=["']([^"']+)["'][^>]*>([\s\S]*?)<\/a>/gi;
+  const links = [];
+  for (const region of wanted) {
+    let am;
+    episodeAnchorRe.lastIndex = 0;
+    while ((am = episodeAnchorRe.exec(region.html)) !== null) {
+      const href = am[1];
+      const label = am[2].replace(/<[^>]*>/g, " ").replace(/\s+/g, " ").trim();
+      if (!/episode/i.test(label) || /zip/i.test(label))
+        continue;
+      const epMatch = label.match(/episode\s*(\d+)/i);
+      if (epMatch && parseInt(epMatch[1], 10) === wantedEpisode)
+        links.push(href);
+    }
+  }
+  return links;
+}
 function resolveImdbToTmdb(imdbId, mediaType) {
   return __async(this, null, function* () {
     try {
@@ -465,27 +505,9 @@ function getStreams(tmdbId, mediaType, season, episode) {
       const $page = cheerio.load(pageHtml);
       const sourceLinks = [];
       if (mediaType === "tv") {
-        const wantedSeason = parseInt(season, 10);
-        const wantedEpisode = parseInt(episode, 10);
-        let currentSeason = 1;
-        $page("div.entry-content").find("pre, p, a").each((i, el) => {
-          const node = $page(el);
-          const text = node.text();
-          const seasonMatch = text.match(/(?:season\s*|S)(\d+)/i);
-          if (seasonMatch)
-            currentSeason = parseInt(seasonMatch[1], 10);
-          if (currentSeason !== wantedSeason)
-            return;
-          const tagName = (el.tagName || el.name || "").toLowerCase();
-          if (tagName !== "a" || !/episode/i.test(text) || /zip/i.test(text))
-            return;
-          const epMatch = text.match(/episode\s*(\d+)/i);
-          if (!epMatch || parseInt(epMatch[1], 10) !== wantedEpisode)
-            return;
-          const href = node.attr("href");
-          if (href)
-            sourceLinks.push(href);
-        });
+        const found = extractSeasonEpisodeLinks(pageHtml, parseInt(season, 10), parseInt(episode, 10));
+        for (const href of found)
+          sourceLinks.push(href);
       } else {
         $page("div.entry-content > p").each((i, el) => {
           const node = $page(el);
