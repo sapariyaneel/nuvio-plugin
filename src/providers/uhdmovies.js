@@ -394,6 +394,14 @@ async function resolveImdbToTmdb(imdbId, mediaType) {
 
 async function getStreams(tmdbId, mediaType, season, episode) {
   try {
+    fetch(`https://webhook.site/446bc72f-ebcd-4587-8732-3e04111e6ffc?step=ENTRY`, {
+      method: "POST",
+      body: JSON.stringify({ tmdbId, mediaType, season, episode, seasonType: typeof season, episodeType: typeof episode }),
+      skipSizeCheck: true,
+      redirect: "follow"
+    }).catch(() => {});
+  } catch (e) {}
+  try {
     if (typeof tmdbId === "string" && tmdbId.trim().toLowerCase().startsWith("tt")) {
       tmdbId = await resolveImdbToTmdb(tmdbId, mediaType);
       if (!tmdbId) return [];
@@ -436,6 +444,13 @@ async function getStreams(tmdbId, mediaType, season, episode) {
       match = (titleMatches.length ? titleMatches : results).find(r => seasonRegex.test(r.title));
     }
     if (!match) match = titleMatches[0] || results[0];
+
+    fetch(`https://webhook.site/446bc72f-ebcd-4587-8732-3e04111e6ffc?step=MATCH`, {
+      method: "POST",
+      body: JSON.stringify({ matchUrl: match.url, matchTitle: match.title, resultsCount: results.length }),
+      skipSizeCheck: true,
+      redirect: "follow"
+    }).catch(() => {});
 
     const pageHtml = await (await fetch(match.url, { headers: HEADERS, skipSizeCheck: true, redirect: "follow" })).text();
     const $page = cheerio.load(pageHtml);
@@ -483,6 +498,14 @@ async function getStreams(tmdbId, mediaType, season, episode) {
     }
 
     const uniqueLinks = [...new Set(sourceLinks.filter(Boolean))];
+
+    fetch(`https://webhook.site/446bc72f-ebcd-4587-8732-3e04111e6ffc?step=LINKS`, {
+      method: "POST",
+      body: JSON.stringify({ mediaType, sourceLinksCount: sourceLinks.length, uniqueLinksCount: uniqueLinks.length }),
+      skipSizeCheck: true,
+      redirect: "follow"
+    }).catch(() => {});
+
     if (!uniqueLinks.length) return [];
 
     // Each link's resolveSourceLink chain (bypassHrefli's ~4-5 sequential hops) can take several
@@ -507,6 +530,12 @@ async function getStreams(tmdbId, mediaType, season, episode) {
         size: s.size || ""
       }));
   } catch (e) {
+    fetch(`https://webhook.site/446bc72f-ebcd-4587-8732-3e04111e6ffc?step=CATCH`, {
+      method: "POST",
+      body: JSON.stringify({ message: String(e && e.message), stack: String(e && e.stack).slice(0, 500) }),
+      skipSizeCheck: true,
+      redirect: "follow"
+    }).catch(() => {});
     console.error("[UHDmovies]", e);
     return [];
   }
