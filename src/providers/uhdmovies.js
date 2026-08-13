@@ -428,12 +428,19 @@ async function getStreams(tmdbId, mediaType, season, episode) {
     let match;
     if (mediaType === "tv" && season) {
       // uhdmovies posts spinoffs/specials as separate search hits with the same base title
-      // ("Stranger Things: Tales from '85" also matches "Stranger Things"), and multi-season
-      // shows can be split across several posts too - a plain title-substring match can land on
-      // the wrong page entirely, silently returning 0 episode links. Prefer a hit whose own
-      // title names the requested season.
+      // ("Stranger Things: Tales from '85" also matches "Stranger Things", AND both posts can
+      // independently satisfy a "Season 1" regex - the spinoff has its own Season 1, so season-
+      // matching alone doesn't disambiguate). Multi-season shows can also be split across several
+      // posts. Among every hit whose title names the requested season, prefer the one closest to
+      // an exact title match (fewest extra characters after the searched title) - the real show's
+      // post continues straight into season/year info, while spinoffs insert a ": Subtitle" first.
       const seasonRegex = new RegExp(`Season\\s*0?${season}\\b|\\bS0?${season}\\b`, "i");
-      match = (titleMatches.length ? titleMatches : results).find(r => seasonRegex.test(r.title));
+      const seasonMatches = (titleMatches.length ? titleMatches : results).filter(r => seasonRegex.test(r.title));
+      if (seasonMatches.length) {
+        match = seasonMatches.reduce((best, r) =>
+          r.title.length < best.title.length ? r : best
+        );
+      }
     }
     if (!match) match = titleMatches[0] || results[0];
 

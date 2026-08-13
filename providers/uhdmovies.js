@@ -1,6 +1,6 @@
 /**
  * uhdmovies - Built from src/providers/uhdmovies.js
- * Generated: 2026-08-13T10:08:57.513Z
+ * Generated: 2026-08-13T10:54:50.690Z
  */
 var __defProp = Object.defineProperty;
 var __defProps = Object.defineProperties;
@@ -452,7 +452,12 @@ function getStreams(tmdbId, mediaType, season, episode) {
       let match;
       if (mediaType === "tv" && season) {
         const seasonRegex = new RegExp(`Season\\s*0?${season}\\b|\\bS0?${season}\\b`, "i");
-        match = (titleMatches.length ? titleMatches : results).find((r) => seasonRegex.test(r.title));
+        const seasonMatches = (titleMatches.length ? titleMatches : results).filter((r) => seasonRegex.test(r.title));
+        if (seasonMatches.length) {
+          match = seasonMatches.reduce(
+            (best, r) => r.title.length < best.title.length ? r : best
+          );
+        }
       }
       if (!match)
         match = titleMatches[0] || results[0];
