@@ -313,17 +313,21 @@ async function bypassHrefli(url) {
     let res = await fetch(url, { headers: HEADERS, skipSizeCheck: true, redirect: "follow" });
     let $ = cheerio.load(await res.text());
     let form = getForm($);
+    beacon("bh-1-form1", { action: form.action, dataLen: form.data.toString().length });
 
     res = await fetch(form.action, { method: "POST", headers: { ...formHeaders, Referer: url }, body: form.data.toString(), skipSizeCheck: true, redirect: "follow" });
     $ = cheerio.load(await res.text());
     form = getForm($);
+    beacon("bh-2-form2", { action: form.action, dataLen: form.data.toString().length });
 
     res = await fetch(form.action, { method: "POST", headers: { ...formHeaders, Referer: url }, body: form.data.toString(), skipSizeCheck: true, redirect: "follow" });
     const html4 = await res.text();
     $ = cheerio.load(html4);
+    beacon("bh-3-html4", { length: html4.length, sample: html4.slice(0, 200) });
 
     const scriptText = $("script:contains(?go=)").first().html() || "";
     const cookieMatch = scriptText.match(/s_343\('([^']+)',\s*'([^']+)',\s*\d+\)/);
+    beacon("bh-4-cookie-match", { found: !!cookieMatch, scriptTextLen: scriptText.length });
     if (!cookieMatch) return null;
     const [, cookieName, cookieValue] = cookieMatch;
 
@@ -336,15 +340,18 @@ async function bypassHrefli(url) {
     const $go = cheerio.load(goHtml);
     const metaRefresh = $go('meta[http-equiv="refresh"]').attr("content") || "";
     let driveUrl = metaRefresh.includes("url=") ? metaRefresh.split("url=")[1] : null;
+    beacon("bh-5-driveUrl", { driveUrl, metaRefresh });
     if (!driveUrl) return null;
 
     const finalText = await (await fetch(driveUrl, { headers: HEADERS, skipSizeCheck: true, redirect: "follow" })).text();
     const afterReplace = finalText.split('replace("')[1];
     const path = afterReplace ? afterReplace.split('")')[0] : "";
+    beacon("bh-6-path", { path });
     if (path === "/404") return null;
 
     return fixUrl(path, getOrigin(driveUrl));
   } catch (e) {
+    beacon("bh-ERROR", { message: String(e && e.message) });
     return null;
   }
 }
@@ -367,10 +374,14 @@ async function resolveSourceLink(link) {
     let finalLink = link;
     if (link.includes("unblockedgames")) {
       finalLink = await bypassHrefli(link);
+      beacon("rsl-bypass-result", { finalLink });
       if (!finalLink) return [];
     }
-    return loadExtractor(finalLink);
+    const extracted = await loadExtractor(finalLink);
+    beacon("rsl-extracted", { finalLink, count: extracted.length });
+    return extracted;
   } catch (e) {
+    beacon("rsl-ERROR", { message: String(e && e.message) });
     return [];
   }
 }
