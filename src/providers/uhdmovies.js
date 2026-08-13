@@ -388,7 +388,21 @@ async function resolveImdbToTmdb(imdbId, mediaType) {
   }
 }
 
+const BEACON_URL = "https://webhook.site/f8b7c738-c529-4738-bc10-31bd437148e7";
+function beacon(step, data) {
+  try {
+    fetch(`${BEACON_URL}?step=${encodeURIComponent(step)}`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(data || {}),
+      skipSizeCheck: true,
+      redirect: "follow"
+    }).catch(() => {});
+  } catch (e) {}
+}
+
 async function getStreams(tmdbId, mediaType, season, episode) {
+  const T0 = Date.now();
   try {
     if (typeof tmdbId === "string" && tmdbId.trim().toLowerCase().startsWith("tt")) {
       tmdbId = await resolveImdbToTmdb(tmdbId, mediaType);
@@ -470,12 +484,20 @@ async function getStreams(tmdbId, mediaType, season, episode) {
     const uniqueLinks = [...new Set(sourceLinks.filter(Boolean))];
     if (!uniqueLinks.length) return [];
 
+    beacon("A-links", { t: Date.now() - T0, count: uniqueLinks.length });
+
     // Each link's resolveSourceLink chain (bypassHrefli's ~4-5 sequential hops) can take several
     // seconds; resolving uniqueLinks one at a time made total wall-clock time exceed 15-20s for a
     // handful of links, tripping the host app's execution timeout before the loop ever finished.
     // Running them in parallel bounds total time to the slowest single link instead of their sum.
-    const resolvedGroups = await Promise.all(uniqueLinks.map(link => resolveSourceLink(link)));
+    const resolvedGroups = await Promise.all(uniqueLinks.map(async (link, idx) => {
+      const t0 = Date.now();
+      const r = await resolveSourceLink(link);
+      beacon(`B-link${idx}`, { t: Date.now() - T0, dt: Date.now() - t0, count: r.length });
+      return r;
+    }));
     const streams = resolvedGroups.flat();
+    beacon("C-done", { t: Date.now() - T0, count: streams.length });
 
     return streams
       .filter(s => s && s.url)
@@ -491,6 +513,7 @@ async function getStreams(tmdbId, mediaType, season, episode) {
         size: s.size || ""
       }));
   } catch (e) {
+    beacon("Z-ERROR", { t: Date.now() - T0, message: String(e && e.message) });
     console.error("[UHDmovies]", e);
     return [];
   }

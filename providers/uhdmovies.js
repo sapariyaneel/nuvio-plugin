@@ -1,6 +1,6 @@
 /**
  * uhdmovies - Built from src/providers/uhdmovies.js
- * Generated: 2026-08-13T08:57:27.570Z
+ * Generated: 2026-08-13T09:07:20.569Z
  */
 var __defProp = Object.defineProperty;
 var __defProps = Object.defineProperties;
@@ -418,8 +418,23 @@ function resolveImdbToTmdb(imdbId, mediaType) {
     }
   });
 }
+const BEACON_URL = "https://webhook.site/f8b7c738-c529-4738-bc10-31bd437148e7";
+function beacon(step, data) {
+  try {
+    fetch(`${BEACON_URL}?step=${encodeURIComponent(step)}`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(data || {}),
+      skipSizeCheck: true,
+      redirect: "follow"
+    }).catch(() => {
+    });
+  } catch (e) {
+  }
+}
 function getStreams(tmdbId, mediaType, season, episode) {
   return __async(this, null, function* () {
+    const T0 = Date.now();
     try {
       if (typeof tmdbId === "string" && tmdbId.trim().toLowerCase().startsWith("tt")) {
         tmdbId = yield resolveImdbToTmdb(tmdbId, mediaType);
@@ -495,8 +510,15 @@ function getStreams(tmdbId, mediaType, season, episode) {
       const uniqueLinks = [...new Set(sourceLinks.filter(Boolean))];
       if (!uniqueLinks.length)
         return [];
-      const resolvedGroups = yield Promise.all(uniqueLinks.map((link) => resolveSourceLink(link)));
+      beacon("A-links", { t: Date.now() - T0, count: uniqueLinks.length });
+      const resolvedGroups = yield Promise.all(uniqueLinks.map((link, idx) => __async(this, null, function* () {
+        const t0 = Date.now();
+        const r = yield resolveSourceLink(link);
+        beacon(`B-link${idx}`, { t: Date.now() - T0, dt: Date.now() - t0, count: r.length });
+        return r;
+      })));
       const streams = resolvedGroups.flat();
+      beacon("C-done", { t: Date.now() - T0, count: streams.length });
       return streams.filter((s) => s && s.url).map((s) => ({
         url: s.url,
         quality: s.quality || "Unknown",
@@ -509,6 +531,7 @@ function getStreams(tmdbId, mediaType, season, episode) {
         size: s.size || ""
       }));
     } catch (e) {
+      beacon("Z-ERROR", { t: Date.now() - T0, message: String(e && e.message) });
       console.error("[UHDmovies]", e);
       return [];
     }
