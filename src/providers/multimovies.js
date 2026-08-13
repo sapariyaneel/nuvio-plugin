@@ -11,22 +11,36 @@ const HEADERS = {
 
 let cachedBaseUrl = null;
 
+// The domain in domains.json can rotate to one that's dead/unreachable (confirmed: this
+// happened to HDhub4u earlier, and multimovies.makeup is currently unreachable too) - trusting
+// it unconditionally means every call for the rest of the process uses a dead domain. Verify it
+// actually responds before caching it, falling back to FALLBACK_URL otherwise.
+async function isReachable(url) {
+  try {
+    const resp = await fetch(url, { headers: HEADERS, skipSizeCheck: true, redirect: "follow" });
+    return resp.status < 500;
+  } catch (e) {
+    return false;
+  }
+}
+
 async function getBaseUrl() {
   if (cachedBaseUrl) return cachedBaseUrl;
+  let candidate = FALLBACK_URL;
   try {
-    const resp = await fetch(DOMAINS_URL, { skipSizeCheck: true });
+    const resp = await fetch(DOMAINS_URL, { skipSizeCheck: true, redirect: "follow" });
     const data = await resp.json();
-    cachedBaseUrl = data.MultiMovies || FALLBACK_URL;
-  } catch(e) {
-    cachedBaseUrl = FALLBACK_URL;
-  }
+    if (data.MultiMovies) candidate = data.MultiMovies;
+  } catch (e) {}
+
+  cachedBaseUrl = (await isReachable(candidate)) ? candidate : FALLBACK_URL;
   return cachedBaseUrl;
 }
 
 async function resolveImdbToTmdb(imdbId, mediaType) {
   try {
     const url = `https://api.themoviedb.org/3/find/${imdbId}?api_key=${TMDB_API_KEY}&external_source=imdb_id`;
-    const data = await (await fetch(url, { skipSizeCheck: true })).json();
+    const data = await (await fetch(url, { skipSizeCheck: true, redirect: "follow" })).json();
     const results = mediaType === "tv" ? data.tv_results : data.movie_results;
     return results && results.length ? results[0].id : null;
   } catch (e) {
@@ -45,14 +59,15 @@ async function getStreams(tmdbId, mediaType, season, episode) {
 
     // Step 1: Get title from TMDB
     const tmdbUrl = `https://api.themoviedb.org/3/${mediaType}/${tmdbId}?api_key=${TMDB_API_KEY}`;
-    const mediaInfo = await (await fetch(tmdbUrl, { skipSizeCheck: true })).json();
+    const mediaInfo = await (await fetch(tmdbUrl, { skipSizeCheck: true, redirect: "follow" })).json();
     const title = mediaInfo.title || mediaInfo.name;
     if (!title) return [];
 
     // Step 2: Search MultiMovies
     const searchResp = await fetch(`${BASE_URL}/?s=${encodeURIComponent(title)}`, {
       headers: HEADERS,
-      skipSizeCheck: true
+      skipSizeCheck: true,
+      redirect: "follow"
     });
     const searchHtml = await searchResp.text();
     const $ = cheerio.load(searchHtml);
@@ -73,7 +88,7 @@ async function getStreams(tmdbId, mediaType, season, episode) {
     ) || results[0];
 
     // Step 3: Load content page
-    const pageResp = await fetch(match.href, { headers: HEADERS, skipSizeCheck: true });
+    const pageResp = await fetch(match.href, { headers: HEADERS, skipSizeCheck: true, redirect: "follow" });
     const pageHtml = await pageResp.text();
     const $p = cheerio.load(pageHtml);
 
@@ -116,7 +131,7 @@ async function getStreams(tmdbId, mediaType, season, episode) {
       if (!targetEp) return [];
 
       // Load episode page and get player options
-      const epResp = await fetch(targetEp.href, { headers: HEADERS, skipSizeCheck: true });
+      const epResp = await fetch(targetEp.href, { headers: HEADERS, skipSizeCheck: true, redirect: "follow" });
       const epHtml = await epResp.text();
       const $ep = cheerio.load(epHtml);
 
@@ -198,7 +213,8 @@ async function fetchEmbedUrl(baseUrl, post, nume, type, referer) {
         "Referer": baseUrl
       },
       body: `action=doo_player_ajax&post=${post}&nume=${nume}&type=${type}`,
-      skipSizeCheck: true
+      skipSizeCheck: true,
+      redirect: "follow"
     });
     const data = await resp.json();
     const embedUrl = data.embed_url || "";
@@ -281,17 +297,44 @@ function unpackJsPacker(html) {
   return payload.replace(/\b\w+\b/g, (word) => (dict[word] !== undefined ? dict[word] : word));
 }
 
-async function resolveEmbed(url, referer) {
+// Some mirror chains (modiplay.xyz -> proxy.php -> vibuxer.com) hand the video off through a
+// plain <iframe src="..."> or an inline `EMBED_URL = '...'` JS assignment before the page that
+// actually has the packed player script. None of this needs real JS execution - the intermediate
+// pages are static HTML - but resolveEmbed only ever looked at the *first* page's own content, so
+// it never found the real stream when a mirror needed one of these extra static hops.
+function nextEmbedHop(html, baseUrl) {
+  const $ = cheerio.load(html);
+  const iframeSrc = $("iframe").first().attr("src");
+  if (iframeSrc && iframeSrc.startsWith("http")) return iframeSrc;
+  if (iframeSrc && iframeSrc.startsWith("/")) return new URL(iframeSrc, baseUrl).toString();
+
+  const varMatch = html.match(/EMBED_URL\s*=\s*['"]([^'"]+)['"]/);
+  if (varMatch) return varMatch[1];
+
+  return null;
+}
+
+async function resolveEmbed(url, referer, depth) {
   if (!url || !url.startsWith("http")) return null;
+  if ((depth || 0) > 3) return null; // guard against a redirect loop between mirrors
 
   // If it's already a direct stream
   if (url.includes(".m3u8") || url.includes(".mp4")) return url;
 
   // Try to load the embed page and find stream
   try {
+    // vibuxer.com (and likely other mirrors in this chain) validates Referer against the
+    // requesting origin only, not the full path+query - sending the previous hop's exact URL
+    // (e.g. ".../proxy.php?p=streamhg&c=...") as Referer gets served a placeholder error page
+    // instead of the real player. Trimming to just the origin matches what a real cross-site
+    // iframe navigation sends under a standard "strict-origin" referrer policy.
+    let refererOrigin = referer;
+    try { refererOrigin = referer ? new URL(referer).origin + "/" : referer; } catch (e) {}
+
     const resp = await fetch(url, {
-      headers: { ...HEADERS, "Referer": referer },
-      skipSizeCheck: true
+      headers: { ...HEADERS, "Referer": refererOrigin },
+      skipSizeCheck: true,
+      redirect: "follow"
     });
     const text = await resp.text();
 
@@ -316,6 +359,9 @@ async function resolveEmbed(url, referer) {
       const packedMp4 = unpacked.match(/(https?:\/\/[^\s"']+\.mp4[^\s"']*)/i);
       if (packedMp4) return packedMp4[1];
     }
+
+    const hop = nextEmbedHop(text, url);
+    if (hop && hop !== url) return resolveEmbed(hop, url, (depth || 0) + 1);
 
     return null; // No real stream found - do not fall back to the embed page URL itself
   } catch(e) {

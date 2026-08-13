@@ -1,3 +1,7 @@
+/**
+ * multimovies - Built from src/providers/multimovies.js
+ * Generated: 2026-08-13T12:04:21.240Z
+ */
 var __defProp = Object.defineProperty;
 var __defProps = Object.defineProperties;
 var __getOwnPropDescs = Object.getOwnPropertyDescriptors;
@@ -44,17 +48,29 @@ const HEADERS = {
   "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
 };
 let cachedBaseUrl = null;
+function isReachable(url) {
+  return __async(this, null, function* () {
+    try {
+      const resp = yield fetch(url, { headers: HEADERS, skipSizeCheck: true, redirect: "follow" });
+      return resp.status < 500;
+    } catch (e) {
+      return false;
+    }
+  });
+}
 function getBaseUrl() {
   return __async(this, null, function* () {
     if (cachedBaseUrl)
       return cachedBaseUrl;
+    let candidate = FALLBACK_URL;
     try {
-      const resp = yield fetch(DOMAINS_URL, { skipSizeCheck: true });
+      const resp = yield fetch(DOMAINS_URL, { skipSizeCheck: true, redirect: "follow" });
       const data = yield resp.json();
-      cachedBaseUrl = data.MultiMovies || FALLBACK_URL;
+      if (data.MultiMovies)
+        candidate = data.MultiMovies;
     } catch (e) {
-      cachedBaseUrl = FALLBACK_URL;
     }
+    cachedBaseUrl = (yield isReachable(candidate)) ? candidate : FALLBACK_URL;
     return cachedBaseUrl;
   });
 }
@@ -62,7 +78,7 @@ function resolveImdbToTmdb(imdbId, mediaType) {
   return __async(this, null, function* () {
     try {
       const url = `https://api.themoviedb.org/3/find/${imdbId}?api_key=${TMDB_API_KEY}&external_source=imdb_id`;
-      const data = yield (yield fetch(url, { skipSizeCheck: true })).json();
+      const data = yield (yield fetch(url, { skipSizeCheck: true, redirect: "follow" })).json();
       const results = mediaType === "tv" ? data.tv_results : data.movie_results;
       return results && results.length ? results[0].id : null;
     } catch (e) {
@@ -80,13 +96,14 @@ function getStreams(tmdbId, mediaType, season, episode) {
       }
       const BASE_URL = yield getBaseUrl();
       const tmdbUrl = `https://api.themoviedb.org/3/${mediaType}/${tmdbId}?api_key=${TMDB_API_KEY}`;
-      const mediaInfo = yield (yield fetch(tmdbUrl, { skipSizeCheck: true })).json();
+      const mediaInfo = yield (yield fetch(tmdbUrl, { skipSizeCheck: true, redirect: "follow" })).json();
       const title = mediaInfo.title || mediaInfo.name;
       if (!title)
         return [];
       const searchResp = yield fetch(`${BASE_URL}/?s=${encodeURIComponent(title)}`, {
         headers: HEADERS,
-        skipSizeCheck: true
+        skipSizeCheck: true,
+        redirect: "follow"
       });
       const searchHtml = yield searchResp.text();
       const $ = cheerio.load(searchHtml);
@@ -104,7 +121,7 @@ function getStreams(tmdbId, mediaType, season, episode) {
       const match = results.find(
         (r) => r.name.toLowerCase().includes(title.toLowerCase())
       ) || results[0];
-      const pageResp = yield fetch(match.href, { headers: HEADERS, skipSizeCheck: true });
+      const pageResp = yield fetch(match.href, { headers: HEADERS, skipSizeCheck: true, redirect: "follow" });
       const pageHtml = yield pageResp.text();
       const $p = cheerio.load(pageHtml);
       const streams = [];
@@ -139,7 +156,7 @@ function getStreams(tmdbId, mediaType, season, episode) {
         ) || episodes[0];
         if (!targetEp)
           return [];
-        const epResp = yield fetch(targetEp.href, { headers: HEADERS, skipSizeCheck: true });
+        const epResp = yield fetch(targetEp.href, { headers: HEADERS, skipSizeCheck: true, redirect: "follow" });
         const epHtml = yield epResp.text();
         const $ep = cheerio.load(epHtml);
         const epItems = [];
@@ -212,7 +229,8 @@ function fetchEmbedUrl(baseUrl, post, nume, type, referer) {
           "Referer": baseUrl
         }),
         body: `action=doo_player_ajax&post=${post}&nume=${nume}&type=${type}`,
-        skipSizeCheck: true
+        skipSizeCheck: true,
+        redirect: "follow"
       });
       const data = yield resp.json();
       const embedUrl = data.embed_url || "";
@@ -313,16 +331,36 @@ function unpackJsPacker(html) {
     dict[c.toString(radix)] = keywords[c] || c.toString(radix);
   return payload.replace(/\b\w+\b/g, (word) => dict[word] !== void 0 ? dict[word] : word);
 }
-function resolveEmbed(url, referer) {
+function nextEmbedHop(html, baseUrl) {
+  const $ = cheerio.load(html);
+  const iframeSrc = $("iframe").first().attr("src");
+  if (iframeSrc && iframeSrc.startsWith("http"))
+    return iframeSrc;
+  if (iframeSrc && iframeSrc.startsWith("/"))
+    return new URL(iframeSrc, baseUrl).toString();
+  const varMatch = html.match(/EMBED_URL\s*=\s*['"]([^'"]+)['"]/);
+  if (varMatch)
+    return varMatch[1];
+  return null;
+}
+function resolveEmbed(url, referer, depth) {
   return __async(this, null, function* () {
     if (!url || !url.startsWith("http"))
+      return null;
+    if ((depth || 0) > 3)
       return null;
     if (url.includes(".m3u8") || url.includes(".mp4"))
       return url;
     try {
+      let refererOrigin = referer;
+      try {
+        refererOrigin = referer ? new URL(referer).origin + "/" : referer;
+      } catch (e) {
+      }
       const resp = yield fetch(url, {
-        headers: __spreadProps(__spreadValues({}, HEADERS), { "Referer": referer }),
-        skipSizeCheck: true
+        headers: __spreadProps(__spreadValues({}, HEADERS), { "Referer": refererOrigin }),
+        skipSizeCheck: true,
+        redirect: "follow"
       });
       const text = yield resp.text();
       if (url.includes("deaddrive.xyz")) {
@@ -345,6 +383,9 @@ function resolveEmbed(url, referer) {
         if (packedMp4)
           return packedMp4[1];
       }
+      const hop = nextEmbedHop(text, url);
+      if (hop && hop !== url)
+        return resolveEmbed(hop, url, (depth || 0) + 1);
       return null;
     } catch (e) {
       return null;
