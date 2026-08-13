@@ -11,9 +11,6 @@ const DOMAINS_URL = "https://raw.githubusercontent.com/sapariyaneel/nuvio-plugin
 const FALLBACK_BASE_URL = "https://uhdmovies.autos";
 const TMDB_API_KEY = "1865f43a0549ca50d341dd9ab8b29f49";
 
-// unblockedgames.world's bot-check gates whether it embeds the real s_343(...) payload script or
-// a stripped decoy on the "Accept"/"Accept-Language" headers, not just User-Agent - the host app's
-// fetch doesn't set browser-like defaults the way undici does, so they're pinned explicitly here.
 const HEADERS = {
   "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36",
   "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8",
@@ -318,12 +315,10 @@ async function bypassHrefli(url) {
     let res = await fetch(url, { headers: HEADERS, skipSizeCheck: true, redirect: "follow" });
     let $ = cheerio.load(await res.text());
     let form = getForm($);
-    if (!form.action) return { reason: "no-form1-action" };
 
     res = await fetch(form.action, { method: "POST", headers: { ...formHeaders, Referer: url }, body: form.data.toString(), skipSizeCheck: true, redirect: "follow" });
     $ = cheerio.load(await res.text());
     form = getForm($);
-    if (!form.action) return { reason: "no-form2-action" };
 
     res = await fetch(form.action, { method: "POST", headers: { ...formHeaders, Referer: url }, body: form.data.toString(), skipSizeCheck: true, redirect: "follow" });
     const html4 = await res.text();
@@ -333,7 +328,7 @@ async function bypassHrefli(url) {
     // tag on some article variants if another script also happens to mention "?go=". Regex the raw
     // HTML directly for the literal s_343(...) call instead - it's the only thing we actually need.
     const cookieMatch = html4.match(/s_343\('([^']+)',\s*'([^']+)',\s*\d+\)/);
-    if (!cookieMatch) return { reason: "no-cookie-match", html4Len: html4.length };
+    if (!cookieMatch) return null;
     const [, cookieName, cookieValue] = cookieMatch;
 
     const goResp = await fetch(`${host}/?go=${cookieName}`, {
@@ -345,17 +340,16 @@ async function bypassHrefli(url) {
     const $go = cheerio.load(goHtml);
     const metaRefresh = $go('meta[http-equiv="refresh"]').attr("content") || "";
     let driveUrl = metaRefresh.includes("url=") ? metaRefresh.split("url=")[1] : null;
-    if (!driveUrl) return { reason: "no-driveUrl", metaRefresh };
+    if (!driveUrl) return null;
 
     const finalText = await (await fetch(driveUrl, { headers: HEADERS, skipSizeCheck: true, redirect: "follow" })).text();
     const afterReplace = finalText.split('replace("')[1];
     const path = afterReplace ? afterReplace.split('")')[0] : "";
-    if (path === "/404") return { reason: "path-404" };
-    if (!afterReplace) return { reason: "no-replace-match", finalTextLen: finalText.length };
+    if (path === "/404") return null;
 
-    return { url: fixUrl(path, getOrigin(driveUrl)) };
+    return fixUrl(path, getOrigin(driveUrl));
   } catch (e) {
-    return { reason: "exception", message: String(e && e.message) };
+    return null;
   }
 }
 
@@ -378,12 +372,8 @@ async function resolveSourceLink(link) {
   try {
     let finalLink = link;
     if (link.includes("unblockedgames")) {
-      const bypassResult = await bypassHrefli(link);
-      if (!bypassResult || !bypassResult.url) {
-        beacon("bypass-fail", bypassResult || { reason: "null-result" });
-        return [];
-      }
-      finalLink = bypassResult.url;
+      finalLink = await bypassHrefli(link);
+      if (!finalLink) return [];
     }
     return loadExtractor(finalLink);
   } catch (e) {
@@ -402,21 +392,7 @@ async function resolveImdbToTmdb(imdbId, mediaType) {
   }
 }
 
-const BEACON_URL = "https://webhook.site/f8b7c738-c529-4738-bc10-31bd437148e7";
-function beacon(step, data) {
-  try {
-    fetch(`${BEACON_URL}?step=${encodeURIComponent(step)}`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(data || {}),
-      skipSizeCheck: true,
-      redirect: "follow"
-    }).catch(() => {});
-  } catch (e) {}
-}
-
 async function getStreams(tmdbId, mediaType, season, episode) {
-  const T0 = Date.now();
   try {
     if (typeof tmdbId === "string" && tmdbId.trim().toLowerCase().startsWith("tt")) {
       tmdbId = await resolveImdbToTmdb(tmdbId, mediaType);
@@ -448,7 +424,18 @@ async function getStreams(tmdbId, mediaType, season, episode) {
     if (!results.length) return [];
 
     const lcTitle = title.toLowerCase();
-    let match = results.find(r => r.title.toLowerCase().includes(lcTitle)) || results[0];
+    const titleMatches = results.filter(r => r.title.toLowerCase().includes(lcTitle));
+    let match;
+    if (mediaType === "tv" && season) {
+      // uhdmovies posts spinoffs/specials as separate search hits with the same base title
+      // ("Stranger Things: Tales from '85" also matches "Stranger Things"), and multi-season
+      // shows can be split across several posts too - a plain title-substring match can land on
+      // the wrong page entirely, silently returning 0 episode links. Prefer a hit whose own
+      // title names the requested season.
+      const seasonRegex = new RegExp(`Season\\s*0?${season}\\b|\\bS0?${season}\\b`, "i");
+      match = (titleMatches.length ? titleMatches : results).find(r => seasonRegex.test(r.title));
+    }
+    if (!match) match = titleMatches[0] || results[0];
 
     const pageHtml = await (await fetch(match.url, { headers: HEADERS, skipSizeCheck: true, redirect: "follow" })).text();
     const $page = cheerio.load(pageHtml);
@@ -498,21 +485,13 @@ async function getStreams(tmdbId, mediaType, season, episode) {
     const uniqueLinks = [...new Set(sourceLinks.filter(Boolean))];
     if (!uniqueLinks.length) return [];
 
-    beacon("A-links", { t: Date.now() - T0, count: uniqueLinks.length });
-
     // Each link's resolveSourceLink chain (bypassHrefli's ~4-5 sequential hops) can take several
     // seconds; resolving uniqueLinks one at a time made total wall-clock time exceed 15-20s for a
     // handful of links, tripping the host app's execution timeout before the loop ever finished.
     // Running them in parallel bounds total time to the slowest single link instead of their sum.
-    const resolvedGroups = await Promise.all(uniqueLinks.map(async (link, idx) => {
-      const t0 = Date.now();
-      const r = await resolveSourceLink(link);
-      beacon(`B-link${idx}`, { t: Date.now() - T0, dt: Date.now() - t0, count: r.length });
-      return r;
-    }));
+    const resolvedGroups = await Promise.all(uniqueLinks.map(link => resolveSourceLink(link)));
     const streams = [];
     for (const group of resolvedGroups) streams.push(...group);
-    beacon("C-done", { t: Date.now() - T0, count: streams.length });
 
     return streams
       .filter(s => s && s.url)
@@ -528,7 +507,6 @@ async function getStreams(tmdbId, mediaType, season, episode) {
         size: s.size || ""
       }));
   } catch (e) {
-    beacon("Z-ERROR", { t: Date.now() - T0, message: String(e && e.message) });
     console.error("[UHDmovies]", e);
     return [];
   }

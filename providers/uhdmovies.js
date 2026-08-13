@@ -1,6 +1,6 @@
 /**
  * uhdmovies - Built from src/providers/uhdmovies.js
- * Generated: 2026-08-13T09:28:17.402Z
+ * Generated: 2026-08-13T09:39:39.495Z
  */
 var __defProp = Object.defineProperty;
 var __defProps = Object.defineProperties;
@@ -342,18 +342,14 @@ function bypassHrefli(url) {
       let res = yield fetch(url, { headers: HEADERS, skipSizeCheck: true, redirect: "follow" });
       let $ = cheerio.load(yield res.text());
       let form = getForm($);
-      if (!form.action)
-        return { reason: "no-form1-action" };
       res = yield fetch(form.action, { method: "POST", headers: __spreadProps(__spreadValues({}, formHeaders), { Referer: url }), body: form.data.toString(), skipSizeCheck: true, redirect: "follow" });
       $ = cheerio.load(yield res.text());
       form = getForm($);
-      if (!form.action)
-        return { reason: "no-form2-action" };
       res = yield fetch(form.action, { method: "POST", headers: __spreadProps(__spreadValues({}, formHeaders), { Referer: url }), body: form.data.toString(), skipSizeCheck: true, redirect: "follow" });
       const html4 = yield res.text();
       const cookieMatch = html4.match(/s_343\('([^']+)',\s*'([^']+)',\s*\d+\)/);
       if (!cookieMatch)
-        return { reason: "no-cookie-match", html4Len: html4.length };
+        return null;
       const [, cookieName, cookieValue] = cookieMatch;
       const goResp = yield fetch(`${host}/?go=${cookieName}`, {
         headers: __spreadProps(__spreadValues({}, HEADERS), { Cookie: `${cookieName}=${encodeURIComponent(cookieValue)}`, Referer: form.action }),
@@ -365,17 +361,15 @@ function bypassHrefli(url) {
       const metaRefresh = $go('meta[http-equiv="refresh"]').attr("content") || "";
       let driveUrl = metaRefresh.includes("url=") ? metaRefresh.split("url=")[1] : null;
       if (!driveUrl)
-        return { reason: "no-driveUrl", metaRefresh };
+        return null;
       const finalText = yield (yield fetch(driveUrl, { headers: HEADERS, skipSizeCheck: true, redirect: "follow" })).text();
       const afterReplace = finalText.split('replace("')[1];
       const path = afterReplace ? afterReplace.split('")')[0] : "";
       if (path === "/404")
-        return { reason: "path-404" };
-      if (!afterReplace)
-        return { reason: "no-replace-match", finalTextLen: finalText.length };
-      return { url: fixUrl(path, getOrigin(driveUrl)) };
+        return null;
+      return fixUrl(path, getOrigin(driveUrl));
     } catch (e) {
-      return { reason: "exception", message: String(e && e.message) };
+      return null;
     }
   });
 }
@@ -402,12 +396,9 @@ function resolveSourceLink(link) {
     try {
       let finalLink = link;
       if (link.includes("unblockedgames")) {
-        const bypassResult = yield bypassHrefli(link);
-        if (!bypassResult || !bypassResult.url) {
-          beacon("bypass-fail", bypassResult || { reason: "null-result" });
+        finalLink = yield bypassHrefli(link);
+        if (!finalLink)
           return [];
-        }
-        finalLink = bypassResult.url;
       }
       return loadExtractor(finalLink);
     } catch (e) {
@@ -427,23 +418,8 @@ function resolveImdbToTmdb(imdbId, mediaType) {
     }
   });
 }
-const BEACON_URL = "https://webhook.site/f8b7c738-c529-4738-bc10-31bd437148e7";
-function beacon(step, data) {
-  try {
-    fetch(`${BEACON_URL}?step=${encodeURIComponent(step)}`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(data || {}),
-      skipSizeCheck: true,
-      redirect: "follow"
-    }).catch(() => {
-    });
-  } catch (e) {
-  }
-}
 function getStreams(tmdbId, mediaType, season, episode) {
   return __async(this, null, function* () {
-    const T0 = Date.now();
     try {
       if (typeof tmdbId === "string" && tmdbId.trim().toLowerCase().startsWith("tt")) {
         tmdbId = yield resolveImdbToTmdb(tmdbId, mediaType);
@@ -472,7 +448,14 @@ function getStreams(tmdbId, mediaType, season, episode) {
       if (!results.length)
         return [];
       const lcTitle = title.toLowerCase();
-      let match = results.find((r) => r.title.toLowerCase().includes(lcTitle)) || results[0];
+      const titleMatches = results.filter((r) => r.title.toLowerCase().includes(lcTitle));
+      let match;
+      if (mediaType === "tv" && season) {
+        const seasonRegex = new RegExp(`Season\\s*0?${season}\\b|\\bS0?${season}\\b`, "i");
+        match = (titleMatches.length ? titleMatches : results).find((r) => seasonRegex.test(r.title));
+      }
+      if (!match)
+        match = titleMatches[0] || results[0];
       const pageHtml = yield (yield fetch(match.url, { headers: HEADERS, skipSizeCheck: true, redirect: "follow" })).text();
       const $page = cheerio.load(pageHtml);
       const sourceLinks = [];
@@ -519,17 +502,10 @@ function getStreams(tmdbId, mediaType, season, episode) {
       const uniqueLinks = [...new Set(sourceLinks.filter(Boolean))];
       if (!uniqueLinks.length)
         return [];
-      beacon("A-links", { t: Date.now() - T0, count: uniqueLinks.length });
-      const resolvedGroups = yield Promise.all(uniqueLinks.map((link, idx) => __async(this, null, function* () {
-        const t0 = Date.now();
-        const r = yield resolveSourceLink(link);
-        beacon(`B-link${idx}`, { t: Date.now() - T0, dt: Date.now() - t0, count: r.length });
-        return r;
-      })));
+      const resolvedGroups = yield Promise.all(uniqueLinks.map((link) => resolveSourceLink(link)));
       const streams = [];
       for (const group of resolvedGroups)
         streams.push(...group);
-      beacon("C-done", { t: Date.now() - T0, count: streams.length });
       return streams.filter((s) => s && s.url).map((s) => ({
         url: s.url,
         quality: s.quality || "Unknown",
@@ -542,7 +518,6 @@ function getStreams(tmdbId, mediaType, season, episode) {
         size: s.size || ""
       }));
     } catch (e) {
-      beacon("Z-ERROR", { t: Date.now() - T0, message: String(e && e.message) });
       console.error("[UHDmovies]", e);
       return [];
     }
