@@ -1,3 +1,7 @@
+/**
+ * uhdmovies - Built from src/providers/uhdmovies.js
+ * Generated: 2026-08-13T08:57:27.570Z
+ */
 var __defProp = Object.defineProperty;
 var __defProps = Object.defineProperties;
 var __getOwnPropDescs = Object.getOwnPropertyDescriptors;
@@ -244,9 +248,11 @@ function driveseedInstantLink(finalLink) {
     try {
       const resp = yield fetch(finalLink, { headers: HEADERS, skipSizeCheck: true, redirect: "follow" });
       const resolvedUrl = resp.url || finalLink;
-      if (resolvedUrl === finalLink) return null;
+      if (resolvedUrl === finalLink)
+        return null;
       const extracted = resolvedUrl.split("url=")[1];
-      if (!extracted) return null;
+      if (!extracted)
+        return null;
       const decoded = decodeURIComponent(extracted);
       return decoded.startsWith("http") ? decoded : null;
     } catch (e) {
@@ -334,18 +340,14 @@ function bypassHrefli(url) {
       let res = yield fetch(url, { headers: HEADERS, skipSizeCheck: true, redirect: "follow" });
       let $ = cheerio.load(yield res.text());
       let form = getForm($);
-      beacon("bh-1-form1", { action: form.action, dataLen: form.data.toString().length });
       res = yield fetch(form.action, { method: "POST", headers: __spreadProps(__spreadValues({}, formHeaders), { Referer: url }), body: form.data.toString(), skipSizeCheck: true, redirect: "follow" });
       $ = cheerio.load(yield res.text());
       form = getForm($);
-      beacon("bh-2-form2", { action: form.action, dataLen: form.data.toString().length });
       res = yield fetch(form.action, { method: "POST", headers: __spreadProps(__spreadValues({}, formHeaders), { Referer: url }), body: form.data.toString(), skipSizeCheck: true, redirect: "follow" });
       const html4 = yield res.text();
       $ = cheerio.load(html4);
-      beacon("bh-3-html4", { length: html4.length, sample: html4.slice(0, 200) });
       const scriptText = $("script:contains(?go=)").first().html() || "";
       const cookieMatch = scriptText.match(/s_343\('([^']+)',\s*'([^']+)',\s*\d+\)/);
-      beacon("bh-4-cookie-match", { found: !!cookieMatch, scriptTextLen: scriptText.length });
       if (!cookieMatch)
         return null;
       const [, cookieName, cookieValue] = cookieMatch;
@@ -358,18 +360,15 @@ function bypassHrefli(url) {
       const $go = cheerio.load(goHtml);
       const metaRefresh = $go('meta[http-equiv="refresh"]').attr("content") || "";
       let driveUrl = metaRefresh.includes("url=") ? metaRefresh.split("url=")[1] : null;
-      beacon("bh-5-driveUrl", { driveUrl, metaRefresh });
       if (!driveUrl)
         return null;
       const finalText = yield (yield fetch(driveUrl, { headers: HEADERS, skipSizeCheck: true, redirect: "follow" })).text();
       const afterReplace = finalText.split('replace("')[1];
       const path = afterReplace ? afterReplace.split('")')[0] : "";
-      beacon("bh-6-path", { path });
       if (path === "/404")
         return null;
       return fixUrl(path, getOrigin(driveUrl));
     } catch (e) {
-      beacon("bh-ERROR", { message: String(e && e.message) });
       return null;
     }
   });
@@ -398,15 +397,11 @@ function resolveSourceLink(link) {
       let finalLink = link;
       if (link.includes("unblockedgames")) {
         finalLink = yield bypassHrefli(link);
-        beacon("rsl-bypass-result", { finalLink });
         if (!finalLink)
           return [];
       }
-      const extracted = yield loadExtractor(finalLink);
-      beacon("rsl-extracted", { finalLink, count: extracted.length });
-      return extracted;
+      return loadExtractor(finalLink);
     } catch (e) {
-      beacon("rsl-ERROR", { message: String(e && e.message) });
       return [];
     }
   });
@@ -423,42 +418,22 @@ function resolveImdbToTmdb(imdbId, mediaType) {
     }
   });
 }
-const BEACON_URL = "https://webhook.site/b6516b34-2eb4-497c-860f-a5fce4c977f9";
-function beacon(step, data) {
-  try {
-    fetch(`${BEACON_URL}?step=${encodeURIComponent(step)}`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(data || {}),
-      skipSizeCheck: true,
-      redirect: "follow"
-    }).catch(() => {});
-  } catch (e) {}
-}
 function getStreams(tmdbId, mediaType, season, episode) {
   return __async(this, null, function* () {
-    beacon("0-start", { tmdbId, mediaType, season, episode });
     try {
       if (typeof tmdbId === "string" && tmdbId.trim().toLowerCase().startsWith("tt")) {
         tmdbId = yield resolveImdbToTmdb(tmdbId, mediaType);
-        if (!tmdbId) {
-          beacon("1-imdb-resolve-failed");
+        if (!tmdbId)
           return [];
-        }
       }
       const baseUrl = yield getBaseUrl();
-      beacon("2-got-baseUrl", { baseUrl });
       const tmdbUrl = `https://api.themoviedb.org/3/${mediaType}/${tmdbId}?api_key=${TMDB_API_KEY}`;
       const mediaInfo = yield (yield fetch(tmdbUrl, { skipSizeCheck: true, redirect: "follow" })).json();
       const title = mediaInfo.title || mediaInfo.name;
-      beacon("3-got-tmdb-title", { title });
-      if (!title) {
-        beacon("3b-no-title");
+      if (!title)
         return [];
-      }
       const searchUrl = `${baseUrl}/?s=${encodeURIComponent(title)}`;
       const searchHtml = yield (yield fetch(searchUrl, { headers: HEADERS, skipSizeCheck: true, redirect: "follow" })).text();
-      beacon("4-got-search-html", { length: searchHtml.length, sample: searchHtml.slice(0, 300) });
       const $ = cheerio.load(searchHtml);
       const results = [];
       $("article.gridlove-post").each((i, el) => {
@@ -470,16 +445,11 @@ function getStreams(tmdbId, mediaType, season, episode) {
         if (titleRaw && href)
           results.push({ title: titleRaw, url: href });
       });
-      beacon("5-parsed-results", { count: results.length });
-      if (!results.length) {
-        beacon("5b-no-results");
+      if (!results.length)
         return [];
-      }
       const lcTitle = title.toLowerCase();
       let match = results.find((r) => r.title.toLowerCase().includes(lcTitle)) || results[0];
-      beacon("6-matched", { matchUrl: match.url });
       const pageHtml = yield (yield fetch(match.url, { headers: HEADERS, skipSizeCheck: true, redirect: "follow" })).text();
-      beacon("7-got-page-html", { length: pageHtml.length });
       const $page = cheerio.load(pageHtml);
       const sourceLinks = [];
       if (mediaType === "tv") {
@@ -523,18 +493,11 @@ function getStreams(tmdbId, mediaType, season, episode) {
         });
       }
       const uniqueLinks = [...new Set(sourceLinks.filter(Boolean))];
-      beacon("8-source-links", { count: uniqueLinks.length, links: uniqueLinks });
-      if (!uniqueLinks.length) {
-        beacon("8b-no-source-links");
+      if (!uniqueLinks.length)
         return [];
-      }
-      const streams = [];
-      for (const link of uniqueLinks) {
-        const extracted = yield resolveSourceLink(link);
-        streams.push(...extracted);
-      }
-      beacon("9-extracted-streams", { count: streams.length });
-      const finalStreams = streams.filter((s) => s && s.url).map((s) => ({
+      const resolvedGroups = yield Promise.all(uniqueLinks.map((link) => resolveSourceLink(link)));
+      const streams = resolvedGroups.flat();
+      return streams.filter((s) => s && s.url).map((s) => ({
         url: s.url,
         quality: s.quality || "Unknown",
         title: s.title || "UHDmovies",
@@ -545,10 +508,7 @@ function getStreams(tmdbId, mediaType, season, episode) {
         // formatBytes() treats it as a raw byte count and produces NaN.
         size: s.size || ""
       }));
-      beacon("10-final", { count: finalStreams.length });
-      return finalStreams;
     } catch (e) {
-      beacon("ERROR", { message: String(e && e.message), stack: String(e && e.stack) });
       console.error("[UHDmovies]", e);
       return [];
     }

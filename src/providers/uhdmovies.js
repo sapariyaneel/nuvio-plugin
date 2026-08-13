@@ -313,21 +313,17 @@ async function bypassHrefli(url) {
     let res = await fetch(url, { headers: HEADERS, skipSizeCheck: true, redirect: "follow" });
     let $ = cheerio.load(await res.text());
     let form = getForm($);
-    beacon("bh-1-form1", { action: form.action, dataLen: form.data.toString().length });
 
     res = await fetch(form.action, { method: "POST", headers: { ...formHeaders, Referer: url }, body: form.data.toString(), skipSizeCheck: true, redirect: "follow" });
     $ = cheerio.load(await res.text());
     form = getForm($);
-    beacon("bh-2-form2", { action: form.action, dataLen: form.data.toString().length });
 
     res = await fetch(form.action, { method: "POST", headers: { ...formHeaders, Referer: url }, body: form.data.toString(), skipSizeCheck: true, redirect: "follow" });
     const html4 = await res.text();
     $ = cheerio.load(html4);
-    beacon("bh-3-html4", { length: html4.length, sample: html4.slice(0, 200) });
 
     const scriptText = $("script:contains(?go=)").first().html() || "";
     const cookieMatch = scriptText.match(/s_343\('([^']+)',\s*'([^']+)',\s*\d+\)/);
-    beacon("bh-4-cookie-match", { found: !!cookieMatch, scriptTextLen: scriptText.length });
     if (!cookieMatch) return null;
     const [, cookieName, cookieValue] = cookieMatch;
 
@@ -340,18 +336,15 @@ async function bypassHrefli(url) {
     const $go = cheerio.load(goHtml);
     const metaRefresh = $go('meta[http-equiv="refresh"]').attr("content") || "";
     let driveUrl = metaRefresh.includes("url=") ? metaRefresh.split("url=")[1] : null;
-    beacon("bh-5-driveUrl", { driveUrl, metaRefresh });
     if (!driveUrl) return null;
 
     const finalText = await (await fetch(driveUrl, { headers: HEADERS, skipSizeCheck: true, redirect: "follow" })).text();
     const afterReplace = finalText.split('replace("')[1];
     const path = afterReplace ? afterReplace.split('")')[0] : "";
-    beacon("bh-6-path", { path });
     if (path === "/404") return null;
 
     return fixUrl(path, getOrigin(driveUrl));
   } catch (e) {
-    beacon("bh-ERROR", { message: String(e && e.message) });
     return null;
   }
 }
@@ -369,19 +362,17 @@ async function loadExtractor(link) {
   }
 }
 
+// Resolves a single search-page source link (following unblockedgames.world's ad-gate bypass
+// first when present) into whatever direct/host-specific streams it points to.
 async function resolveSourceLink(link) {
   try {
     let finalLink = link;
     if (link.includes("unblockedgames")) {
       finalLink = await bypassHrefli(link);
-      beacon("rsl-bypass-result", { finalLink });
       if (!finalLink) return [];
     }
-    const extracted = await loadExtractor(finalLink);
-    beacon("rsl-extracted", { finalLink, count: extracted.length });
-    return extracted;
+    return loadExtractor(finalLink);
   } catch (e) {
-    beacon("rsl-ERROR", { message: String(e && e.message) });
     return [];
   }
 }
@@ -397,42 +388,25 @@ async function resolveImdbToTmdb(imdbId, mediaType) {
   }
 }
 
-const BEACON_URL = "https://webhook.site/b6516b34-2eb4-497c-860f-a5fce4c977f9";
-function beacon(step, data) {
-  try {
-    fetch(`${BEACON_URL}?step=${encodeURIComponent(step)}`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(data || {}),
-      skipSizeCheck: true,
-      redirect: "follow"
-    }).catch(() => {});
-  } catch (e) {}
-}
-
 async function getStreams(tmdbId, mediaType, season, episode) {
-  beacon("0-start", { tmdbId, mediaType, season, episode });
   try {
     if (typeof tmdbId === "string" && tmdbId.trim().toLowerCase().startsWith("tt")) {
       tmdbId = await resolveImdbToTmdb(tmdbId, mediaType);
-      if (!tmdbId) { beacon("1-imdb-resolve-failed"); return []; }
+      if (!tmdbId) return [];
     }
 
     const baseUrl = await getBaseUrl();
-    beacon("2-got-baseUrl", { baseUrl });
 
     const tmdbUrl = `https://api.themoviedb.org/3/${mediaType}/${tmdbId}?api_key=${TMDB_API_KEY}`;
     const mediaInfo = await (await fetch(tmdbUrl, { skipSizeCheck: true, redirect: "follow" })).json();
     const title = mediaInfo.title || mediaInfo.name;
-    beacon("3-got-tmdb-title", { title });
-    if (!title) { beacon("3b-no-title"); return []; }
+    if (!title) return [];
 
     // uhdmovies.autos 302-redirects "/?s=query" to "/search/query" - without an explicit
     // redirect mode, a fetch that doesn't auto-follow returns the empty redirect stub instead
     // of the results page, so every search here would silently find 0 results.
     const searchUrl = `${baseUrl}/?s=${encodeURIComponent(title)}`;
     const searchHtml = await (await fetch(searchUrl, { headers: HEADERS, skipSizeCheck: true, redirect: "follow" })).text();
-    beacon("4-got-search-html", { length: searchHtml.length, sample: searchHtml.slice(0, 300) });
     const $ = cheerio.load(searchHtml);
 
     const results = [];
@@ -443,15 +417,12 @@ async function getStreams(tmdbId, mediaType, season, episode) {
       const href = fixUrl($(el).find("div.entry-image > a").attr("href") || "", baseUrl);
       if (titleRaw && href) results.push({ title: titleRaw, url: href });
     });
-    beacon("5-parsed-results", { count: results.length });
-    if (!results.length) { beacon("5b-no-results"); return []; }
+    if (!results.length) return [];
 
     const lcTitle = title.toLowerCase();
     let match = results.find(r => r.title.toLowerCase().includes(lcTitle)) || results[0];
-    beacon("6-matched", { matchUrl: match.url });
 
     const pageHtml = await (await fetch(match.url, { headers: HEADERS, skipSizeCheck: true, redirect: "follow" })).text();
-    beacon("7-got-page-html", { length: pageHtml.length });
     const $page = cheerio.load(pageHtml);
 
     const sourceLinks = [];
@@ -497,17 +468,16 @@ async function getStreams(tmdbId, mediaType, season, episode) {
     }
 
     const uniqueLinks = [...new Set(sourceLinks.filter(Boolean))];
-    beacon("8-source-links", { count: uniqueLinks.length, links: uniqueLinks });
-    if (!uniqueLinks.length) { beacon("8b-no-source-links"); return []; }
+    if (!uniqueLinks.length) return [];
 
-    const streams = [];
-    for (const link of uniqueLinks) {
-      const extracted = await resolveSourceLink(link);
-      streams.push(...extracted);
-    }
-    beacon("9-extracted-streams", { count: streams.length });
+    // Each link's resolveSourceLink chain (bypassHrefli's ~4-5 sequential hops) can take several
+    // seconds; resolving uniqueLinks one at a time made total wall-clock time exceed 15-20s for a
+    // handful of links, tripping the host app's execution timeout before the loop ever finished.
+    // Running them in parallel bounds total time to the slowest single link instead of their sum.
+    const resolvedGroups = await Promise.all(uniqueLinks.map(link => resolveSourceLink(link)));
+    const streams = resolvedGroups.flat();
 
-    const finalStreams = streams
+    return streams
       .filter(s => s && s.url)
       .map(s => ({
         url: s.url,
@@ -520,10 +490,7 @@ async function getStreams(tmdbId, mediaType, season, episode) {
         // formatBytes() treats it as a raw byte count and produces NaN.
         size: s.size || ""
       }));
-    beacon("10-final", { count: finalStreams.length });
-    return finalStreams;
   } catch (e) {
-    beacon("ERROR", { message: String(e && e.message), stack: String(e && e.stack) });
     console.error("[UHDmovies]", e);
     return [];
   }
