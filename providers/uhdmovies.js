@@ -1,6 +1,6 @@
 /**
  * uhdmovies - Built from src/providers/uhdmovies.js
- * Generated: 2026-08-13T09:15:06.911Z
+ * Generated: 2026-08-13T09:28:17.402Z
  */
 var __defProp = Object.defineProperty;
 var __defProps = Object.defineProperties;
@@ -45,7 +45,9 @@ const DOMAINS_URL = "https://raw.githubusercontent.com/sapariyaneel/nuvio-plugin
 const FALLBACK_BASE_URL = "https://uhdmovies.autos";
 const TMDB_API_KEY = "1865f43a0549ca50d341dd9ab8b29f49";
 const HEADERS = {
-  "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36"
+  "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36",
+  "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8",
+  "Accept-Language": "en-US,en;q=0.9"
 };
 let cachedDomains = null;
 function getDomains() {
@@ -349,9 +351,7 @@ function bypassHrefli(url) {
         return { reason: "no-form2-action" };
       res = yield fetch(form.action, { method: "POST", headers: __spreadProps(__spreadValues({}, formHeaders), { Referer: url }), body: form.data.toString(), skipSizeCheck: true, redirect: "follow" });
       const html4 = yield res.text();
-      $ = cheerio.load(html4);
-      const scriptText = $("script:contains(?go=)").first().html() || "";
-      const cookieMatch = scriptText.match(/s_343\('([^']+)',\s*'([^']+)',\s*\d+\)/);
+      const cookieMatch = html4.match(/s_343\('([^']+)',\s*'([^']+)',\s*\d+\)/);
       if (!cookieMatch)
         return { reason: "no-cookie-match", html4Len: html4.length };
       const [, cookieName, cookieValue] = cookieMatch;

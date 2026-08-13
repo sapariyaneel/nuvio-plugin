@@ -11,8 +11,13 @@ const DOMAINS_URL = "https://raw.githubusercontent.com/sapariyaneel/nuvio-plugin
 const FALLBACK_BASE_URL = "https://uhdmovies.autos";
 const TMDB_API_KEY = "1865f43a0549ca50d341dd9ab8b29f49";
 
+// unblockedgames.world's bot-check gates whether it embeds the real s_343(...) payload script or
+// a stripped decoy on the "Accept"/"Accept-Language" headers, not just User-Agent - the host app's
+// fetch doesn't set browser-like defaults the way undici does, so they're pinned explicitly here.
 const HEADERS = {
-  "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36"
+  "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36",
+  "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8",
+  "Accept-Language": "en-US,en;q=0.9"
 };
 
 let cachedDomains = null;
@@ -322,10 +327,12 @@ async function bypassHrefli(url) {
 
     res = await fetch(form.action, { method: "POST", headers: { ...formHeaders, Referer: url }, body: form.data.toString(), skipSizeCheck: true, redirect: "follow" });
     const html4 = await res.text();
-    $ = cheerio.load(html4);
 
-    const scriptText = $("script:contains(?go=)").first().html() || "";
-    const cookieMatch = scriptText.match(/s_343\('([^']+)',\s*'([^']+)',\s*\d+\)/);
+    // The decoy article's page template (and its ad/analytics scripts) is randomized per request,
+    // so picking "the <script> tag containing '?go='" via a cheerio selector could grab the wrong
+    // tag on some article variants if another script also happens to mention "?go=". Regex the raw
+    // HTML directly for the literal s_343(...) call instead - it's the only thing we actually need.
+    const cookieMatch = html4.match(/s_343\('([^']+)',\s*'([^']+)',\s*\d+\)/);
     if (!cookieMatch) return { reason: "no-cookie-match", html4Len: html4.length };
     const [, cookieName, cookieValue] = cookieMatch;
 
