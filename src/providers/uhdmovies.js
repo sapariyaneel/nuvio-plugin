@@ -450,39 +450,34 @@ async function getStreams(tmdbId, mediaType, season, episode) {
     const sourceLinks = [];
 
     if (mediaType === "tv") {
-      const seasonPattern = new RegExp(`(?:season\\s*|S)0?${season}\\b`, "i");
-      const episodePattern = new RegExp(`Episode\\s*0?${episode}\\b`, "i");
+      const wantedSeason = parseInt(season, 10);
+      const wantedEpisode = parseInt(episode, 10);
       let currentSeason = 1;
 
+      // Single walk over the same selector every other pass in this file already relies on (no
+      // second DOM query with a different selector - that's what broke this twice before, for
+      // reasons that were never reproducible locally). Every episode link found here is gated on
+      // currentSeason matching what was asked for, so a multi-season page can no longer leak
+      // episode 1 from every season the way the old season-blind fallback did.
       $page("div.entry-content").find("pre, p, a").each((i, el) => {
         const node = $page(el);
         const text = node.text();
         const seasonMatch = text.match(/(?:season\s*|S)(\d+)/i);
         if (seasonMatch) currentSeason = parseInt(seasonMatch[1], 10);
+        if (currentSeason !== wantedSeason) return;
 
         // node.prop("tagName") isn't implemented the same way across cheerio builds/forks - the
         // host app's bundled cheerio throws "not a function" on it. The raw DOM node's own
         // tagName property is a plain string every cheerio implementation exposes identically.
         const tagName = (el.tagName || el.name || "").toLowerCase();
-        if (tagName === "a" && /episode/i.test(text) && !/zip/i.test(text)) {
-          const epMatch = text.match(/episode\s*(\d+)/i);
-          if (epMatch && parseInt(epMatch[1], 10) === parseInt(episode, 10) && currentSeason === parseInt(season, 10)) {
-            const href = node.attr("href");
-            if (href) sourceLinks.push(href);
-          }
-        }
-      });
+        if (tagName !== "a" || !/episode/i.test(text) || /zip/i.test(text)) return;
 
-      if (!sourceLinks.length) {
-        // Fallback: season regex didn't align with DOM order; just match by episode text anywhere.
-        $page("div.entry-content a").each((i, el) => {
-          const text = $page(el).text();
-          if (/episode/i.test(text) && !/zip/i.test(text) && episodePattern.test(text)) {
-            const href = $page(el).attr("href");
-            if (href) sourceLinks.push(href);
-          }
-        });
-      }
+        const epMatch = text.match(/episode\s*(\d+)/i);
+        if (!epMatch || parseInt(epMatch[1], 10) !== wantedEpisode) return;
+
+        const href = node.attr("href");
+        if (href) sourceLinks.push(href);
+      });
     } else {
       $page("div.entry-content > p").each((i, el) => {
         const node = $page(el);

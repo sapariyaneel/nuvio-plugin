@@ -1,6 +1,6 @@
 /**
  * uhdmovies - Built from src/providers/uhdmovies.js
- * Generated: 2026-08-13T10:54:50.690Z
+ * Generated: 2026-08-13T11:15:48.255Z
  */
 var __defProp = Object.defineProperty;
 var __defProps = Object.defineProperties;
@@ -465,8 +465,8 @@ function getStreams(tmdbId, mediaType, season, episode) {
       const $page = cheerio.load(pageHtml);
       const sourceLinks = [];
       if (mediaType === "tv") {
-        const seasonPattern = new RegExp(`(?:season\\s*|S)0?${season}\\b`, "i");
-        const episodePattern = new RegExp(`Episode\\s*0?${episode}\\b`, "i");
+        const wantedSeason = parseInt(season, 10);
+        const wantedEpisode = parseInt(episode, 10);
         let currentSeason = 1;
         $page("div.entry-content").find("pre, p, a").each((i, el) => {
           const node = $page(el);
@@ -474,26 +474,18 @@ function getStreams(tmdbId, mediaType, season, episode) {
           const seasonMatch = text.match(/(?:season\s*|S)(\d+)/i);
           if (seasonMatch)
             currentSeason = parseInt(seasonMatch[1], 10);
+          if (currentSeason !== wantedSeason)
+            return;
           const tagName = (el.tagName || el.name || "").toLowerCase();
-          if (tagName === "a" && /episode/i.test(text) && !/zip/i.test(text)) {
-            const epMatch = text.match(/episode\s*(\d+)/i);
-            if (epMatch && parseInt(epMatch[1], 10) === parseInt(episode, 10) && currentSeason === parseInt(season, 10)) {
-              const href = node.attr("href");
-              if (href)
-                sourceLinks.push(href);
-            }
-          }
+          if (tagName !== "a" || !/episode/i.test(text) || /zip/i.test(text))
+            return;
+          const epMatch = text.match(/episode\s*(\d+)/i);
+          if (!epMatch || parseInt(epMatch[1], 10) !== wantedEpisode)
+            return;
+          const href = node.attr("href");
+          if (href)
+            sourceLinks.push(href);
         });
-        if (!sourceLinks.length) {
-          $page("div.entry-content a").each((i, el) => {
-            const text = $page(el).text();
-            if (/episode/i.test(text) && !/zip/i.test(text) && episodePattern.test(text)) {
-              const href = $page(el).attr("href");
-              if (href)
-                sourceLinks.push(href);
-            }
-          });
-        }
       } else {
         $page("div.entry-content > p").each((i, el) => {
           const node = $page(el);
