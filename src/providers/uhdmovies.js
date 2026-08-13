@@ -20,7 +20,7 @@ let cachedDomains = null;
 async function getDomains() {
   if (cachedDomains) return cachedDomains;
   try {
-    const resp = await fetch(DOMAINS_URL, { skipSizeCheck: true });
+    const resp = await fetch(DOMAINS_URL, { skipSizeCheck: true, redirect: "follow" });
     cachedDomains = await resp.json();
   } catch (e) {
     cachedDomains = {};
@@ -138,7 +138,8 @@ async function uhdMoviesGetUrl(finallink, quality) {
         Referer: finallink
       },
       body: new URLSearchParams({ keys: token }).toString(),
-      skipSizeCheck: true
+      skipSizeCheck: true,
+      redirect: "follow"
     });
     const text = await resp.text();
     const afterUrl = text.split('url":"')[1];
@@ -154,7 +155,7 @@ async function uhdMoviesGetUrl(finallink, quality) {
 // Driveseed/Driveleech family extractors
 async function driveseedCFType1(url) {
   try {
-    const html = await (await fetch(`${url}?type=1`, { headers: HEADERS, skipSizeCheck: true })).text();
+    const html = await (await fetch(`${url}?type=1`, { headers: HEADERS, skipSizeCheck: true, redirect: "follow" })).text();
     const $ = cheerio.load(html);
     return $("a.btn-success").toArray().map(el => $(el).attr("href")).filter(h => h && h.startsWith("http"));
   } catch (e) {
@@ -164,7 +165,7 @@ async function driveseedCFType1(url) {
 
 async function driveseedResumeCloudLink(baseUrl, path) {
   try {
-    const html = await (await fetch(`${baseUrl}${path}`, { headers: HEADERS, skipSizeCheck: true })).text();
+    const html = await (await fetch(`${baseUrl}${path}`, { headers: HEADERS, skipSizeCheck: true, redirect: "follow" })).text();
     const $ = cheerio.load(html);
     const href = $("a.btn-success").attr("href");
     return href && href.startsWith("http") ? href : null;
@@ -175,7 +176,7 @@ async function driveseedResumeCloudLink(baseUrl, path) {
 
 async function driveseedResumeBot(url) {
   try {
-    const resp = await fetch(url, { headers: HEADERS, skipSizeCheck: true });
+    const resp = await fetch(url, { headers: HEADERS, skipSizeCheck: true, redirect: "follow" });
     const html = await resp.text();
     const cookieHeader = resp.headers.get("set-cookie") || "";
     const ssidMatch = cookieHeader.match(/PHPSESSID=([^;]+)/);
@@ -199,7 +200,8 @@ async function driveseedResumeBot(url) {
         Cookie: ssid ? `PHPSESSID=${ssid}` : ""
       },
       body,
-      skipSizeCheck: true
+      skipSizeCheck: true,
+      redirect: "follow"
     });
     const json = JSON.parse(await dl.text());
     const finalUrl = json.url;
@@ -235,7 +237,7 @@ async function driveseedGetUrl(url, referer, siteName) {
 
     // Intermediate `r?key=` redirect page: extract replace("...") path from inline <script>, follow it
     if (currentUrl.includes("r?key=")) {
-      const html = await (await fetch(currentUrl, { headers: HEADERS, skipSizeCheck: true })).text();
+      const html = await (await fetch(currentUrl, { headers: HEADERS, skipSizeCheck: true, redirect: "follow" })).text();
       const $ = cheerio.load(html);
       const scriptData = $("script").first().html() || "";
       const afterReplace = scriptData.split('replace("')[1];
@@ -243,7 +245,7 @@ async function driveseedGetUrl(url, referer, siteName) {
       currentUrl = `${baseDomain}${path}`;
     }
 
-    const pageHtml = await (await fetch(currentUrl, { headers: HEADERS, skipSizeCheck: true })).text();
+    const pageHtml = await (await fetch(currentUrl, { headers: HEADERS, skipSizeCheck: true, redirect: "follow" })).text();
     const $ = cheerio.load(pageHtml);
 
     const rawFileName = ($("li.list-group-item").first().text() || "").replace("Name : ", "").trim();
@@ -308,15 +310,15 @@ async function bypassHrefli(url) {
       })()
     });
 
-    let res = await fetch(url, { headers: HEADERS, skipSizeCheck: true });
+    let res = await fetch(url, { headers: HEADERS, skipSizeCheck: true, redirect: "follow" });
     let $ = cheerio.load(await res.text());
     let form = getForm($);
 
-    res = await fetch(form.action, { method: "POST", headers: { ...formHeaders, Referer: url }, body: form.data.toString(), skipSizeCheck: true });
+    res = await fetch(form.action, { method: "POST", headers: { ...formHeaders, Referer: url }, body: form.data.toString(), skipSizeCheck: true, redirect: "follow" });
     $ = cheerio.load(await res.text());
     form = getForm($);
 
-    res = await fetch(form.action, { method: "POST", headers: { ...formHeaders, Referer: url }, body: form.data.toString(), skipSizeCheck: true });
+    res = await fetch(form.action, { method: "POST", headers: { ...formHeaders, Referer: url }, body: form.data.toString(), skipSizeCheck: true, redirect: "follow" });
     const html4 = await res.text();
     $ = cheerio.load(html4);
 
@@ -327,7 +329,8 @@ async function bypassHrefli(url) {
 
     const goResp = await fetch(`${host}/?go=${cookieName}`, {
       headers: { ...HEADERS, Cookie: `${cookieName}=${encodeURIComponent(cookieValue)}`, Referer: form.action },
-      skipSizeCheck: true
+      skipSizeCheck: true,
+      redirect: "follow"
     });
     const goHtml = await goResp.text();
     const $go = cheerio.load(goHtml);
@@ -335,7 +338,7 @@ async function bypassHrefli(url) {
     let driveUrl = metaRefresh.includes("url=") ? metaRefresh.split("url=")[1] : null;
     if (!driveUrl) return null;
 
-    const finalText = await (await fetch(driveUrl, { headers: HEADERS, skipSizeCheck: true })).text();
+    const finalText = await (await fetch(driveUrl, { headers: HEADERS, skipSizeCheck: true, redirect: "follow" })).text();
     const afterReplace = finalText.split('replace("')[1];
     const path = afterReplace ? afterReplace.split('")')[0] : "";
     if (path === "/404") return null;
@@ -375,7 +378,7 @@ async function resolveSourceLink(link) {
 async function resolveImdbToTmdb(imdbId, mediaType) {
   try {
     const url = `https://api.themoviedb.org/3/find/${imdbId}?api_key=${TMDB_API_KEY}&external_source=imdb_id`;
-    const data = await (await fetch(url, { skipSizeCheck: true })).json();
+    const data = await (await fetch(url, { skipSizeCheck: true, redirect: "follow" })).json();
     const results = mediaType === "tv" ? data.tv_results : data.movie_results;
     return results && results.length ? results[0].id : null;
   } catch (e) {
@@ -393,12 +396,15 @@ async function getStreams(tmdbId, mediaType, season, episode) {
     const baseUrl = await getBaseUrl();
 
     const tmdbUrl = `https://api.themoviedb.org/3/${mediaType}/${tmdbId}?api_key=${TMDB_API_KEY}`;
-    const mediaInfo = await (await fetch(tmdbUrl, { skipSizeCheck: true })).json();
+    const mediaInfo = await (await fetch(tmdbUrl, { skipSizeCheck: true, redirect: "follow" })).json();
     const title = mediaInfo.title || mediaInfo.name;
     if (!title) return [];
 
+    // uhdmovies.autos 302-redirects "/?s=query" to "/search/query" - without an explicit
+    // redirect mode, a fetch that doesn't auto-follow returns the empty redirect stub instead
+    // of the results page, so every search here would silently find 0 results.
     const searchUrl = `${baseUrl}/?s=${encodeURIComponent(title)}`;
-    const searchHtml = await (await fetch(searchUrl, { headers: HEADERS, skipSizeCheck: true })).text();
+    const searchHtml = await (await fetch(searchUrl, { headers: HEADERS, skipSizeCheck: true, redirect: "follow" })).text();
     const $ = cheerio.load(searchHtml);
 
     const results = [];
@@ -414,7 +420,7 @@ async function getStreams(tmdbId, mediaType, season, episode) {
     const lcTitle = title.toLowerCase();
     let match = results.find(r => r.title.toLowerCase().includes(lcTitle)) || results[0];
 
-    const pageHtml = await (await fetch(match.url, { headers: HEADERS, skipSizeCheck: true })).text();
+    const pageHtml = await (await fetch(match.url, { headers: HEADERS, skipSizeCheck: true, redirect: "follow" })).text();
     const $page = cheerio.load(pageHtml);
 
     const sourceLinks = [];

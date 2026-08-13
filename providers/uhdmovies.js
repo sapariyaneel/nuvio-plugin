@@ -49,7 +49,7 @@ function getDomains() {
     if (cachedDomains)
       return cachedDomains;
     try {
-      const resp = yield fetch(DOMAINS_URL, { skipSizeCheck: true });
+      const resp = yield fetch(DOMAINS_URL, { skipSizeCheck: true, redirect: "follow" });
       cachedDomains = yield resp.json();
     } catch (e) {
       cachedDomains = {};
@@ -163,7 +163,8 @@ function uhdMoviesGetUrl(finallink, quality) {
           Referer: finallink
         },
         body: new URLSearchParams({ keys: token }).toString(),
-        skipSizeCheck: true
+        skipSizeCheck: true,
+        redirect: "follow"
       });
       const text = yield resp.text();
       const afterUrl = text.split('url":"')[1];
@@ -181,7 +182,7 @@ function uhdMoviesGetUrl(finallink, quality) {
 function driveseedCFType1(url) {
   return __async(this, null, function* () {
     try {
-      const html = yield (yield fetch(`${url}?type=1`, { headers: HEADERS, skipSizeCheck: true })).text();
+      const html = yield (yield fetch(`${url}?type=1`, { headers: HEADERS, skipSizeCheck: true, redirect: "follow" })).text();
       const $ = cheerio.load(html);
       return $("a.btn-success").toArray().map((el) => $(el).attr("href")).filter((h) => h && h.startsWith("http"));
     } catch (e) {
@@ -192,7 +193,7 @@ function driveseedCFType1(url) {
 function driveseedResumeCloudLink(baseUrl, path) {
   return __async(this, null, function* () {
     try {
-      const html = yield (yield fetch(`${baseUrl}${path}`, { headers: HEADERS, skipSizeCheck: true })).text();
+      const html = yield (yield fetch(`${baseUrl}${path}`, { headers: HEADERS, skipSizeCheck: true, redirect: "follow" })).text();
       const $ = cheerio.load(html);
       const href = $("a.btn-success").attr("href");
       return href && href.startsWith("http") ? href : null;
@@ -204,7 +205,7 @@ function driveseedResumeCloudLink(baseUrl, path) {
 function driveseedResumeBot(url) {
   return __async(this, null, function* () {
     try {
-      const resp = yield fetch(url, { headers: HEADERS, skipSizeCheck: true });
+      const resp = yield fetch(url, { headers: HEADERS, skipSizeCheck: true, redirect: "follow" });
       const html = yield resp.text();
       const cookieHeader = resp.headers.get("set-cookie") || "";
       const ssidMatch = cookieHeader.match(/PHPSESSID=([^;]+)/);
@@ -227,7 +228,8 @@ function driveseedResumeBot(url) {
           Cookie: ssid ? `PHPSESSID=${ssid}` : ""
         },
         body,
-        skipSizeCheck: true
+        skipSizeCheck: true,
+        redirect: "follow"
       });
       const json = JSON.parse(yield dl.text());
       const finalUrl = json.url;
@@ -259,14 +261,14 @@ function driveseedGetUrl(url, referer, siteName) {
       let currentUrl = url;
       const baseDomain = getOrigin(currentUrl);
       if (currentUrl.includes("r?key=")) {
-        const html = yield (yield fetch(currentUrl, { headers: HEADERS, skipSizeCheck: true })).text();
+        const html = yield (yield fetch(currentUrl, { headers: HEADERS, skipSizeCheck: true, redirect: "follow" })).text();
         const $2 = cheerio.load(html);
         const scriptData = $2("script").first().html() || "";
         const afterReplace = scriptData.split('replace("')[1];
         const path = afterReplace ? afterReplace.split('")')[0] : "";
         currentUrl = `${baseDomain}${path}`;
       }
-      const pageHtml = yield (yield fetch(currentUrl, { headers: HEADERS, skipSizeCheck: true })).text();
+      const pageHtml = yield (yield fetch(currentUrl, { headers: HEADERS, skipSizeCheck: true, redirect: "follow" })).text();
       const $ = cheerio.load(pageHtml);
       const rawFileName = ($("li.list-group-item").first().text() || "").replace("Name : ", "").trim();
       const fileName = cleanTitle(removeLeadingIndex(rawFileName));
@@ -329,13 +331,13 @@ function bypassHrefli(url) {
           return params;
         })()
       });
-      let res = yield fetch(url, { headers: HEADERS, skipSizeCheck: true });
+      let res = yield fetch(url, { headers: HEADERS, skipSizeCheck: true, redirect: "follow" });
       let $ = cheerio.load(yield res.text());
       let form = getForm($);
-      res = yield fetch(form.action, { method: "POST", headers: __spreadProps(__spreadValues({}, formHeaders), { Referer: url }), body: form.data.toString(), skipSizeCheck: true });
+      res = yield fetch(form.action, { method: "POST", headers: __spreadProps(__spreadValues({}, formHeaders), { Referer: url }), body: form.data.toString(), skipSizeCheck: true, redirect: "follow" });
       $ = cheerio.load(yield res.text());
       form = getForm($);
-      res = yield fetch(form.action, { method: "POST", headers: __spreadProps(__spreadValues({}, formHeaders), { Referer: url }), body: form.data.toString(), skipSizeCheck: true });
+      res = yield fetch(form.action, { method: "POST", headers: __spreadProps(__spreadValues({}, formHeaders), { Referer: url }), body: form.data.toString(), skipSizeCheck: true, redirect: "follow" });
       const html4 = yield res.text();
       $ = cheerio.load(html4);
       const scriptText = $("script:contains(?go=)").first().html() || "";
@@ -345,7 +347,8 @@ function bypassHrefli(url) {
       const [, cookieName, cookieValue] = cookieMatch;
       const goResp = yield fetch(`${host}/?go=${cookieName}`, {
         headers: __spreadProps(__spreadValues({}, HEADERS), { Cookie: `${cookieName}=${encodeURIComponent(cookieValue)}`, Referer: form.action }),
-        skipSizeCheck: true
+        skipSizeCheck: true,
+        redirect: "follow"
       });
       const goHtml = yield goResp.text();
       const $go = cheerio.load(goHtml);
@@ -353,7 +356,7 @@ function bypassHrefli(url) {
       let driveUrl = metaRefresh.includes("url=") ? metaRefresh.split("url=")[1] : null;
       if (!driveUrl)
         return null;
-      const finalText = yield (yield fetch(driveUrl, { headers: HEADERS, skipSizeCheck: true })).text();
+      const finalText = yield (yield fetch(driveUrl, { headers: HEADERS, skipSizeCheck: true, redirect: "follow" })).text();
       const afterReplace = finalText.split('replace("')[1];
       const path = afterReplace ? afterReplace.split('")')[0] : "";
       if (path === "/404")
@@ -401,7 +404,7 @@ function resolveImdbToTmdb(imdbId, mediaType) {
   return __async(this, null, function* () {
     try {
       const url = `https://api.themoviedb.org/3/find/${imdbId}?api_key=${TMDB_API_KEY}&external_source=imdb_id`;
-      const data = yield (yield fetch(url, { skipSizeCheck: true })).json();
+      const data = yield (yield fetch(url, { skipSizeCheck: true, redirect: "follow" })).json();
       const results = mediaType === "tv" ? data.tv_results : data.movie_results;
       return results && results.length ? results[0].id : null;
     } catch (e) {
@@ -419,12 +422,12 @@ function getStreams(tmdbId, mediaType, season, episode) {
       }
       const baseUrl = yield getBaseUrl();
       const tmdbUrl = `https://api.themoviedb.org/3/${mediaType}/${tmdbId}?api_key=${TMDB_API_KEY}`;
-      const mediaInfo = yield (yield fetch(tmdbUrl, { skipSizeCheck: true })).json();
+      const mediaInfo = yield (yield fetch(tmdbUrl, { skipSizeCheck: true, redirect: "follow" })).json();
       const title = mediaInfo.title || mediaInfo.name;
       if (!title)
         return [];
       const searchUrl = `${baseUrl}/?s=${encodeURIComponent(title)}`;
-      const searchHtml = yield (yield fetch(searchUrl, { headers: HEADERS, skipSizeCheck: true })).text();
+      const searchHtml = yield (yield fetch(searchUrl, { headers: HEADERS, skipSizeCheck: true, redirect: "follow" })).text();
       const $ = cheerio.load(searchHtml);
       const results = [];
       $("article.gridlove-post").each((i, el) => {
@@ -440,7 +443,7 @@ function getStreams(tmdbId, mediaType, season, episode) {
         return [];
       const lcTitle = title.toLowerCase();
       let match = results.find((r) => r.title.toLowerCase().includes(lcTitle)) || results[0];
-      const pageHtml = yield (yield fetch(match.url, { headers: HEADERS, skipSizeCheck: true })).text();
+      const pageHtml = yield (yield fetch(match.url, { headers: HEADERS, skipSizeCheck: true, redirect: "follow" })).text();
       const $page = cheerio.load(pageHtml);
       const sourceLinks = [];
       if (mediaType === "tv") {
