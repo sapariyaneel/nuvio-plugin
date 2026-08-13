@@ -1,6 +1,6 @@
 /**
  * uhdmovies - Built from src/providers/uhdmovies.js
- * Generated: 2026-08-13T09:07:20.569Z
+ * Generated: 2026-08-13T09:15:06.911Z
  */
 var __defProp = Object.defineProperty;
 var __defProps = Object.defineProperties;
@@ -340,16 +340,20 @@ function bypassHrefli(url) {
       let res = yield fetch(url, { headers: HEADERS, skipSizeCheck: true, redirect: "follow" });
       let $ = cheerio.load(yield res.text());
       let form = getForm($);
+      if (!form.action)
+        return { reason: "no-form1-action" };
       res = yield fetch(form.action, { method: "POST", headers: __spreadProps(__spreadValues({}, formHeaders), { Referer: url }), body: form.data.toString(), skipSizeCheck: true, redirect: "follow" });
       $ = cheerio.load(yield res.text());
       form = getForm($);
+      if (!form.action)
+        return { reason: "no-form2-action" };
       res = yield fetch(form.action, { method: "POST", headers: __spreadProps(__spreadValues({}, formHeaders), { Referer: url }), body: form.data.toString(), skipSizeCheck: true, redirect: "follow" });
       const html4 = yield res.text();
       $ = cheerio.load(html4);
       const scriptText = $("script:contains(?go=)").first().html() || "";
       const cookieMatch = scriptText.match(/s_343\('([^']+)',\s*'([^']+)',\s*\d+\)/);
       if (!cookieMatch)
-        return null;
+        return { reason: "no-cookie-match", html4Len: html4.length };
       const [, cookieName, cookieValue] = cookieMatch;
       const goResp = yield fetch(`${host}/?go=${cookieName}`, {
         headers: __spreadProps(__spreadValues({}, HEADERS), { Cookie: `${cookieName}=${encodeURIComponent(cookieValue)}`, Referer: form.action }),
@@ -361,15 +365,17 @@ function bypassHrefli(url) {
       const metaRefresh = $go('meta[http-equiv="refresh"]').attr("content") || "";
       let driveUrl = metaRefresh.includes("url=") ? metaRefresh.split("url=")[1] : null;
       if (!driveUrl)
-        return null;
+        return { reason: "no-driveUrl", metaRefresh };
       const finalText = yield (yield fetch(driveUrl, { headers: HEADERS, skipSizeCheck: true, redirect: "follow" })).text();
       const afterReplace = finalText.split('replace("')[1];
       const path = afterReplace ? afterReplace.split('")')[0] : "";
       if (path === "/404")
-        return null;
-      return fixUrl(path, getOrigin(driveUrl));
+        return { reason: "path-404" };
+      if (!afterReplace)
+        return { reason: "no-replace-match", finalTextLen: finalText.length };
+      return { url: fixUrl(path, getOrigin(driveUrl)) };
     } catch (e) {
-      return null;
+      return { reason: "exception", message: String(e && e.message) };
     }
   });
 }
@@ -396,9 +402,12 @@ function resolveSourceLink(link) {
     try {
       let finalLink = link;
       if (link.includes("unblockedgames")) {
-        finalLink = yield bypassHrefli(link);
-        if (!finalLink)
+        const bypassResult = yield bypassHrefli(link);
+        if (!bypassResult || !bypassResult.url) {
+          beacon("bypass-fail", bypassResult || { reason: "null-result" });
           return [];
+        }
+        finalLink = bypassResult.url;
       }
       return loadExtractor(finalLink);
     } catch (e) {
@@ -517,7 +526,9 @@ function getStreams(tmdbId, mediaType, season, episode) {
         beacon(`B-link${idx}`, { t: Date.now() - T0, dt: Date.now() - t0, count: r.length });
         return r;
       })));
-      const streams = resolvedGroups.flat();
+      const streams = [];
+      for (const group of resolvedGroups)
+        streams.push(...group);
       beacon("C-done", { t: Date.now() - T0, count: streams.length });
       return streams.filter((s) => s && s.url).map((s) => ({
         url: s.url,
