@@ -214,8 +214,14 @@ async function driveseedInstantLink(finalLink) {
   try {
     const resp = await fetch(finalLink, { headers: HEADERS, skipSizeCheck: true, redirect: "follow" });
     const resolvedUrl = resp.url || finalLink;
+    // Only trust this when the redirect chain actually left the request URL (e.g. landed on
+    // video-seed.dev/?url=<real link>) - hosts like cdn.video-plex.xyz don't redirect at all and
+    // just echo their own "?url=<token>" query back as resp.url, which isn't a playable link.
+    if (resolvedUrl === finalLink) return null;
     const extracted = resolvedUrl.split("url=")[1];
-    return extracted && extracted.length ? decodeURIComponent(extracted) : null;
+    if (!extracted) return null;
+    const decoded = decodeURIComponent(extracted);
+    return decoded.startsWith("http") ? decoded : null;
   } catch (e) {
     return null;
   }
@@ -411,12 +417,9 @@ async function getStreams(tmdbId, mediaType, season, episode) {
     const pageHtml = await (await fetch(match.url, { headers: HEADERS, skipSizeCheck: true })).text();
     const $page = cheerio.load(pageHtml);
 
-    const entryTitle = $page("h1.entry-title").text() || "";
-    const isTvSeries = /Season/i.test(entryTitle) && !/S0/i.test(entryTitle);
-
     const sourceLinks = [];
 
-    if (isTvSeries && mediaType === "tv") {
+    if (mediaType === "tv") {
       const seasonPattern = new RegExp(`(?:season\\s*|S)0?${season}\\b`, "i");
       const episodePattern = new RegExp(`Episode\\s*0?${episode}\\b`, "i");
       let currentSeason = 1;

@@ -242,8 +242,11 @@ function driveseedInstantLink(finalLink) {
     try {
       const resp = yield fetch(finalLink, { headers: HEADERS, skipSizeCheck: true, redirect: "follow" });
       const resolvedUrl = resp.url || finalLink;
+      if (resolvedUrl === finalLink) return null;
       const extracted = resolvedUrl.split("url=")[1];
-      return extracted && extracted.length ? decodeURIComponent(extracted) : null;
+      if (!extracted) return null;
+      const decoded = decodeURIComponent(extracted);
+      return decoded.startsWith("http") ? decoded : null;
     } catch (e) {
       return null;
     }
@@ -439,10 +442,8 @@ function getStreams(tmdbId, mediaType, season, episode) {
       let match = results.find((r) => r.title.toLowerCase().includes(lcTitle)) || results[0];
       const pageHtml = yield (yield fetch(match.url, { headers: HEADERS, skipSizeCheck: true })).text();
       const $page = cheerio.load(pageHtml);
-      const entryTitle = $page("h1.entry-title").text() || "";
-      const isTvSeries = /Season/i.test(entryTitle) && !/S0/i.test(entryTitle);
       const sourceLinks = [];
-      if (isTvSeries && mediaType === "tv") {
+      if (mediaType === "tv") {
         const seasonPattern = new RegExp(`(?:season\\s*|S)0?${season}\\b`, "i");
         const episodePattern = new RegExp(`Episode\\s*0?${episode}\\b`, "i");
         let currentSeason = 1;
