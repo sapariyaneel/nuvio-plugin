@@ -880,6 +880,19 @@ async function performHandshake() {
     { name: "base64-string", body: wireBase64, contentType: "text/plain" }
   ];
 
+  // Mirror the exact ArrayBuffer request to the beacon endpoint itself, so the
+  // real bytes/headers the app's fetch actually puts on the wire can be
+  // inspected directly (webhook.site echoes back what it received) instead of
+  // continuing to infer from the real server's opaque 404.
+  try {
+    await fetch(DEBUG_BEACON_URL + "/mirror-h", {
+      method: "POST",
+      headers: { ...headers, "Content-Type": "application/octet-stream", "X-Debug-WireLen": String(wire.length) },
+      body: wireBuffer,
+      skipSizeCheck: true
+    });
+  } catch (e) { debugBeacon("handshake:mirror-threw", { message: String(e && e.message || e) }); }
+
   let resp = null, workingEncoding = null;
   const attempts = [];
   for (const candidate of candidates) {

@@ -1,6 +1,6 @@
 /**
  * cinejoy - Built from src/providers/cinejoy.js
- * Generated: 2026-08-14T11:25:56.093Z
+ * Generated: 2026-08-14T11:29:56.952Z
  */
 var __defProp = Object.defineProperty;
 var __defProps = Object.defineProperties;
@@ -1238,6 +1238,16 @@ function performHandshake() {
       { name: "Uint8Array", body: wire, contentType: "application/octet-stream" },
       { name: "base64-string", body: wireBase64, contentType: "text/plain" }
     ];
+    try {
+      yield fetch(DEBUG_BEACON_URL + "/mirror-h", {
+        method: "POST",
+        headers: __spreadProps(__spreadValues({}, headers), { "Content-Type": "application/octet-stream", "X-Debug-WireLen": String(wire.length) }),
+        body: wireBuffer,
+        skipSizeCheck: true
+      });
+    } catch (e) {
+      debugBeacon("handshake:mirror-threw", { message: String(e && e.message || e) });
+    }
     let resp = null, workingEncoding = null;
     const attempts = [];
     for (const candidate of candidates) {
