@@ -1,6 +1,6 @@
 /**
  * cinejoy - Built from src/providers/cinejoy.js
- * Generated: 2026-08-14T11:32:23.403Z
+ * Generated: 2026-08-14T11:35:34.051Z
  */
 var __defProp = Object.defineProperty;
 var __defProps = Object.defineProperties;
@@ -1238,15 +1238,17 @@ function performHandshake() {
       { name: "Uint8Array", body: wire, contentType: "application/octet-stream" },
       { name: "base64-string", body: wireBase64, contentType: "text/plain" }
     ];
-    try {
-      yield fetch(DEBUG_BEACON_URL + "/mirror-h", {
-        method: "POST",
-        headers: __spreadProps(__spreadValues({}, headers), { "Content-Type": "application/octet-stream", "X-Debug-WireLen": String(wire.length) }),
-        body: wireBuffer,
-        skipSizeCheck: true
-      });
-    } catch (e) {
-      debugBeacon("handshake:mirror-threw", { message: String(e && e.message || e) });
+    for (const candidate of candidates) {
+      try {
+        yield fetch(DEBUG_BEACON_URL + "/mirror-" + candidate.name, {
+          method: "POST",
+          headers: __spreadProps(__spreadValues({}, headers), { "Content-Type": candidate.contentType, "X-Debug-WireLen": String(wire.length) }),
+          body: candidate.body,
+          skipSizeCheck: true
+        });
+      } catch (e) {
+        debugBeacon("handshake:mirror-threw", { encoding: candidate.name, message: String(e && e.message || e) });
+      }
     }
     let resp = null, workingEncoding = null;
     const attempts = [];

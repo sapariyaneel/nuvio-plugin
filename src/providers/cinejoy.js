@@ -880,18 +880,22 @@ async function performHandshake() {
     { name: "base64-string", body: wireBase64, contentType: "text/plain" }
   ];
 
-  // Mirror the exact ArrayBuffer request to the beacon endpoint itself, so the
-  // real bytes/headers the app's fetch actually puts on the wire can be
-  // inspected directly (webhook.site echoes back what it received) instead of
-  // continuing to infer from the real server's opaque 404.
-  try {
-    await fetch(DEBUG_BEACON_URL + "/mirror-h", {
-      method: "POST",
-      headers: { ...headers, "Content-Type": "application/octet-stream", "X-Debug-WireLen": String(wire.length) },
-      body: wireBuffer,
-      skipSizeCheck: true
-    });
-  } catch (e) { debugBeacon("handshake:mirror-threw", { message: String(e && e.message || e) }); }
+  // Mirror EVERY candidate body shape to the beacon endpoint, so the real
+  // content-length/bytes the app's fetch actually puts on the wire for each can
+  // be compared directly (webhook.site echoes back what it received). A prior
+  // single-candidate mirror test showed ArrayBuffer arriving as content-length
+  // 36 instead of the real 170 - confirming actual corruption, not a display
+  // artifact - so now checking whether this is universal or encoding-specific.
+  for (const candidate of candidates) {
+    try {
+      await fetch(DEBUG_BEACON_URL + "/mirror-" + candidate.name, {
+        method: "POST",
+        headers: { ...headers, "Content-Type": candidate.contentType, "X-Debug-WireLen": String(wire.length) },
+        body: candidate.body,
+        skipSizeCheck: true
+      });
+    } catch (e) { debugBeacon("handshake:mirror-threw", { encoding: candidate.name, message: String(e && e.message || e) }); }
+  }
 
   let resp = null, workingEncoding = null;
   const attempts = [];
