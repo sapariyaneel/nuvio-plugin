@@ -1,6 +1,6 @@
 /**
  * cinejoy - Built from src/providers/cinejoy.js
- * Generated: 2026-08-14T10:15:49.990Z
+ * Generated: 2026-08-14T10:35:56.836Z
  */
 var __defProp = Object.defineProperty;
 var __defProps = Object.defineProperties;
