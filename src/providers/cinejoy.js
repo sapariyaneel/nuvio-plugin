@@ -855,23 +855,43 @@ async function performHandshake() {
   const encryptedHello = aes256GcmEncrypt(kEs, iv, helloPayload, infoStr("hello"));
   const wire = concatBytes(ephPubBytes, iv, encryptedHello);
 
-  // Send a real ArrayBuffer, not a Uint8Array view - the app's fetch polyfill is
-  // custom (see TROUBLESHOOTING.md's own note on this) and no other provider in
-  // this repo sends a raw typed-array body, so this path was never exercised
-  // before. A typed-array view can get mis-serialized by a polyfill that only
-  // handles strings/ArrayBuffer/Blob bodies (e.g. falling through to a
-  // JSON/toString path that turns the bytes into garbage), producing a
-  // malformed request the server correctly rejects - confirmed via a live
-  // webhook.site trace showing "handshake HTTP 404" in the real app while the
-  // exact same code succeeds every time from plain Node.
+  // TEMPORARY: the app's fetch polyfill rejects BOTH a raw Uint8Array body AND a
+  // sliced ArrayBuffer body with an identical "handshake HTTP 404" (confirmed via
+  // two separate live-app beacon traces) while the exact same code succeeds every
+  // time from plain Node - so the polyfill's binary-body handling is broken in a
+  // way not yet identified. No other provider in this repo sends a binary POST
+  // body at all, so there's no known-working precedent to copy. Trying several
+  // candidate encodings against the real /h endpoint and reporting which one (if
+  // any) actually gets a 200, instead of guessing a third time blind.
   const wireBuffer = wire.buffer.slice(wire.byteOffset, wire.byteOffset + wire.byteLength);
-  const resp = await fetch(GATE_ORIGIN + "/h", {
-    method: "POST",
-    headers: { ...headers, "Content-Type": "application/octet-stream" },
-    body: wireBuffer,
-    skipSizeCheck: true
-  });
-  if (!resp.ok) throw new Error("handshake HTTP " + resp.status);
+  const candidates = [
+    { name: "ArrayBuffer", body: wireBuffer },
+    { name: "Uint8Array", body: wire },
+  ];
+  if (typeof Blob !== "undefined") {
+    try { candidates.push({ name: "Blob", body: new Blob([wireBuffer], { type: "application/octet-stream" }) }); } catch (e) {}
+  }
+  if (typeof DataView !== "undefined") {
+    try { candidates.push({ name: "DataView", body: new DataView(wireBuffer) }); } catch (e) {}
+  }
+
+  let resp = null, workingEncoding = null;
+  for (const candidate of candidates) {
+    try {
+      const attempt = await fetch(GATE_ORIGIN + "/h", {
+        method: "POST",
+        headers: { ...headers, "Content-Type": "application/octet-stream" },
+        body: candidate.body,
+        skipSizeCheck: true
+      });
+      debugBeacon("handshake:encoding-attempt", { encoding: candidate.name, status: attempt.status, ok: attempt.ok });
+      if (attempt.ok) { resp = attempt; workingEncoding = candidate.name; break; }
+    } catch (e) {
+      debugBeacon("handshake:encoding-attempt-threw", { encoding: candidate.name, message: String(e && e.message || e) });
+    }
+  }
+  debugBeacon("handshake:encoding-result", { workingEncoding });
+  if (!resp || !resp.ok) throw new Error("handshake HTTP " + (resp ? resp.status : "no candidate succeeded"));
   const respBytes = new Uint8Array(await resp.arrayBuffer());
   if (respBytes.length < 65 + 12 + 16) throw new Error("malformed handshake response");
 

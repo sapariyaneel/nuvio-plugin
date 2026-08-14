@@ -1,6 +1,6 @@
 /**
  * cinejoy - Built from src/providers/cinejoy.js
- * Generated: 2026-08-14T11:05:40.275Z
+ * Generated: 2026-08-14T11:10:54.392Z
  */
 var __defProp = Object.defineProperty;
 var __defProps = Object.defineProperties;
@@ -1225,14 +1225,44 @@ function performHandshake() {
     const encryptedHello = aes256GcmEncrypt(kEs, iv, helloPayload, infoStr("hello"));
     const wire = concatBytes(ephPubBytes, iv, encryptedHello);
     const wireBuffer = wire.buffer.slice(wire.byteOffset, wire.byteOffset + wire.byteLength);
-    const resp = yield fetch(GATE_ORIGIN + "/h", {
-      method: "POST",
-      headers: __spreadProps(__spreadValues({}, headers), { "Content-Type": "application/octet-stream" }),
-      body: wireBuffer,
-      skipSizeCheck: true
-    });
-    if (!resp.ok)
-      throw new Error("handshake HTTP " + resp.status);
+    const candidates = [
+      { name: "ArrayBuffer", body: wireBuffer },
+      { name: "Uint8Array", body: wire }
+    ];
+    if (typeof Blob !== "undefined") {
+      try {
+        candidates.push({ name: "Blob", body: new Blob([wireBuffer], { type: "application/octet-stream" }) });
+      } catch (e) {
+      }
+    }
+    if (typeof DataView !== "undefined") {
+      try {
+        candidates.push({ name: "DataView", body: new DataView(wireBuffer) });
+      } catch (e) {
+      }
+    }
+    let resp = null, workingEncoding = null;
+    for (const candidate of candidates) {
+      try {
+        const attempt = yield fetch(GATE_ORIGIN + "/h", {
+          method: "POST",
+          headers: __spreadProps(__spreadValues({}, headers), { "Content-Type": "application/octet-stream" }),
+          body: candidate.body,
+          skipSizeCheck: true
+        });
+        debugBeacon("handshake:encoding-attempt", { encoding: candidate.name, status: attempt.status, ok: attempt.ok });
+        if (attempt.ok) {
+          resp = attempt;
+          workingEncoding = candidate.name;
+          break;
+        }
+      } catch (e) {
+        debugBeacon("handshake:encoding-attempt-threw", { encoding: candidate.name, message: String(e && e.message || e) });
+      }
+    }
+    debugBeacon("handshake:encoding-result", { workingEncoding });
+    if (!resp || !resp.ok)
+      throw new Error("handshake HTTP " + (resp ? resp.status : "no candidate succeeded"));
     const respBytes = new Uint8Array(yield resp.arrayBuffer());
     if (respBytes.length < 65 + 12 + 16)
       throw new Error("malformed handshake response");
