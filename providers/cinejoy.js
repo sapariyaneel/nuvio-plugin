@@ -1,6 +1,6 @@
 /**
  * cinejoy - Built from src/providers/cinejoy.js
- * Generated: 2026-08-14T11:35:34.051Z
+ * Generated: 2026-08-14T11:47:06.998Z
  */
 var __defProp = Object.defineProperty;
 var __defProps = Object.defineProperties;
@@ -1233,10 +1233,14 @@ function performHandshake() {
     const wire = concatBytes(ephPubBytes, iv, encryptedHello);
     const wireBuffer = wire.buffer.slice(wire.byteOffset, wire.byteOffset + wire.byteLength);
     const wireBase64 = bytesToStdBase64(wire);
+    let wireBinaryString = "";
+    for (let i = 0; i < wire.length; i++)
+      wireBinaryString += String.fromCharCode(wire[i]);
     const candidates = [
       { name: "ArrayBuffer", body: wireBuffer, contentType: "application/octet-stream" },
       { name: "Uint8Array", body: wire, contentType: "application/octet-stream" },
-      { name: "base64-string", body: wireBase64, contentType: "text/plain" }
+      { name: "base64-string", body: wireBase64, contentType: "text/plain" },
+      { name: "binary-string", body: wireBinaryString, contentType: "application/octet-stream" }
     ];
     for (const candidate of candidates) {
       try {

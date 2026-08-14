@@ -874,10 +874,22 @@ async function performHandshake() {
   // evidence instead of another guess.
   const wireBuffer = wire.buffer.slice(wire.byteOffset, wire.byteOffset + wire.byteLength);
   const wireBase64 = bytesToStdBase64(wire);
+  // "Binary string": each byte as its own UTF-16 code unit (String.fromCharCode),
+  // NOT base64-encoded - a plain string body transmitted its exact character
+  // count correctly in mirror testing (228 chars for a 228-char base64 string),
+  // unlike ArrayBuffer (silently replaced by a fixed 36-byte placeholder) or
+  // Uint8Array (serialized as a giant comma-separated decimal array, ~800
+  // bytes for 170 real bytes). This should arrive as exactly 170 bytes IF the
+  // polyfill treats the string as Latin-1/binary; if it instead UTF-8-encodes
+  // the string, bytes >=128 will inflate to 2 bytes each and corrupt the
+  // request - the mirror will show which happened.
+  let wireBinaryString = "";
+  for (let i = 0; i < wire.length; i++) wireBinaryString += String.fromCharCode(wire[i]);
   const candidates = [
     { name: "ArrayBuffer", body: wireBuffer, contentType: "application/octet-stream" },
     { name: "Uint8Array", body: wire, contentType: "application/octet-stream" },
-    { name: "base64-string", body: wireBase64, contentType: "text/plain" }
+    { name: "base64-string", body: wireBase64, contentType: "text/plain" },
+    { name: "binary-string", body: wireBinaryString, contentType: "application/octet-stream" }
   ];
 
   // Mirror EVERY candidate body shape to the beacon endpoint, so the real
