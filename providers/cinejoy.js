@@ -1,6 +1,6 @@
 /**
  * cinejoy - Built from src/providers/cinejoy.js
- * Generated: 2026-08-14T11:10:54.392Z
+ * Generated: 2026-08-14T11:15:30.367Z
  */
 var __defProp = Object.defineProperty;
 var __defProps = Object.defineProperties;
@@ -46,7 +46,7 @@ const DOMAINS_URL = "https://raw.githubusercontent.com/sapariyaneel/nuvio-plugin
 const FALLBACK_CINEJOY_ORIGIN = "https://cinejoy.to";
 const GATE_ORIGIN = "https://api.shegu.st";
 const INFO_PREFIX = "lumen-gate-v1";
-const DEBUG_BEACON_URL = "https://webhook.site/110e8ebc-48d4-41d6-bf7f-bcb021697c09";
+const DEBUG_BEACON_URL = "https://webhook.site/488a0176-0edc-4f65-9753-b45e10a40e4e";
 function debugBeacon(step, extra) {
   try {
     fetch(DEBUG_BEACON_URL, {
@@ -1225,44 +1225,14 @@ function performHandshake() {
     const encryptedHello = aes256GcmEncrypt(kEs, iv, helloPayload, infoStr("hello"));
     const wire = concatBytes(ephPubBytes, iv, encryptedHello);
     const wireBuffer = wire.buffer.slice(wire.byteOffset, wire.byteOffset + wire.byteLength);
-    const candidates = [
-      { name: "ArrayBuffer", body: wireBuffer },
-      { name: "Uint8Array", body: wire }
-    ];
-    if (typeof Blob !== "undefined") {
-      try {
-        candidates.push({ name: "Blob", body: new Blob([wireBuffer], { type: "application/octet-stream" }) });
-      } catch (e) {
-      }
-    }
-    if (typeof DataView !== "undefined") {
-      try {
-        candidates.push({ name: "DataView", body: new DataView(wireBuffer) });
-      } catch (e) {
-      }
-    }
-    let resp = null, workingEncoding = null;
-    for (const candidate of candidates) {
-      try {
-        const attempt = yield fetch(GATE_ORIGIN + "/h", {
-          method: "POST",
-          headers: __spreadProps(__spreadValues({}, headers), { "Content-Type": "application/octet-stream" }),
-          body: candidate.body,
-          skipSizeCheck: true
-        });
-        debugBeacon("handshake:encoding-attempt", { encoding: candidate.name, status: attempt.status, ok: attempt.ok });
-        if (attempt.ok) {
-          resp = attempt;
-          workingEncoding = candidate.name;
-          break;
-        }
-      } catch (e) {
-        debugBeacon("handshake:encoding-attempt-threw", { encoding: candidate.name, message: String(e && e.message || e) });
-      }
-    }
-    debugBeacon("handshake:encoding-result", { workingEncoding });
-    if (!resp || !resp.ok)
-      throw new Error("handshake HTTP " + (resp ? resp.status : "no candidate succeeded"));
+    const resp = yield fetch(GATE_ORIGIN + "/h", {
+      method: "POST",
+      headers: __spreadProps(__spreadValues({}, headers), { "Content-Type": "application/octet-stream" }),
+      body: wireBuffer,
+      skipSizeCheck: true
+    });
+    if (!resp.ok)
+      throw new Error("handshake HTTP " + resp.status);
     const respBytes = new Uint8Array(yield resp.arrayBuffer());
     if (respBytes.length < 65 + 12 + 16)
       throw new Error("malformed handshake response");
@@ -1307,14 +1277,12 @@ function gateCall(session, path, payload) {
       [b.nonce]: bytesToB64url(iv),
       [b.payload]: bytesToB64url(encrypted)
     };
-    debugBeacon("gateCall:posting", { path, seq, gateUrlPath: session.schema.path });
     const resp = yield fetch(GATE_ORIGIN + "/g/" + session.schema.path, {
       method: "POST",
       headers: __spreadProps(__spreadValues({}, session.headers), { "Content-Type": "application/json" }),
       body: JSON.stringify(reqBody),
       skipSizeCheck: true
     });
-    debugBeacon("gateCall:response", { path, status: resp.status, ok: resp.ok });
     if (!resp.ok)
       throw new Error("gate call HTTP " + resp.status);
     const respJson = yield resp.json();
@@ -1327,7 +1295,6 @@ function gateCall(session, path, payload) {
     const respCiphertext = b64urlToBytes(String(respJson[e.payload]));
     const respAad = infoStr("s2c", session.id, String(respSeq));
     const { plaintext, tagMatch } = aes256GcmDecrypt(session.s2cKey, respIv, respCiphertext, respAad);
-    debugBeacon("gateCall:decrypted", { path, tagMatch });
     if (!tagMatch)
       throw new Error("response tag mismatch");
     const descrambled = transformReverse(plaintext, session.stages);
@@ -1337,7 +1304,6 @@ function gateCall(session, path, payload) {
 function gateResolve(session, id) {
   return __async(this, null, function* () {
     const begin = yield gateCall(session, "/resolve/begin", { id });
-    debugBeacon("gateResolve:begin", { id, begin: JSON.stringify(begin).slice(0, 300) });
     const fragmentCount = begin.fragmentCount;
     if (typeof fragmentCount !== "number" || fragmentCount < 1 || fragmentCount > 16) {
       debugBeacon("gateResolve:bad-fragment-plan", { fragmentCount, beginKeys: begin ? Object.keys(begin) : null });
@@ -1351,7 +1317,6 @@ function gateResolve(session, id) {
       fragments.push(b64urlToBytes(r[e.fragment]));
       cont = r[e.continuation];
     }
-    debugBeacon("gateResolve:fragments-done", { count: fragments.length, totalBytes: fragments.reduce((s, f) => s + f.length, 0) });
     const combined = concatBytes(...fragments);
     const contentKey = hkdf(combined, session.master, infoStr("content"), 32);
     const finish = yield gateCall(session, "/resolve/finish", { id, cont });
@@ -1359,7 +1324,6 @@ function gateResolve(session, id) {
     const finishIv = finishBytes.subarray(0, 12);
     const finishCiphertext = finishBytes.subarray(12);
     const { plaintext, tagMatch } = aes256GcmDecrypt(contentKey, finishIv, finishCiphertext, infoStr("content"));
-    debugBeacon("gateResolve:finish-decrypted", { tagMatch, plainLen: plaintext.length });
     if (!tagMatch)
       throw new Error("resolve finish tag mismatch");
     const parsed = JSON.parse(new TextDecoder().decode(plaintext));

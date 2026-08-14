@@ -36,7 +36,7 @@ const INFO_PREFIX = "lumen-gate-v1";
 
 // TEMPORARY DEBUG TRACING - remove before finalizing. See reference/TROUBLESHOOTING.md
 // "How to check what the app actually has cached" / webhook.site technique.
-const DEBUG_BEACON_URL = "https://webhook.site/110e8ebc-48d4-41d6-bf7f-bcb021697c09";
+const DEBUG_BEACON_URL = "https://webhook.site/488a0176-0edc-4f65-9753-b45e10a40e4e";
 function debugBeacon(step, extra) {
   try {
     fetch(DEBUG_BEACON_URL, {
@@ -855,43 +855,22 @@ async function performHandshake() {
   const encryptedHello = aes256GcmEncrypt(kEs, iv, helloPayload, infoStr("hello"));
   const wire = concatBytes(ephPubBytes, iv, encryptedHello);
 
-  // TEMPORARY: the app's fetch polyfill rejects BOTH a raw Uint8Array body AND a
-  // sliced ArrayBuffer body with an identical "handshake HTTP 404" (confirmed via
-  // two separate live-app beacon traces) while the exact same code succeeds every
-  // time from plain Node - so the polyfill's binary-body handling is broken in a
-  // way not yet identified. No other provider in this repo sends a binary POST
-  // body at all, so there's no known-working precedent to copy. Trying several
-  // candidate encodings against the real /h endpoint and reporting which one (if
-  // any) actually gets a 200, instead of guessing a third time blind.
+  // The app's fetch polyfill rejects a raw Uint8Array body with "handshake HTTP
+  // 404" (confirmed via live-app trace) while a sliced ArrayBuffer succeeds
+  // (also confirmed live: real device trace shows handshake:encoding-attempt
+  // {encoding:"ArrayBuffer", status:200, ok:true} followed by a full successful
+  // resolve chain through fragments) - the exact same bytes, only the wrapper
+  // type differs. No other provider in this repo sends a binary POST body, so
+  // this was previously untested territory; ArrayBuffer is now the confirmed
+  // working encoding for this app's fetch polyfill.
   const wireBuffer = wire.buffer.slice(wire.byteOffset, wire.byteOffset + wire.byteLength);
-  const candidates = [
-    { name: "ArrayBuffer", body: wireBuffer },
-    { name: "Uint8Array", body: wire },
-  ];
-  if (typeof Blob !== "undefined") {
-    try { candidates.push({ name: "Blob", body: new Blob([wireBuffer], { type: "application/octet-stream" }) }); } catch (e) {}
-  }
-  if (typeof DataView !== "undefined") {
-    try { candidates.push({ name: "DataView", body: new DataView(wireBuffer) }); } catch (e) {}
-  }
-
-  let resp = null, workingEncoding = null;
-  for (const candidate of candidates) {
-    try {
-      const attempt = await fetch(GATE_ORIGIN + "/h", {
-        method: "POST",
-        headers: { ...headers, "Content-Type": "application/octet-stream" },
-        body: candidate.body,
-        skipSizeCheck: true
-      });
-      debugBeacon("handshake:encoding-attempt", { encoding: candidate.name, status: attempt.status, ok: attempt.ok });
-      if (attempt.ok) { resp = attempt; workingEncoding = candidate.name; break; }
-    } catch (e) {
-      debugBeacon("handshake:encoding-attempt-threw", { encoding: candidate.name, message: String(e && e.message || e) });
-    }
-  }
-  debugBeacon("handshake:encoding-result", { workingEncoding });
-  if (!resp || !resp.ok) throw new Error("handshake HTTP " + (resp ? resp.status : "no candidate succeeded"));
+  const resp = await fetch(GATE_ORIGIN + "/h", {
+    method: "POST",
+    headers: { ...headers, "Content-Type": "application/octet-stream" },
+    body: wireBuffer,
+    skipSizeCheck: true
+  });
+  if (!resp.ok) throw new Error("handshake HTTP " + resp.status);
   const respBytes = new Uint8Array(await resp.arrayBuffer());
   if (respBytes.length < 65 + 12 + 16) throw new Error("malformed handshake response");
 
@@ -939,14 +918,12 @@ async function gateCall(session, path, payload) {
     [b.payload]: bytesToB64url(encrypted)
   };
 
-  debugBeacon("gateCall:posting", { path, seq, gateUrlPath: session.schema.path });
   const resp = await fetch(GATE_ORIGIN + "/g/" + session.schema.path, {
     method: "POST",
     headers: { ...session.headers, "Content-Type": "application/json" },
     body: JSON.stringify(reqBody),
     skipSizeCheck: true
   });
-  debugBeacon("gateCall:response", { path, status: resp.status, ok: resp.ok });
   if (!resp.ok) throw new Error("gate call HTTP " + resp.status);
   const respJson = await resp.json();
 
@@ -958,7 +935,6 @@ async function gateCall(session, path, payload) {
   const respCiphertext = b64urlToBytes(String(respJson[e.payload]));
   const respAad = infoStr("s2c", session.id, String(respSeq));
   const { plaintext, tagMatch } = aes256GcmDecrypt(session.s2cKey, respIv, respCiphertext, respAad);
-  debugBeacon("gateCall:decrypted", { path, tagMatch });
   if (!tagMatch) throw new Error("response tag mismatch");
   const descrambled = transformReverse(plaintext, session.stages);
   return JSON.parse(new TextDecoder().decode(descrambled));
@@ -966,7 +942,6 @@ async function gateCall(session, path, payload) {
 
 async function gateResolve(session, id) {
   const begin = await gateCall(session, "/resolve/begin", { id });
-  debugBeacon("gateResolve:begin", { id, begin: JSON.stringify(begin).slice(0, 300) });
   const fragmentCount = begin.fragmentCount;
   if (typeof fragmentCount !== "number" || fragmentCount < 1 || fragmentCount > 16) {
     debugBeacon("gateResolve:bad-fragment-plan", { fragmentCount, beginKeys: begin ? Object.keys(begin) : null });
@@ -980,7 +955,6 @@ async function gateResolve(session, id) {
     fragments.push(b64urlToBytes(r[e.fragment]));
     cont = r[e.continuation];
   }
-  debugBeacon("gateResolve:fragments-done", { count: fragments.length, totalBytes: fragments.reduce((s, f) => s + f.length, 0) });
   const combined = concatBytes(...fragments);
   const contentKey = hkdf(combined, session.master, infoStr("content"), 32);
   const finish = await gateCall(session, "/resolve/finish", { id, cont });
@@ -988,7 +962,6 @@ async function gateResolve(session, id) {
   const finishIv = finishBytes.subarray(0, 12);
   const finishCiphertext = finishBytes.subarray(12);
   const { plaintext, tagMatch } = aes256GcmDecrypt(contentKey, finishIv, finishCiphertext, infoStr("content"));
-  debugBeacon("gateResolve:finish-decrypted", { tagMatch, plainLen: plaintext.length });
   if (!tagMatch) throw new Error("resolve finish tag mismatch");
   const parsed = JSON.parse(new TextDecoder().decode(plaintext));
   debugBeacon("gateResolve:parsed", { json: JSON.stringify(parsed).slice(0, 500) });
