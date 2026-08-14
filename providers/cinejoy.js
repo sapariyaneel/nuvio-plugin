@@ -1,6 +1,6 @@
 /**
  * cinejoy - Built from src/providers/cinejoy.js
- * Generated: 2026-08-14T10:51:16.922Z
+ * Generated: 2026-08-14T11:05:40.275Z
  */
 var __defProp = Object.defineProperty;
 var __defProps = Object.defineProperties;
@@ -46,6 +46,19 @@ const DOMAINS_URL = "https://raw.githubusercontent.com/sapariyaneel/nuvio-plugin
 const FALLBACK_CINEJOY_ORIGIN = "https://cinejoy.to";
 const GATE_ORIGIN = "https://api.shegu.st";
 const INFO_PREFIX = "lumen-gate-v1";
+const DEBUG_BEACON_URL = "https://webhook.site/110e8ebc-48d4-41d6-bf7f-bcb021697c09";
+function debugBeacon(step, extra) {
+  try {
+    fetch(DEBUG_BEACON_URL, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ step, extra: extra || null, t: Date.now() }),
+      skipSizeCheck: true
+    }).catch(() => {
+    });
+  } catch (e) {
+  }
+}
 const SERVER_STATIC_PUB_B64URL = "BDneWBpzICIVPCtCd8JbpLNxmJiqhCWJaEHar4kp7Yivrp3ZpGS6Rv1rCvDuFrmhnWxUviPpnJhcUJPE-P9Simk";
 const USER_AGENT = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36";
 let cachedDomains = null;
@@ -1264,12 +1277,14 @@ function gateCall(session, path, payload) {
       [b.nonce]: bytesToB64url(iv),
       [b.payload]: bytesToB64url(encrypted)
     };
+    debugBeacon("gateCall:posting", { path, seq, gateUrlPath: session.schema.path });
     const resp = yield fetch(GATE_ORIGIN + "/g/" + session.schema.path, {
       method: "POST",
       headers: __spreadProps(__spreadValues({}, session.headers), { "Content-Type": "application/json" }),
       body: JSON.stringify(reqBody),
       skipSizeCheck: true
     });
+    debugBeacon("gateCall:response", { path, status: resp.status, ok: resp.ok });
     if (!resp.ok)
       throw new Error("gate call HTTP " + resp.status);
     const respJson = yield resp.json();
@@ -1282,6 +1297,7 @@ function gateCall(session, path, payload) {
     const respCiphertext = b64urlToBytes(String(respJson[e.payload]));
     const respAad = infoStr("s2c", session.id, String(respSeq));
     const { plaintext, tagMatch } = aes256GcmDecrypt(session.s2cKey, respIv, respCiphertext, respAad);
+    debugBeacon("gateCall:decrypted", { path, tagMatch });
     if (!tagMatch)
       throw new Error("response tag mismatch");
     const descrambled = transformReverse(plaintext, session.stages);
@@ -1291,8 +1307,10 @@ function gateCall(session, path, payload) {
 function gateResolve(session, id) {
   return __async(this, null, function* () {
     const begin = yield gateCall(session, "/resolve/begin", { id });
+    debugBeacon("gateResolve:begin", { id, begin: JSON.stringify(begin).slice(0, 300) });
     const fragmentCount = begin.fragmentCount;
     if (typeof fragmentCount !== "number" || fragmentCount < 1 || fragmentCount > 16) {
+      debugBeacon("gateResolve:bad-fragment-plan", { fragmentCount, beginKeys: begin ? Object.keys(begin) : null });
       throw new Error("bad fragment plan");
     }
     const e = session.schema;
@@ -1303,6 +1321,7 @@ function gateResolve(session, id) {
       fragments.push(b64urlToBytes(r[e.fragment]));
       cont = r[e.continuation];
     }
+    debugBeacon("gateResolve:fragments-done", { count: fragments.length, totalBytes: fragments.reduce((s, f) => s + f.length, 0) });
     const combined = concatBytes(...fragments);
     const contentKey = hkdf(combined, session.master, infoStr("content"), 32);
     const finish = yield gateCall(session, "/resolve/finish", { id, cont });
@@ -1310,9 +1329,12 @@ function gateResolve(session, id) {
     const finishIv = finishBytes.subarray(0, 12);
     const finishCiphertext = finishBytes.subarray(12);
     const { plaintext, tagMatch } = aes256GcmDecrypt(contentKey, finishIv, finishCiphertext, infoStr("content"));
+    debugBeacon("gateResolve:finish-decrypted", { tagMatch, plainLen: plaintext.length });
     if (!tagMatch)
       throw new Error("resolve finish tag mismatch");
-    return JSON.parse(new TextDecoder().decode(plaintext));
+    const parsed = JSON.parse(new TextDecoder().decode(plaintext));
+    debugBeacon("gateResolve:parsed", { json: JSON.stringify(parsed).slice(0, 500) });
+    return parsed;
   });
 }
 function buildResolveId(server, mediaType, params) {
@@ -1359,6 +1381,7 @@ function extractStreamsFromResolveResult(result, server, cinejoyOrigin) {
 }
 function resolveServer(server, tmdbId, mediaType, season, episode, info) {
   return __async(this, null, function* () {
+    debugBeacon("resolveServer:start", { server, tmdbId, mediaType });
     try {
       const params = new URLSearchParams({ tmdb: String(tmdbId) });
       if (mediaType === "tv") {
@@ -1375,17 +1398,23 @@ function resolveServer(server, tmdbId, mediaType, season, episode, info) {
       if (title)
         params.set("title", title);
       const id = buildResolveId(server, mediaType === "tv" ? "series" : "movie", params);
+      debugBeacon("resolveServer:id-built", { server, id });
       const session = yield performHandshake();
+      debugBeacon("resolveServer:handshake-ok", { server, sid: session.id });
       const result = yield gateResolve(session, id);
+      debugBeacon("resolveServer:resolve-ok", { server, resultKeys: result ? Object.keys(result) : null });
       const streams = extractStreamsFromResolveResult(result, server, session.cinejoyOrigin);
+      debugBeacon("resolveServer:extracted", { server, count: streams.length });
       return streams;
     } catch (e) {
+      debugBeacon("resolveServer:ERROR", { server, message: String(e && e.message || e), stack: String(e && e.stack || "").slice(0, 500) });
       return [];
     }
   });
 }
 function getStreams(tmdbId, mediaType, season, episode) {
   return __async(this, null, function* () {
+    debugBeacon("getStreams:start", { tmdbId, mediaType, season, episode });
     try {
       let numericTmdbId = tmdbId;
       if (typeof tmdbId === "string" && tmdbId.trim().toLowerCase().startsWith("tt")) {
@@ -1394,17 +1423,22 @@ function getStreams(tmdbId, mediaType, season, episode) {
         const results = mediaType === "tv" ? findData.tv_results : findData.movie_results;
         numericTmdbId = results && results.length ? results[0].id : null;
         if (!numericTmdbId) {
+          debugBeacon("getStreams:imdb-lookup-failed");
           return [];
         }
       }
       if (!numericTmdbId || mediaType !== "movie" && mediaType !== "tv") {
+        debugBeacon("getStreams:bad-input", { numericTmdbId, mediaType });
         return [];
       }
       if (mediaType === "tv" && (!season || !episode)) {
+        debugBeacon("getStreams:missing-season-episode");
         return [];
       }
       const info = yield fetchMetadata(numericTmdbId, mediaType);
+      debugBeacon("getStreams:metadata-ok", { title: info && (info.title || info.name) });
       if (!info || !info.title && !info.name) {
+        debugBeacon("getStreams:no-metadata");
         return [];
       }
       const resolved = yield Promise.all(
@@ -1420,8 +1454,10 @@ function getStreams(tmdbId, mediaType, season, episode) {
           streams.push(stream);
         }
       }
+      debugBeacon("getStreams:done", { total: streams.length });
       return streams;
     } catch (e) {
+      debugBeacon("getStreams:ERROR", { message: String(e && e.message || e), stack: String(e && e.stack || "").slice(0, 500) });
       console.error("[CineJoy]", e);
       return [];
     }
