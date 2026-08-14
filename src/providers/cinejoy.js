@@ -36,7 +36,7 @@ const INFO_PREFIX = "lumen-gate-v1";
 
 // TEMPORARY DEBUG TRACING - remove before finalizing. See reference/TROUBLESHOOTING.md
 // "How to check what the app actually has cached" / webhook.site technique.
-const DEBUG_BEACON_URL = "https://webhook.site/24ec8ed7-af20-496b-baac-801ef474c093";
+const DEBUG_BEACON_URL = "https://webhook.site/355f2fff-5999-4061-861e-dcdbc8c171c4";
 function debugBeacon(step, extra) {
   try {
     fetch(DEBUG_BEACON_URL, {
@@ -984,7 +984,6 @@ async function gateResolve(session, id) {
   const begin = await gateCall(session, "/resolve/begin", { id });
   const fragmentCount = begin.fragmentCount;
   if (typeof fragmentCount !== "number" || fragmentCount < 1 || fragmentCount > 16) {
-    debugBeacon("gateResolve:bad-fragment-plan", { fragmentCount, beginKeys: begin ? Object.keys(begin) : null });
     throw new Error("bad fragment plan");
   }
   const e = session.schema;
@@ -1004,7 +1003,6 @@ async function gateResolve(session, id) {
   const { plaintext, tagMatch } = aes256GcmDecrypt(contentKey, finishIv, finishCiphertext, infoStr("content"));
   if (!tagMatch) throw new Error("resolve finish tag mismatch");
   const parsed = JSON.parse(new TextDecoder().decode(plaintext));
-  debugBeacon("gateResolve:parsed", { json: JSON.stringify(parsed).slice(0, 500) });
   return parsed;
 }
 
@@ -1059,7 +1057,6 @@ function extractStreamsFromResolveResult(result, server, cinejoyOrigin) {
 }
 
 async function resolveServer(server, tmdbId, mediaType, season, episode, info) {
-  debugBeacon("resolveServer:start", { server, tmdbId, mediaType });
   try {
     const params = new URLSearchParams({ tmdb: String(tmdbId) });
     if (mediaType === "tv") {
@@ -1074,23 +1071,17 @@ async function resolveServer(server, tmdbId, mediaType, season, episode, info) {
     if (title) params.set("title", title);
 
     const id = buildResolveId(server, mediaType === "tv" ? "series" : "movie", params);
-    debugBeacon("resolveServer:id-built", { server, id });
 
     const session = await performHandshake();
-    debugBeacon("resolveServer:handshake-ok", { server, sid: session.id });
     const result = await gateResolve(session, id);
-    debugBeacon("resolveServer:resolve-ok", { server, resultKeys: result ? Object.keys(result) : null });
     const streams = extractStreamsFromResolveResult(result, server, session.cinejoyOrigin);
-    debugBeacon("resolveServer:extracted", { server, count: streams.length });
     return streams;
   } catch (e) {
-    debugBeacon("resolveServer:ERROR", { server, message: String(e && e.message || e), stack: String(e && e.stack || "").slice(0, 500) });
     return [];
   }
 }
 
 async function getStreams(tmdbId, mediaType, season, episode) {
-  debugBeacon("getStreams:start", { tmdbId, mediaType, season, episode });
   try {
     let numericTmdbId = tmdbId;
     if (typeof tmdbId === "string" && tmdbId.trim().toLowerCase().startsWith("tt")) {
@@ -1098,14 +1089,13 @@ async function getStreams(tmdbId, mediaType, season, episode) {
       const findData = await (await fetch(findUrl, { skipSizeCheck: true, redirect: "follow" })).json();
       const results = mediaType === "tv" ? findData.tv_results : findData.movie_results;
       numericTmdbId = results && results.length ? results[0].id : null;
-      if (!numericTmdbId) { debugBeacon("getStreams:imdb-lookup-failed"); return []; }
+      if (!numericTmdbId) { return []; }
     }
-    if (!numericTmdbId || (mediaType !== "movie" && mediaType !== "tv")) { debugBeacon("getStreams:bad-input", { numericTmdbId, mediaType }); return []; }
-    if (mediaType === "tv" && (!season || !episode)) { debugBeacon("getStreams:missing-season-episode"); return []; }
+    if (!numericTmdbId || (mediaType !== "movie" && mediaType !== "tv")) { return []; }
+    if (mediaType === "tv" && (!season || !episode)) { return []; }
 
     const info = await fetchMetadata(numericTmdbId, mediaType);
-    debugBeacon("getStreams:metadata-ok", { title: info && (info.title || info.name) });
-    if (!info || (!info.title && !info.name)) { debugBeacon("getStreams:no-metadata"); return []; }
+    if (!info || (!info.title && !info.name)) { return []; }
 
     const resolved = await Promise.all(
       SUPPORTED_SERVERS.map(server => resolveServer(server, numericTmdbId, mediaType, season, episode, info))
@@ -1120,10 +1110,8 @@ async function getStreams(tmdbId, mediaType, season, episode) {
         streams.push(stream);
       }
     }
-    debugBeacon("getStreams:done", { total: streams.length });
     return streams;
   } catch (e) {
-    debugBeacon("getStreams:ERROR", { message: String(e && e.message || e), stack: String(e && e.stack || "").slice(0, 500) });
     console.error("[CineJoy]", e);
     return [];
   }
