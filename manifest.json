@@ -367,26 +367,6 @@
         "en",
         "it"
       ]
-    },
-    {
-      "id": "Cinejoy",
-      "name": "CineJoy",
-      "description": "CineJoy TMDB-id-based movie & TV streaming via an encrypted RPC gate (ECDH + AES-256-GCM)",
-      "version": "1.0.0",
-      "author": "CENSORED",
-      "supportedTypes": [
-        "movie",
-        "tv"
-      ],
-      "filename": "providers/cinejoy.js",
-      "enabled": true,
-      "formats": [
-        "m3u8"
-      ],
-      "logo": "https://i.imgur.com/9bGkGMi.png",
-      "contentLanguage": [
-        "en"
-      ]
     }
   ]
 }
