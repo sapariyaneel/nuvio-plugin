@@ -1,6 +1,6 @@
 /**
  * multimovies - Built from src/providers/multimovies.js
- * Generated: 2026-08-14T05:40:41.086Z
+ * Generated: 2026-08-14T06:08:04.284Z
  */
 var __defProp = Object.defineProperty;
 var __defProps = Object.defineProperties;
@@ -175,12 +175,27 @@ function getStreams(tmdbId, mediaType, season, episode) {
             const resolvedUrl = yield resolveEmbed(embedUrl, BASE_URL);
             if (resolvedUrl) {
               const streamReferer = new URL(embedUrl).origin + "/";
-              const quality = resolvedUrl.includes(".m3u8") ? yield getMasterPlaylistQuality(resolvedUrl, streamReferer) : "Unknown";
+              const streamHeaders = resolvedUrl.includes(".m3u8") || resolvedUrl.includes(".mp4") ? { Referer: streamReferer, "User-Agent": HEADERS["User-Agent"] } : void 0;
+              if (resolvedUrl.includes(".m3u8")) {
+                const variants = yield splitMasterIntoQualityStreams(resolvedUrl, streamReferer);
+                if (variants.length) {
+                  for (const v of variants) {
+                    streams.push({
+                      url: v.url,
+                      quality: v.quality,
+                      title: "MultiMovies",
+                      headers: streamHeaders,
+                      subtitles: []
+                    });
+                  }
+                  continue;
+                }
+              }
               streams.push({
                 url: resolvedUrl,
-                quality,
+                quality: "Unknown",
                 title: "MultiMovies",
-                headers: resolvedUrl.includes(".m3u8") || resolvedUrl.includes(".mp4") ? { Referer: streamReferer, "User-Agent": HEADERS["User-Agent"] } : void 0,
+                headers: streamHeaders,
                 subtitles: []
               });
             }
@@ -204,12 +219,27 @@ function getStreams(tmdbId, mediaType, season, episode) {
           const resolvedUrl = yield resolveEmbed(embedUrl, BASE_URL);
           if (resolvedUrl) {
             const streamReferer = new URL(embedUrl).origin + "/";
-            const quality = resolvedUrl.includes(".m3u8") ? yield getMasterPlaylistQuality(resolvedUrl, streamReferer) : "Unknown";
+            const streamHeaders = resolvedUrl.includes(".m3u8") || resolvedUrl.includes(".mp4") ? { Referer: streamReferer, "User-Agent": HEADERS["User-Agent"] } : void 0;
+            if (resolvedUrl.includes(".m3u8")) {
+              const variants = yield splitMasterIntoQualityStreams(resolvedUrl, streamReferer);
+              if (variants.length) {
+                for (const v of variants) {
+                  streams.push({
+                    url: v.url,
+                    quality: v.quality,
+                    title: "MultiMovies",
+                    headers: streamHeaders,
+                    subtitles: []
+                  });
+                }
+                continue;
+              }
+            }
             streams.push({
               url: resolvedUrl,
-              quality,
+              quality: "Unknown",
               title: "MultiMovies",
-              headers: resolvedUrl.includes(".m3u8") || resolvedUrl.includes(".mp4") ? { Referer: streamReferer, "User-Agent": HEADERS["User-Agent"] } : void 0,
+              headers: streamHeaders,
               subtitles: []
             });
           }
@@ -409,7 +439,27 @@ function qualityLabelFromHeight(height) {
     return "360p";
   return "Unknown";
 }
-function getMasterPlaylistQuality(m3u8Url, referer) {
+function absolutizeM3u8Uri(line, baseUrl) {
+  const attrMatch = line.match(/URI="([^"]+)"/);
+  if (attrMatch) {
+    const abs = resolveM3u8Line(attrMatch[1], baseUrl);
+    return line.replace(attrMatch[0], `URI="${abs}"`);
+  }
+  return resolveM3u8Line(line, baseUrl);
+}
+function resolveM3u8Line(line, baseUrl) {
+  try {
+    return new URL(line, baseUrl).toString();
+  } catch (e) {
+    return line;
+  }
+}
+function buildSyntheticMasterDataUri(audioLines, streamInfLine, variantUrl) {
+  const playlist = ["#EXTM3U", ...audioLines, "", streamInfLine, variantUrl].join("\n");
+  const base64 = typeof Buffer !== "undefined" ? Buffer.from(playlist, "utf-8").toString("base64") : btoa(unescape(encodeURIComponent(playlist)));
+  return `data:application/vnd.apple.mpegurl;base64,${base64}`;
+}
+function splitMasterIntoQualityStreams(m3u8Url, referer) {
   return __async(this, null, function* () {
     try {
       const text = yield (yield fetch(m3u8Url, {
@@ -417,8 +467,9 @@ function getMasterPlaylistQuality(m3u8Url, referer) {
         skipSizeCheck: true,
         redirect: "follow"
       })).text();
-      let best = null;
       const lines = text.split("\n").map((l) => l.trim());
+      const audioLines = lines.filter((l) => l.startsWith("#EXT-X-MEDIA") && l.includes("TYPE=AUDIO")).map((l) => absolutizeM3u8Uri(l, m3u8Url));
+      const variants = [];
       for (let i = 0; i < lines.length; i++) {
         if (!lines[i].startsWith("#EXT-X-STREAM-INF"))
           continue;
@@ -429,12 +480,18 @@ function getMasterPlaylistQuality(m3u8Url, referer) {
         const resolutionMatch = lines[i].match(/RESOLUTION=(\d+)x(\d+)/);
         const bandwidth = bandwidthMatch ? parseInt(bandwidthMatch[1], 10) : 0;
         const height = resolutionMatch ? parseInt(resolutionMatch[2], 10) : 0;
-        if (!best || bandwidth > best.bandwidth)
-          best = { bandwidth, height };
+        const absVariantUrl = resolveM3u8Line(urlLine, m3u8Url);
+        variants.push({
+          quality: qualityLabelFromHeight(height),
+          bandwidth,
+          url: audioLines.length ? buildSyntheticMasterDataUri(audioLines, lines[i], absVariantUrl) : absVariantUrl
+          // no separate audio track - the bare variant is already playable as-is
+        });
       }
-      return best ? qualityLabelFromHeight(best.height) : "Unknown";
+      variants.sort((a, b) => b.bandwidth - a.bandwidth);
+      return variants;
     } catch (e) {
-      return "Unknown";
+      return [];
     }
   });
 }
