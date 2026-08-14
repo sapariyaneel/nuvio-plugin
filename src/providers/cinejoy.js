@@ -26,16 +26,42 @@
 // native crypto during development (see reference/cinejoy-research/test_*.js).
 
 const TMDB_API_KEY = "1865f43a0549ca50d341dd9ab8b29f49";
-const CINEJOY_ORIGIN = "https://cinejoy.to";
+const DOMAINS_URL = "https://raw.githubusercontent.com/sapariyaneel/nuvio-plugin/refs/heads/main/domains.json";
+const FALLBACK_CINEJOY_ORIGIN = "https://cinejoy.to";
+// The crypto gate itself, not the scrapeable frontend - this is the site's own protocol
+// backend (see reference/cinejoy-research/FINDINGS.md), not something that gets
+// domain-rotated the way the HTML frontend can; only CINEJOY_ORIGIN rotates via domains.json.
 const GATE_ORIGIN = "https://api.shegu.st";
 const INFO_PREFIX = "lumen-gate-v1";
 const SERVER_STATIC_PUB_B64URL = "BDneWBpzICIVPCtCd8JbpLNxmJiqhCWJaEHar4kp7Yivrp3ZpGS6Rv1rCvDuFrmhnWxUviPpnJhcUJPE-P9Simk";
 
-const HEADERS = {
-  "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
-  "Origin": CINEJOY_ORIGIN,
-  "Referer": CINEJOY_ORIGIN + "/"
-};
+const USER_AGENT = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36";
+
+let cachedDomains = null;
+
+async function getDomains() {
+  if (cachedDomains) return cachedDomains;
+  try {
+    const resp = await fetch(DOMAINS_URL, { skipSizeCheck: true });
+    cachedDomains = await resp.json();
+  } catch (e) {
+    cachedDomains = {};
+  }
+  return cachedDomains;
+}
+
+async function getCinejoyOrigin() {
+  const d = await getDomains();
+  return (d.cinejoy || FALLBACK_CINEJOY_ORIGIN).replace(/\/+$/, "");
+}
+
+function buildHeaders(cinejoyOrigin) {
+  return {
+    "User-Agent": USER_AGENT,
+    "Origin": cinejoyOrigin,
+    "Referer": cinejoyOrigin + "/"
+  };
+}
 
 // Only servers confirmed to resolve reliably in testing; "servers" lists more (Athens,
 // Joy, Castle, Sakura, Canaias) but this keeps the per-title call count reasonable.
@@ -590,6 +616,9 @@ function generateSchema(masterKey) {
 }
 
 async function performHandshake() {
+  const cinejoyOrigin = await getCinejoyOrigin();
+  const headers = buildHeaders(cinejoyOrigin);
+
   const priv = ecRandomPrivateKey(randomBytes);
   const pub = ecGetPublicKey(priv);
   const ephPubBytes = ecEncodePoint(pub);
@@ -605,7 +634,7 @@ async function performHandshake() {
 
   const resp = await fetch(GATE_ORIGIN + "/h", {
     method: "POST",
-    headers: { ...HEADERS, "Content-Type": "application/octet-stream" },
+    headers: { ...headers, "Content-Type": "application/octet-stream" },
     body: wire,
     skipSizeCheck: true
   });
@@ -636,7 +665,9 @@ async function performHandshake() {
     c2sKey: hkdf(master, new Uint8Array(0), infoStr("c2s"), 32),
     s2cKey: hkdf(master, new Uint8Array(0), infoStr("s2c"), 32),
     seq: 0,
-    seenSeq: 0
+    seenSeq: 0,
+    cinejoyOrigin,
+    headers
   };
 }
 
@@ -657,7 +688,7 @@ async function gateCall(session, path, payload) {
 
   const resp = await fetch(GATE_ORIGIN + "/g/" + session.schema.path, {
     method: "POST",
-    headers: { ...HEADERS, "Content-Type": "application/json" },
+    headers: { ...session.headers, "Content-Type": "application/json" },
     body: JSON.stringify(reqBody),
     skipSizeCheck: true
   });
@@ -716,11 +747,11 @@ function buildResolveId(server, mediaType, params) {
 async function fetchMetadata(tmdbId, mediaType) {
   const endpoint = mediaType === "tv" ? "tv" : "movie";
   const url = `https://api.themoviedb.org/3/${endpoint}/${encodeURIComponent(tmdbId)}?api_key=${TMDB_API_KEY}&append_to_response=external_ids`;
-  const resp = await fetch(url, { headers: HEADERS, skipSizeCheck: true, redirect: "follow" });
+  const resp = await fetch(url, { headers: { "User-Agent": USER_AGENT }, skipSizeCheck: true, redirect: "follow" });
   return resp.json();
 }
 
-function extractStreamsFromResolveResult(result, server) {
+function extractStreamsFromResolveResult(result, server, cinejoyOrigin) {
   const streams = [];
   const items = result && result.data && Array.isArray(result.data.stream) ? result.data.stream : [];
   for (const item of items) {
@@ -745,7 +776,7 @@ function extractStreamsFromResolveResult(result, server) {
       quality: "Auto",
       type: isHls ? "hls" : "mp4",
       provider: "cinejoy",
-      headers: { Referer: CINEJOY_ORIGIN + "/", "User-Agent": HEADERS["User-Agent"] },
+      headers: { Referer: cinejoyOrigin + "/", "User-Agent": USER_AGENT },
       subtitles
     });
   }
@@ -770,7 +801,7 @@ async function resolveServer(server, tmdbId, mediaType, season, episode, info) {
 
     const session = await performHandshake();
     const result = await gateResolve(session, id);
-    return extractStreamsFromResolveResult(result, server);
+    return extractStreamsFromResolveResult(result, server, session.cinejoyOrigin);
   } catch (e) {
     return [];
   }
