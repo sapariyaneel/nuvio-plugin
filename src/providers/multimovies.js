@@ -154,26 +154,13 @@ async function getStreams(tmdbId, mediaType, season, episode) {
             const streamHeaders = resolvedUrl.includes(".m3u8") || resolvedUrl.includes(".mp4")
               ? { Referer: streamReferer, "User-Agent": HEADERS["User-Agent"] }
               : undefined;
-
-            if (resolvedUrl.includes(".m3u8")) {
-              const variants = await splitMasterIntoQualityStreams(resolvedUrl, streamReferer);
-              if (variants.length) {
-                for (const v of variants) {
-                  streams.push({
-                    url: v.url,
-                    quality: v.quality,
-                    title: "MultiMovies",
-                    headers: streamHeaders,
-                    subtitles: []
-                  });
-                }
-                continue;
-              }
-            }
+            const quality = resolvedUrl.includes(".m3u8")
+              ? await getMasterPlaylistQuality(resolvedUrl, streamReferer)
+              : "Unknown";
 
             streams.push({
               url: resolvedUrl,
-              quality: "Unknown",
+              quality,
               title: "MultiMovies",
               headers: streamHeaders,
               subtitles: []
@@ -205,26 +192,13 @@ async function getStreams(tmdbId, mediaType, season, episode) {
           const streamHeaders = resolvedUrl.includes(".m3u8") || resolvedUrl.includes(".mp4")
             ? { Referer: streamReferer, "User-Agent": HEADERS["User-Agent"] }
             : undefined;
-
-          if (resolvedUrl.includes(".m3u8")) {
-            const variants = await splitMasterIntoQualityStreams(resolvedUrl, streamReferer);
-            if (variants.length) {
-              for (const v of variants) {
-                streams.push({
-                  url: v.url,
-                  quality: v.quality,
-                  title: "MultiMovies",
-                  headers: streamHeaders,
-                  subtitles: []
-                });
-              }
-              continue;
-            }
-          }
+          const quality = resolvedUrl.includes(".m3u8")
+            ? await getMasterPlaylistQuality(resolvedUrl, streamReferer)
+            : "Unknown";
 
           streams.push({
             url: resolvedUrl,
-            quality: "Unknown",
+            quality,
             title: "MultiMovies",
             headers: streamHeaders,
             subtitles: []
@@ -421,47 +395,17 @@ function qualityLabelFromHeight(height) {
   return "Unknown";
 }
 
-// Absolutize a HLS attribute's URI="..." value (or a bare URI line) against the master
-// playlist's own URL - the master lives at a CDN path and everything inside it (audio track
-// URIs, variant URIs) is relative to that path, but once copied into a synthetic playlist served
-// from nowhere (a data: URI has no base of its own) those relative references would be broken.
-function absolutizeM3u8Uri(line, baseUrl) {
-  const attrMatch = line.match(/URI="([^"]+)"/);
-  if (attrMatch) {
-    const abs = resolveM3u8Line(attrMatch[1], baseUrl);
-    return line.replace(attrMatch[0], `URI="${abs}"`);
-  }
-  return resolveM3u8Line(line, baseUrl);
-}
-
-function resolveM3u8Line(line, baseUrl) {
-  try {
-    return new URL(line, baseUrl).toString();
-  } catch (e) {
-    return line;
-  }
-}
-
-// A bare video variant m3u8 (e.g. ".../index-f2-v1-a2.m3u8") has no audio in it at all - it's
-// pure video segments. A real player only knows to also fetch the matching AUDIO="audio0" track
-// because the *master* playlist declared that group; handing the player the variant URL alone
-// (skipping the master) produces picture with no sound, confirmed by fetching that file directly
-// and finding plain #EXTINF/.ts video segments and no #EXT-X-MEDIA anywhere in it.
-// vidrock.js/goated.js in this repo solve the equivalent problem by always returning a master
-// URL, never a bare variant - multiple *servers* each contribute their own full master. Here
-// there's only one server, so getting multiple quality entries means constructing one synthetic
-// single-variant master per quality: the same #EXT-X-MEDIA audio lines from the real master, plus
-// just that one #EXT-X-STREAM-INF/URI pair, delivered as a data: URI (this playlist exists only
-// in memory - nothing in this provider is a hosted http(s) server that could serve it as a file).
-function buildSyntheticMasterDataUri(audioLines, streamInfLine, variantUrl) {
-  const playlist = ["#EXTM3U", ...audioLines, "", streamInfLine, variantUrl].join("\n");
-  const base64 = typeof Buffer !== "undefined"
-    ? Buffer.from(playlist, "utf-8").toString("base64")
-    : btoa(unescape(encodeURIComponent(playlist)));
-  return `data:application/vnd.apple.mpegurl;base64,${base64}`;
-}
-
-async function splitMasterIntoQualityStreams(m3u8Url, referer) {
+// The app's player rejects data: URIs outright ("Cannot open file 'data:...'" - confirmed live
+// in the app, it treats the url field as a plain file path/http(s) source, not a decodable
+// playlist blob), so a synthesized in-memory master delivered as a data: URI is not viable here.
+// That means the only working delivery is a real http(s) master URL, and this master's audio is a
+// separate #EXT-X-MEDIA group rather than muxed into the video - pointing the player at one bare
+// video-only variant plays picture with no sound (confirmed by fetching a variant directly: it's
+// plain #EXTINF/.ts segments, no audio-track association at all). Every other provider in this
+// repo with this same HLS shape (vidrock.js, goated.js, vixsrc.js) returns the master URL as a
+// single adaptive stream and lets the player's own ABR pick the variant plus its matching audio
+// group - matching that proven pattern here instead of the variant-splitting attempt above.
+async function getMasterPlaylistQuality(m3u8Url, referer) {
   try {
     const text = await (await fetch(m3u8Url, {
       headers: { ...HEADERS, Referer: referer },
@@ -469,12 +413,8 @@ async function splitMasterIntoQualityStreams(m3u8Url, referer) {
       redirect: "follow"
     })).text();
 
+    let best = null;
     const lines = text.split("\n").map(l => l.trim());
-    const audioLines = lines
-      .filter(l => l.startsWith("#EXT-X-MEDIA") && l.includes("TYPE=AUDIO"))
-      .map(l => absolutizeM3u8Uri(l, m3u8Url));
-
-    const variants = [];
     for (let i = 0; i < lines.length; i++) {
       if (!lines[i].startsWith("#EXT-X-STREAM-INF")) continue;
       const urlLine = lines[i + 1];
@@ -484,23 +424,12 @@ async function splitMasterIntoQualityStreams(m3u8Url, referer) {
       const resolutionMatch = lines[i].match(/RESOLUTION=(\d+)x(\d+)/);
       const bandwidth = bandwidthMatch ? parseInt(bandwidthMatch[1], 10) : 0;
       const height = resolutionMatch ? parseInt(resolutionMatch[2], 10) : 0;
-      const absVariantUrl = resolveM3u8Line(urlLine, m3u8Url);
 
-      variants.push({
-        quality: qualityLabelFromHeight(height),
-        bandwidth,
-        url: audioLines.length
-          ? buildSyntheticMasterDataUri(audioLines, lines[i], absVariantUrl)
-          : absVariantUrl // no separate audio track - the bare variant is already playable as-is
-      });
+      if (!best || bandwidth > best.bandwidth) best = { bandwidth, height };
     }
-
-    // Highest bandwidth first, matching the order the site's own master lists them least-to-
-    // greatest in most cases but not guaranteed - sort explicitly so quality is predictable.
-    variants.sort((a, b) => b.bandwidth - a.bandwidth);
-    return variants;
+    return best ? qualityLabelFromHeight(best.height) : "Unknown";
   } catch (e) {
-    return [];
+    return "Unknown";
   }
 }
 
