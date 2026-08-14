@@ -161,80 +161,277 @@ function hkdf(ikm, salt, info, length) {
 }
 
 // ---------------------------------------------------------------------------
-// P-256 (secp256r1) elliptic curve point arithmetic, for ECDH. BigInt-based.
-// Verified against Node's crypto.createECDH('prime256v1') in both directions.
+// P-256 (secp256r1) elliptic curve point arithmetic, for ECDH.
+//
+// Deliberately NOT using native BigInt: this repo's own build.js targets es2016
+// specifically "to transpile async/await to generators for Hermes" (React Native's
+// JS engine on older app builds), and BigInt literals/arithmetic have no es2016
+// downlevel form - esbuild hard-errors trying to transpile them, and even if it
+// didn't, older Hermes has no BigInt support to fall back on at runtime. A first
+// version of this file used BigInt and passed every local Node test (Node has full
+// BigInt support) while being silently unloadable in the actual app - confirmed
+// only after it shipped and returned zero streams everywhere, including "test
+// provider". This version uses a 17-limb, 16-bit-per-limb bignum representation.
+//
+// Limb size matters: schoolbook multiplication accumulates up to NUM_LIMBS partial
+// products into a single wide-array slot before any carry propagation runs. Each
+// product of two b-bit limbs is up to 2^(2b), so NUM_LIMBS*2^(2b) must stay under
+// 2^53 (the largest exactly-representable integer as a JS double) or the sum
+// itself is already wrong before any reduction logic even runs. A first attempt
+// at this used 30-bit limbs (9 limbs for 270 bits) on the reasoning that a single
+// product fits in a double - true, but the *sum* of 9 such products is ~2^63.2,
+// far past 2^53, corrupting every multiply silently (caught by cross-checking
+// intermediate values against BigInt in a throwaway test script - Gx^2 mod P
+// didn't match). 16-bit limbs keep 17*2^32 ~= 2^36.1, comfortably exact.
+//
+// Verified against Node's crypto.createECDH('prime256v1') in both directions
+// after this fix (same cross-check test used to catch the 30-bit version's bug).
 // ---------------------------------------------------------------------------
 
-const EC_P = 0xffffffff00000001000000000000000000000000ffffffffffffffffffffffffn;
-const EC_A = EC_P - 3n;
-const EC_B = 0x5ac635d8aa3a93e7b3ebbd55769886bc651d06b0cc53b0f63bce3c3e27d2604bn;
-const EC_Gx = 0x6b17d1f2e12c4247f8bce6e563a440f277037d812deb33a0f4a13945d898c296n;
-const EC_Gy = 0x4fe342e2fe1a7f9b8ee7eb4a7c0f9e162bce33576b315ececbb6406837bf51f5n;
-const EC_N = 0xffffffff00000000ffffffffffffffffbce6faada7179e84f3b9cac2fc632551n;
+const LIMB_BITS = 16;
+const LIMB_MASK = (1 << LIMB_BITS) - 1; // 0xffff
+const NUM_LIMBS = 17; // 17 * 16 = 272 bits, comfortably covers the 256-bit field
 
-function ecMod(a, m) { const r = a % m; return r >= 0n ? r : r + m; }
-
-function ecModInverse(a, m) {
-  a = ecMod(a, m);
-  let [oldR, r] = [a, m];
-  let [oldS, s] = [1n, 0n];
-  while (r !== 0n) {
-    const q = oldR / r;
-    [oldR, r] = [r, oldR - q * r];
-    [oldS, s] = [s, oldS - q * s];
+function bnFromHex(hex) {
+  // Parse a big-endian hex string into little-endian 30-bit limbs by repeated
+  // divmod on a byte array - avoids any native big-integer type entirely.
+  const bytes = [];
+  for (let i = 0; i < hex.length; i += 2) bytes.push(parseInt(hex.substr(i, 2), 16));
+  const limbs = new Array(NUM_LIMBS).fill(0);
+  for (let i = 0; i < bytes.length; i++) {
+    // limbs = limbs * 256 + bytes[i], carried across 30-bit limbs
+    let carry = bytes[i];
+    for (let j = 0; j < NUM_LIMBS; j++) {
+      const v = limbs[j] * 256 + carry;
+      limbs[j] = v & LIMB_MASK;
+      carry = Math.floor(v / (LIMB_MASK + 1));
+    }
   }
-  return ecMod(oldS, m);
+  return limbs;
 }
+
+function bnFromBytes(bytes) {
+  const limbs = new Array(NUM_LIMBS).fill(0);
+  for (let i = 0; i < bytes.length; i++) {
+    let carry = bytes[i];
+    for (let j = 0; j < NUM_LIMBS; j++) {
+      const v = limbs[j] * 256 + carry;
+      limbs[j] = v & LIMB_MASK;
+      carry = Math.floor(v / (LIMB_MASK + 1));
+    }
+  }
+  return limbs;
+}
+
+function bnToBytes(a, len) {
+  // Repeated divmod by 256 to extract bytes, little-endian order, then reverse.
+  const limbs = a.slice();
+  const out = new Uint8Array(len);
+  for (let i = len - 1; i >= 0; i--) {
+    let rem = 0;
+    for (let j = NUM_LIMBS - 1; j >= 0; j--) {
+      const cur = rem * (LIMB_MASK + 1) + limbs[j];
+      limbs[j] = Math.floor(cur / 256);
+      rem = cur % 256;
+    }
+    out[i] = rem;
+  }
+  return out;
+}
+
+function bnIsZero(a) { for (let i = 0; i < NUM_LIMBS; i++) if (a[i] !== 0) return false; return true; }
+
+function bnCompare(a, b) {
+  for (let i = NUM_LIMBS - 1; i >= 0; i--) {
+    if (a[i] !== b[i]) return a[i] < b[i] ? -1 : 1;
+  }
+  return 0;
+}
+
+function bnAddRaw(a, b) {
+  const out = new Array(NUM_LIMBS);
+  let carry = 0;
+  for (let i = 0; i < NUM_LIMBS; i++) {
+    const v = a[i] + b[i] + carry;
+    out[i] = v & LIMB_MASK;
+    carry = v >>> LIMB_BITS;
+  }
+  return { limbs: out, carry };
+}
+
+function bnSubRaw(a, b) {
+  const out = new Array(NUM_LIMBS);
+  let borrow = 0;
+  for (let i = 0; i < NUM_LIMBS; i++) {
+    let v = a[i] - b[i] - borrow;
+    if (v < 0) { v += LIMB_MASK + 1; borrow = 1; } else { borrow = 0; }
+    out[i] = v;
+  }
+  return { limbs: out, borrow };
+}
+
+function bnMod(a, m) {
+  // a is assumed non-negative (as a limb array there's no sign), reduce mod m by
+  // repeated subtraction guided by comparison - fine here since every caller keeps
+  // operands within a small multiple of m (at most one extra subtraction needed
+  // after an add, or the modmul reduction below), never doing full long division.
+  let r = a.slice();
+  while (bnCompare(r, m) >= 0) r = bnSubRaw(r, m).limbs;
+  return r;
+}
+
+function bnAddMod(a, b, m) {
+  const { limbs } = bnAddRaw(a, b);
+  return bnMod(limbs, m);
+}
+
+function bnSubMod(a, b, m) {
+  if (bnCompare(a, b) >= 0) return bnSubRaw(a, b).limbs;
+  const { limbs } = bnAddRaw(a, bnSubRaw(m, b).limbs);
+  return bnMod(limbs, m);
+}
+
+function bnMulMod(a, b, m) {
+  // Schoolbook multiply into a double-width limb array, then reduce mod m via
+  // repeated double-and-subtract (binary long division) - every intermediate
+  // product of two 30-bit limbs fits exactly in a JS double (max ~2^60), and the
+  // accumulation into a wider array keeps each slot well under 2^53 between
+  // normalization passes.
+  const wide = new Array(NUM_LIMBS * 2).fill(0);
+  for (let i = 0; i < NUM_LIMBS; i++) {
+    for (let j = 0; j < NUM_LIMBS; j++) {
+      wide[i + j] += a[i] * b[j];
+    }
+  }
+  // Normalize carries across the wide array.
+  for (let i = 0; i < wide.length - 1; i++) {
+    const carry = Math.floor(wide[i] / (LIMB_MASK + 1));
+    wide[i] &= LIMB_MASK;
+    wide[i + 1] += carry;
+  }
+  // Reduce mod m: process from the top bit down, doubling the modulus-aligned
+  // remainder and subtracting when it fits - standard binary long division,
+  // operating on a bit-length safely bounded by NUM_LIMBS*LIMB_BITS.
+  let remainder = new Array(NUM_LIMBS).fill(0);
+  for (let limbIdx = wide.length - 1; limbIdx >= 0; limbIdx--) {
+    for (let bit = LIMB_BITS - 1; bit >= 0; bit--) {
+      // remainder = remainder*2 + next bit of wide
+      let carry = (wide[limbIdx] >>> bit) & 1;
+      for (let k = 0; k < NUM_LIMBS; k++) {
+        const v = remainder[k] * 2 + carry;
+        remainder[k] = v & LIMB_MASK;
+        carry = v >>> LIMB_BITS;
+      }
+      if (bnCompare(remainder, m) >= 0) remainder = bnSubRaw(remainder, m).limbs;
+    }
+  }
+  return remainder;
+}
+
+function bnModInverse(a, m) {
+  // Extended Euclidean algorithm, entirely in terms of add/sub/compare on limb
+  // arrays plus a bnMulMod-free step count via repeated halving - implemented as
+  // the binary (Stein's) extended GCD so no division primitive is needed at all.
+  let u = bnMod(a, m), v = m.slice();
+  let x1 = [1, ...new Array(NUM_LIMBS - 1).fill(0)], x2 = new Array(NUM_LIMBS).fill(0);
+  const isEven = (n) => (n[0] & 1) === 0;
+  const halveModM = (n) => {
+    // n is even; divide by 2, then if the *original odd-adjustment* needs it, no
+    // extra step is required since n is guaranteed even here.
+    const out = new Array(NUM_LIMBS);
+    let carry = 0;
+    for (let i = NUM_LIMBS - 1; i >= 0; i--) {
+      const cur = carry * (LIMB_MASK + 1) + n[i];
+      out[i] = cur >>> 1;
+      carry = cur & 1;
+    }
+    return out;
+  };
+  const halveWithAdjust = (n, adjust) => {
+    // divide (possibly odd) n by 2 mod m: if n is odd, add m first (keeps parity
+    // correct since m - the P-256 prime and order - are both odd).
+    let t = n;
+    if (!isEven(t)) t = bnAddRaw(t, adjust).limbs;
+    return halveModM(t);
+  };
+
+  while (!bnIsZero(u)) {
+    while (isEven(u)) {
+      u = halveModM(u);
+      x1 = halveWithAdjust(x1, m);
+    }
+    while (isEven(v)) {
+      v = halveModM(v);
+      x2 = halveWithAdjust(x2, m);
+    }
+    if (bnCompare(u, v) >= 0) {
+      u = bnSubRaw(u, v).limbs;
+      x1 = bnSubMod(x1, x2, m);
+    } else {
+      v = bnSubRaw(v, u).limbs;
+      x2 = bnSubMod(x2, x1, m);
+    }
+  }
+  return bnMod(x2, m);
+}
+
+const EC_P = bnFromHex("ffffffff00000001000000000000000000000000ffffffffffffffffffffffff");
+const EC_A = bnSubMod(EC_P, [3, ...new Array(NUM_LIMBS - 1).fill(0)], EC_P);
+const EC_B = bnFromHex("5ac635d8aa3a93e7b3ebbd55769886bc651d06b0cc53b0f63bce3c3e27d2604b");
+const EC_Gx = bnFromHex("6b17d1f2e12c4247f8bce6e563a440f277037d812deb33a0f4a13945d898c296");
+const EC_Gy = bnFromHex("4fe342e2fe1a7f9b8ee7eb4a7c0f9e162bce33576b315ececbb6406837bf51f5");
+const EC_N = bnFromHex("ffffffff00000000ffffffffffffffffbce6faada7179e84f3b9cac2fc632551");
+const BN_ZERO = new Array(NUM_LIMBS).fill(0);
+const BN_TWO = [2, ...new Array(NUM_LIMBS - 1).fill(0)];
+const BN_THREE = [3, ...new Array(NUM_LIMBS - 1).fill(0)];
 
 function ecPointDouble(pt) {
   if (pt === null) return null;
   const { x, y } = pt;
-  if (y === 0n) return null;
-  const lam = ecMod((3n * x * x + EC_A) * ecModInverse(2n * y, EC_P), EC_P);
-  const x3 = ecMod(lam * lam - 2n * x, EC_P);
-  const y3 = ecMod(lam * (x - x3) - y, EC_P);
+  if (bnIsZero(y)) return null;
+  const xx = bnMulMod(x, x, EC_P);
+  const num = bnAddMod(bnMulMod(BN_THREE, xx, EC_P), EC_A, EC_P);
+  const den = bnModInverse(bnMulMod(BN_TWO, y, EC_P), EC_P);
+  const lam = bnMulMod(num, den, EC_P);
+  const x3 = bnSubMod(bnSubMod(bnMulMod(lam, lam, EC_P), x, EC_P), x, EC_P);
+  const y3 = bnSubMod(bnMulMod(lam, bnSubMod(x, x3, EC_P), EC_P), y, EC_P);
   return { x: x3, y: y3 };
 }
 
 function ecPointAdd(p1, p2) {
   if (p1 === null) return p2;
   if (p2 === null) return p1;
-  if (p1.x === p2.x) {
-    if (ecMod(p1.y + p2.y, EC_P) === 0n) return null;
+  if (bnCompare(p1.x, p2.x) === 0) {
+    if (bnIsZero(bnAddMod(p1.y, p2.y, EC_P))) return null;
     return ecPointDouble(p1);
   }
-  const lam = ecMod((p2.y - p1.y) * ecModInverse(p2.x - p1.x, EC_P), EC_P);
-  const x3 = ecMod(lam * lam - p1.x - p2.x, EC_P);
-  const y3 = ecMod(lam * (p1.x - x3) - p1.y, EC_P);
+  const num = bnSubMod(p2.y, p1.y, EC_P);
+  const den = bnModInverse(bnSubMod(p2.x, p1.x, EC_P), EC_P);
+  const lam = bnMulMod(num, den, EC_P);
+  const x3 = bnSubMod(bnSubMod(bnMulMod(lam, lam, EC_P), p1.x, EC_P), p2.x, EC_P);
+  const y3 = bnSubMod(bnMulMod(lam, bnSubMod(p1.x, x3, EC_P), EC_P), p1.y, EC_P);
   return { x: x3, y: y3 };
 }
 
 function ecScalarMult(k, pt) {
-  let result = null, addend = pt, n = k;
-  while (n > 0n) {
-    if (n & 1n) result = ecPointAdd(result, addend);
-    addend = ecPointDouble(addend);
-    n >>= 1n;
+  let result = null, addend = pt;
+  // Process bits MSB-first is unnecessary here; LSB-first double-and-add over all
+  // NUM_LIMBS*LIMB_BITS bits (harmless extra doublings past the scalar's real
+  // bit-length, since doubling null/identity-adjacent points is cheap and correct).
+  for (let limbIdx = 0; limbIdx < NUM_LIMBS; limbIdx++) {
+    let limb = k[limbIdx];
+    for (let bit = 0; bit < LIMB_BITS; bit++) {
+      if (limb & 1) result = ecPointAdd(result, addend);
+      addend = ecPointDouble(addend);
+      limb >>>= 1;
+    }
   }
   return result;
 }
 
-function ecBytesToBigInt(bytes) {
-  let result = 0n;
-  for (const b of bytes) result = (result << 8n) | BigInt(b);
-  return result;
-}
-
-function ecBigIntToBytes(n, len) {
-  const bytes = new Uint8Array(len);
-  let v = n;
-  for (let i = len - 1; i >= 0; i--) { bytes[i] = Number(v & 0xffn); v >>= 8n; }
-  return bytes;
-}
-
 function ecRandomPrivateKey(randomBytesFn) {
   let k;
-  do { k = ecMod(ecBytesToBigInt(randomBytesFn(32)), EC_N); } while (k === 0n);
+  do { k = bnMod(bnFromBytes(randomBytesFn(32)), EC_N); } while (bnIsZero(k));
   return k;
 }
 
@@ -243,18 +440,18 @@ function ecGetPublicKey(privateKey) { return ecScalarMult(privateKey, { x: EC_Gx
 function ecEncodePoint(pt) {
   const out = new Uint8Array(65);
   out[0] = 0x04;
-  out.set(ecBigIntToBytes(pt.x, 32), 1);
-  out.set(ecBigIntToBytes(pt.y, 32), 33);
+  out.set(bnToBytes(pt.x, 32), 1);
+  out.set(bnToBytes(pt.y, 32), 33);
   return out;
 }
 
 function ecDecodePoint(bytes) {
   if (bytes.length !== 65 || bytes[0] !== 0x04) throw new Error("invalid P-256 point encoding");
-  return { x: ecBytesToBigInt(bytes.slice(1, 33)), y: ecBytesToBigInt(bytes.slice(33, 65)) };
+  return { x: bnFromBytes(bytes.slice(1, 33)), y: bnFromBytes(bytes.slice(33, 65)) };
 }
 
 function ecDeriveSharedSecret(privateKey, publicPoint) {
-  return ecBigIntToBytes(ecScalarMult(privateKey, publicPoint).x, 32);
+  return bnToBytes(ecScalarMult(privateKey, publicPoint).x, 32);
 }
 
 // ---------------------------------------------------------------------------
@@ -357,11 +554,15 @@ function ghash(H, aad, ciphertext) {
   for (let i = 0; i < ciphertext.length; i += 16) { const b = new Uint8Array(16); b.set(ciphertext.subarray(i, Math.min(i+16, ciphertext.length))); blocks.push(b); }
   const lenBlock = new Uint8Array(16);
   const dv = new DataView(lenBlock.buffer);
-  const aadBits = BigInt(aad.length) * 8n, ctBits = BigInt(ciphertext.length) * 8n;
-  dv.setUint32(0, Number(aadBits >> 32n), false);
-  dv.setUint32(4, Number(aadBits & 0xffffffffn), false);
-  dv.setUint32(8, Number(ctBits >> 32n), false);
-  dv.setUint32(12, Number(ctBits & 0xffffffffn), false);
+  // bit-length = byte-length * 8, as two 32-bit big-endian halves. Payloads here
+  // are always far under 2^29 bytes, so the high 32-bit half is always 0 - no
+  // BigInt needed for a 64-bit value that never actually exceeds 32 bits in
+  // practice (see the P-256 comment above for why BigInt is avoided at all).
+  const aadBits = aad.length * 8, ctBits = ciphertext.length * 8;
+  dv.setUint32(0, 0, false);
+  dv.setUint32(4, aadBits >>> 0, false);
+  dv.setUint32(8, 0, false);
+  dv.setUint32(12, ctBits >>> 0, false);
   blocks.push(lenBlock);
   let y = new Uint8Array(16);
   for (const block of blocks) {

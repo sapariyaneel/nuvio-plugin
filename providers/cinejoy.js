@@ -1,7 +1,46 @@
 /**
  * cinejoy - Built from src/providers/cinejoy.js
- * Generated: 2026-08-14T10:06:36.194Z
+ * Generated: 2026-08-14T10:15:49.990Z
  */
+var __defProp = Object.defineProperty;
+var __defProps = Object.defineProperties;
+var __getOwnPropDescs = Object.getOwnPropertyDescriptors;
+var __getOwnPropSymbols = Object.getOwnPropertySymbols;
+var __hasOwnProp = Object.prototype.hasOwnProperty;
+var __propIsEnum = Object.prototype.propertyIsEnumerable;
+var __defNormalProp = (obj, key, value) => key in obj ? __defProp(obj, key, { enumerable: true, configurable: true, writable: true, value }) : obj[key] = value;
+var __spreadValues = (a, b) => {
+  for (var prop in b || (b = {}))
+    if (__hasOwnProp.call(b, prop))
+      __defNormalProp(a, prop, b[prop]);
+  if (__getOwnPropSymbols)
+    for (var prop of __getOwnPropSymbols(b)) {
+      if (__propIsEnum.call(b, prop))
+        __defNormalProp(a, prop, b[prop]);
+    }
+  return a;
+};
+var __spreadProps = (a, b) => __defProps(a, __getOwnPropDescs(b));
+var __async = (__this, __arguments, generator) => {
+  return new Promise((resolve, reject) => {
+    var fulfilled = (value) => {
+      try {
+        step(generator.next(value));
+      } catch (e) {
+        reject(e);
+      }
+    };
+    var rejected = (value) => {
+      try {
+        step(generator.throw(value));
+      } catch (e) {
+        reject(e);
+      }
+    };
+    var step = (x) => x.done ? resolve(x.value) : Promise.resolve(x.value).then(fulfilled, rejected);
+    step((generator = generator.apply(__this, __arguments)).next());
+  });
+};
 const TMDB_API_KEY = "1865f43a0549ca50d341dd9ab8b29f49";
 const DOMAINS_URL = "https://raw.githubusercontent.com/sapariyaneel/nuvio-plugin/refs/heads/main/domains.json";
 const FALLBACK_CINEJOY_ORIGIN = "https://cinejoy.to";
@@ -10,20 +49,24 @@ const INFO_PREFIX = "lumen-gate-v1";
 const SERVER_STATIC_PUB_B64URL = "BDneWBpzICIVPCtCd8JbpLNxmJiqhCWJaEHar4kp7Yivrp3ZpGS6Rv1rCvDuFrmhnWxUviPpnJhcUJPE-P9Simk";
 const USER_AGENT = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36";
 let cachedDomains = null;
-async function getDomains() {
-  if (cachedDomains)
+function getDomains() {
+  return __async(this, null, function* () {
+    if (cachedDomains)
+      return cachedDomains;
+    try {
+      const resp = yield fetch(DOMAINS_URL, { skipSizeCheck: true });
+      cachedDomains = yield resp.json();
+    } catch (e) {
+      cachedDomains = {};
+    }
     return cachedDomains;
-  try {
-    const resp = await fetch(DOMAINS_URL, { skipSizeCheck: true });
-    cachedDomains = await resp.json();
-  } catch (e) {
-    cachedDomains = {};
-  }
-  return cachedDomains;
+  });
 }
-async function getCinejoyOrigin() {
-  const d = await getDomains();
-  return (d.cinejoy || FALLBACK_CINEJOY_ORIGIN).replace(/\/+$/, "");
+function getCinejoyOrigin() {
+  return __async(this, null, function* () {
+    const d = yield getDomains();
+    return (d.cinejoy || FALLBACK_CINEJOY_ORIGIN).replace(/\/+$/, "");
+  });
 }
 function buildHeaders(cinejoyOrigin) {
   return {
@@ -199,36 +242,191 @@ function hkdf(ikm, salt, info, length) {
   }
   return okm.slice(0, length);
 }
-const EC_P = 0xffffffff00000001000000000000000000000000ffffffffffffffffffffffffn;
-const EC_A = EC_P - 3n;
-const EC_B = 0x5ac635d8aa3a93e7b3ebbd55769886bc651d06b0cc53b0f63bce3c3e27d2604bn;
-const EC_Gx = 0x6b17d1f2e12c4247f8bce6e563a440f277037d812deb33a0f4a13945d898c296n;
-const EC_Gy = 0x4fe342e2fe1a7f9b8ee7eb4a7c0f9e162bce33576b315ececbb6406837bf51f5n;
-const EC_N = 0xffffffff00000000ffffffffffffffffbce6faada7179e84f3b9cac2fc632551n;
-function ecMod(a, m) {
-  const r = a % m;
-  return r >= 0n ? r : r + m;
-}
-function ecModInverse(a, m) {
-  a = ecMod(a, m);
-  let [oldR, r] = [a, m];
-  let [oldS, s] = [1n, 0n];
-  while (r !== 0n) {
-    const q = oldR / r;
-    [oldR, r] = [r, oldR - q * r];
-    [oldS, s] = [s, oldS - q * s];
+const LIMB_BITS = 16;
+const LIMB_MASK = (1 << LIMB_BITS) - 1;
+const NUM_LIMBS = 17;
+function bnFromHex(hex) {
+  const bytes = [];
+  for (let i = 0; i < hex.length; i += 2)
+    bytes.push(parseInt(hex.substr(i, 2), 16));
+  const limbs = new Array(NUM_LIMBS).fill(0);
+  for (let i = 0; i < bytes.length; i++) {
+    let carry = bytes[i];
+    for (let j = 0; j < NUM_LIMBS; j++) {
+      const v = limbs[j] * 256 + carry;
+      limbs[j] = v & LIMB_MASK;
+      carry = Math.floor(v / (LIMB_MASK + 1));
+    }
   }
-  return ecMod(oldS, m);
+  return limbs;
 }
+function bnFromBytes(bytes) {
+  const limbs = new Array(NUM_LIMBS).fill(0);
+  for (let i = 0; i < bytes.length; i++) {
+    let carry = bytes[i];
+    for (let j = 0; j < NUM_LIMBS; j++) {
+      const v = limbs[j] * 256 + carry;
+      limbs[j] = v & LIMB_MASK;
+      carry = Math.floor(v / (LIMB_MASK + 1));
+    }
+  }
+  return limbs;
+}
+function bnToBytes(a, len) {
+  const limbs = a.slice();
+  const out = new Uint8Array(len);
+  for (let i = len - 1; i >= 0; i--) {
+    let rem = 0;
+    for (let j = NUM_LIMBS - 1; j >= 0; j--) {
+      const cur = rem * (LIMB_MASK + 1) + limbs[j];
+      limbs[j] = Math.floor(cur / 256);
+      rem = cur % 256;
+    }
+    out[i] = rem;
+  }
+  return out;
+}
+function bnIsZero(a) {
+  for (let i = 0; i < NUM_LIMBS; i++)
+    if (a[i] !== 0)
+      return false;
+  return true;
+}
+function bnCompare(a, b) {
+  for (let i = NUM_LIMBS - 1; i >= 0; i--) {
+    if (a[i] !== b[i])
+      return a[i] < b[i] ? -1 : 1;
+  }
+  return 0;
+}
+function bnAddRaw(a, b) {
+  const out = new Array(NUM_LIMBS);
+  let carry = 0;
+  for (let i = 0; i < NUM_LIMBS; i++) {
+    const v = a[i] + b[i] + carry;
+    out[i] = v & LIMB_MASK;
+    carry = v >>> LIMB_BITS;
+  }
+  return { limbs: out, carry };
+}
+function bnSubRaw(a, b) {
+  const out = new Array(NUM_LIMBS);
+  let borrow = 0;
+  for (let i = 0; i < NUM_LIMBS; i++) {
+    let v = a[i] - b[i] - borrow;
+    if (v < 0) {
+      v += LIMB_MASK + 1;
+      borrow = 1;
+    } else {
+      borrow = 0;
+    }
+    out[i] = v;
+  }
+  return { limbs: out, borrow };
+}
+function bnMod(a, m) {
+  let r = a.slice();
+  while (bnCompare(r, m) >= 0)
+    r = bnSubRaw(r, m).limbs;
+  return r;
+}
+function bnAddMod(a, b, m) {
+  const { limbs } = bnAddRaw(a, b);
+  return bnMod(limbs, m);
+}
+function bnSubMod(a, b, m) {
+  if (bnCompare(a, b) >= 0)
+    return bnSubRaw(a, b).limbs;
+  const { limbs } = bnAddRaw(a, bnSubRaw(m, b).limbs);
+  return bnMod(limbs, m);
+}
+function bnMulMod(a, b, m) {
+  const wide = new Array(NUM_LIMBS * 2).fill(0);
+  for (let i = 0; i < NUM_LIMBS; i++) {
+    for (let j = 0; j < NUM_LIMBS; j++) {
+      wide[i + j] += a[i] * b[j];
+    }
+  }
+  for (let i = 0; i < wide.length - 1; i++) {
+    const carry = Math.floor(wide[i] / (LIMB_MASK + 1));
+    wide[i] &= LIMB_MASK;
+    wide[i + 1] += carry;
+  }
+  let remainder = new Array(NUM_LIMBS).fill(0);
+  for (let limbIdx = wide.length - 1; limbIdx >= 0; limbIdx--) {
+    for (let bit = LIMB_BITS - 1; bit >= 0; bit--) {
+      let carry = wide[limbIdx] >>> bit & 1;
+      for (let k = 0; k < NUM_LIMBS; k++) {
+        const v = remainder[k] * 2 + carry;
+        remainder[k] = v & LIMB_MASK;
+        carry = v >>> LIMB_BITS;
+      }
+      if (bnCompare(remainder, m) >= 0)
+        remainder = bnSubRaw(remainder, m).limbs;
+    }
+  }
+  return remainder;
+}
+function bnModInverse(a, m) {
+  let u = bnMod(a, m), v = m.slice();
+  let x1 = [1, ...new Array(NUM_LIMBS - 1).fill(0)], x2 = new Array(NUM_LIMBS).fill(0);
+  const isEven = (n) => (n[0] & 1) === 0;
+  const halveModM = (n) => {
+    const out = new Array(NUM_LIMBS);
+    let carry = 0;
+    for (let i = NUM_LIMBS - 1; i >= 0; i--) {
+      const cur = carry * (LIMB_MASK + 1) + n[i];
+      out[i] = cur >>> 1;
+      carry = cur & 1;
+    }
+    return out;
+  };
+  const halveWithAdjust = (n, adjust) => {
+    let t = n;
+    if (!isEven(t))
+      t = bnAddRaw(t, adjust).limbs;
+    return halveModM(t);
+  };
+  while (!bnIsZero(u)) {
+    while (isEven(u)) {
+      u = halveModM(u);
+      x1 = halveWithAdjust(x1, m);
+    }
+    while (isEven(v)) {
+      v = halveModM(v);
+      x2 = halveWithAdjust(x2, m);
+    }
+    if (bnCompare(u, v) >= 0) {
+      u = bnSubRaw(u, v).limbs;
+      x1 = bnSubMod(x1, x2, m);
+    } else {
+      v = bnSubRaw(v, u).limbs;
+      x2 = bnSubMod(x2, x1, m);
+    }
+  }
+  return bnMod(x2, m);
+}
+const EC_P = bnFromHex("ffffffff00000001000000000000000000000000ffffffffffffffffffffffff");
+const EC_A = bnSubMod(EC_P, [3, ...new Array(NUM_LIMBS - 1).fill(0)], EC_P);
+const EC_B = bnFromHex("5ac635d8aa3a93e7b3ebbd55769886bc651d06b0cc53b0f63bce3c3e27d2604b");
+const EC_Gx = bnFromHex("6b17d1f2e12c4247f8bce6e563a440f277037d812deb33a0f4a13945d898c296");
+const EC_Gy = bnFromHex("4fe342e2fe1a7f9b8ee7eb4a7c0f9e162bce33576b315ececbb6406837bf51f5");
+const EC_N = bnFromHex("ffffffff00000000ffffffffffffffffbce6faada7179e84f3b9cac2fc632551");
+const BN_ZERO = new Array(NUM_LIMBS).fill(0);
+const BN_TWO = [2, ...new Array(NUM_LIMBS - 1).fill(0)];
+const BN_THREE = [3, ...new Array(NUM_LIMBS - 1).fill(0)];
 function ecPointDouble(pt) {
   if (pt === null)
     return null;
   const { x, y } = pt;
-  if (y === 0n)
+  if (bnIsZero(y))
     return null;
-  const lam = ecMod((3n * x * x + EC_A) * ecModInverse(2n * y, EC_P), EC_P);
-  const x3 = ecMod(lam * lam - 2n * x, EC_P);
-  const y3 = ecMod(lam * (x - x3) - y, EC_P);
+  const xx = bnMulMod(x, x, EC_P);
+  const num = bnAddMod(bnMulMod(BN_THREE, xx, EC_P), EC_A, EC_P);
+  const den = bnModInverse(bnMulMod(BN_TWO, y, EC_P), EC_P);
+  const lam = bnMulMod(num, den, EC_P);
+  const x3 = bnSubMod(bnSubMod(bnMulMod(lam, lam, EC_P), x, EC_P), x, EC_P);
+  const y3 = bnSubMod(bnMulMod(lam, bnSubMod(x, x3, EC_P), EC_P), y, EC_P);
   return { x: x3, y: y3 };
 }
 function ecPointAdd(p1, p2) {
@@ -236,46 +434,36 @@ function ecPointAdd(p1, p2) {
     return p2;
   if (p2 === null)
     return p1;
-  if (p1.x === p2.x) {
-    if (ecMod(p1.y + p2.y, EC_P) === 0n)
+  if (bnCompare(p1.x, p2.x) === 0) {
+    if (bnIsZero(bnAddMod(p1.y, p2.y, EC_P)))
       return null;
     return ecPointDouble(p1);
   }
-  const lam = ecMod((p2.y - p1.y) * ecModInverse(p2.x - p1.x, EC_P), EC_P);
-  const x3 = ecMod(lam * lam - p1.x - p2.x, EC_P);
-  const y3 = ecMod(lam * (p1.x - x3) - p1.y, EC_P);
+  const num = bnSubMod(p2.y, p1.y, EC_P);
+  const den = bnModInverse(bnSubMod(p2.x, p1.x, EC_P), EC_P);
+  const lam = bnMulMod(num, den, EC_P);
+  const x3 = bnSubMod(bnSubMod(bnMulMod(lam, lam, EC_P), p1.x, EC_P), p2.x, EC_P);
+  const y3 = bnSubMod(bnMulMod(lam, bnSubMod(p1.x, x3, EC_P), EC_P), p1.y, EC_P);
   return { x: x3, y: y3 };
 }
 function ecScalarMult(k, pt) {
-  let result = null, addend = pt, n = k;
-  while (n > 0n) {
-    if (n & 1n)
-      result = ecPointAdd(result, addend);
-    addend = ecPointDouble(addend);
-    n >>= 1n;
+  let result = null, addend = pt;
+  for (let limbIdx = 0; limbIdx < NUM_LIMBS; limbIdx++) {
+    let limb = k[limbIdx];
+    for (let bit = 0; bit < LIMB_BITS; bit++) {
+      if (limb & 1)
+        result = ecPointAdd(result, addend);
+      addend = ecPointDouble(addend);
+      limb >>>= 1;
+    }
   }
   return result;
-}
-function ecBytesToBigInt(bytes) {
-  let result = 0n;
-  for (const b of bytes)
-    result = result << 8n | BigInt(b);
-  return result;
-}
-function ecBigIntToBytes(n, len) {
-  const bytes = new Uint8Array(len);
-  let v = n;
-  for (let i = len - 1; i >= 0; i--) {
-    bytes[i] = Number(v & 0xffn);
-    v >>= 8n;
-  }
-  return bytes;
 }
 function ecRandomPrivateKey(randomBytesFn) {
   let k;
   do {
-    k = ecMod(ecBytesToBigInt(randomBytesFn(32)), EC_N);
-  } while (k === 0n);
+    k = bnMod(bnFromBytes(randomBytesFn(32)), EC_N);
+  } while (bnIsZero(k));
   return k;
 }
 function ecGetPublicKey(privateKey) {
@@ -284,17 +472,17 @@ function ecGetPublicKey(privateKey) {
 function ecEncodePoint(pt) {
   const out = new Uint8Array(65);
   out[0] = 4;
-  out.set(ecBigIntToBytes(pt.x, 32), 1);
-  out.set(ecBigIntToBytes(pt.y, 32), 33);
+  out.set(bnToBytes(pt.x, 32), 1);
+  out.set(bnToBytes(pt.y, 32), 33);
   return out;
 }
 function ecDecodePoint(bytes) {
   if (bytes.length !== 65 || bytes[0] !== 4)
     throw new Error("invalid P-256 point encoding");
-  return { x: ecBytesToBigInt(bytes.slice(1, 33)), y: ecBytesToBigInt(bytes.slice(33, 65)) };
+  return { x: bnFromBytes(bytes.slice(1, 33)), y: bnFromBytes(bytes.slice(33, 65)) };
 }
 function ecDeriveSharedSecret(privateKey, publicPoint) {
-  return ecBigIntToBytes(ecScalarMult(privateKey, publicPoint).x, 32);
+  return bnToBytes(ecScalarMult(privateKey, publicPoint).x, 32);
 }
 const AES_SBOX = new Uint8Array([
   99,
@@ -662,11 +850,11 @@ function ghash(H, aad, ciphertext) {
   }
   const lenBlock = new Uint8Array(16);
   const dv = new DataView(lenBlock.buffer);
-  const aadBits = BigInt(aad.length) * 8n, ctBits = BigInt(ciphertext.length) * 8n;
-  dv.setUint32(0, Number(aadBits >> 32n), false);
-  dv.setUint32(4, Number(aadBits & 0xffffffffn), false);
-  dv.setUint32(8, Number(ctBits >> 32n), false);
-  dv.setUint32(12, Number(ctBits & 0xffffffffn), false);
+  const aadBits = aad.length * 8, ctBits = ciphertext.length * 8;
+  dv.setUint32(0, 0, false);
+  dv.setUint32(4, aadBits >>> 0, false);
+  dv.setUint32(8, 0, false);
+  dv.setUint32(12, ctBits >>> 0, false);
   blocks.push(lenBlock);
   let y = new Uint8Array(16);
   for (const block of blocks) {
@@ -1009,116 +1197,122 @@ function generateSchema(masterKey) {
     path: hex.slice(48, 64)
   };
 }
-async function performHandshake() {
-  const cinejoyOrigin = await getCinejoyOrigin();
-  const headers = buildHeaders(cinejoyOrigin);
-  const priv = ecRandomPrivateKey(randomBytes);
-  const pub = ecGetPublicKey(priv);
-  const ephPubBytes = ecEncodePoint(pub);
-  const serverStaticPub = ecDecodePoint(b64urlToBytes(SERVER_STATIC_PUB_B64URL));
-  const sharedWithStatic = ecDeriveSharedSecret(priv, serverStaticPub);
-  const kEs = hkdf(sharedWithStatic, ephPubBytes, infoStr("es"), 32);
-  const helloPayload = utf8(JSON.stringify({ v: 1, t: Date.now(), fp: { headless: true }, r: bytesToB64url(randomBytes(16)) }));
-  const iv = randomBytes(12);
-  const encryptedHello = aes256GcmEncrypt(kEs, iv, helloPayload, infoStr("hello"));
-  const wire = concatBytes(ephPubBytes, iv, encryptedHello);
-  const resp = await fetch(GATE_ORIGIN + "/h", {
-    method: "POST",
-    headers: { ...headers, "Content-Type": "application/octet-stream" },
-    body: wire,
-    skipSizeCheck: true
+function performHandshake() {
+  return __async(this, null, function* () {
+    const cinejoyOrigin = yield getCinejoyOrigin();
+    const headers = buildHeaders(cinejoyOrigin);
+    const priv = ecRandomPrivateKey(randomBytes);
+    const pub = ecGetPublicKey(priv);
+    const ephPubBytes = ecEncodePoint(pub);
+    const serverStaticPub = ecDecodePoint(b64urlToBytes(SERVER_STATIC_PUB_B64URL));
+    const sharedWithStatic = ecDeriveSharedSecret(priv, serverStaticPub);
+    const kEs = hkdf(sharedWithStatic, ephPubBytes, infoStr("es"), 32);
+    const helloPayload = utf8(JSON.stringify({ v: 1, t: Date.now(), fp: { headless: true }, r: bytesToB64url(randomBytes(16)) }));
+    const iv = randomBytes(12);
+    const encryptedHello = aes256GcmEncrypt(kEs, iv, helloPayload, infoStr("hello"));
+    const wire = concatBytes(ephPubBytes, iv, encryptedHello);
+    const resp = yield fetch(GATE_ORIGIN + "/h", {
+      method: "POST",
+      headers: __spreadProps(__spreadValues({}, headers), { "Content-Type": "application/octet-stream" }),
+      body: wire,
+      skipSizeCheck: true
+    });
+    if (!resp.ok)
+      throw new Error("handshake HTTP " + resp.status);
+    const respBytes = new Uint8Array(yield resp.arrayBuffer());
+    if (respBytes.length < 65 + 12 + 16)
+      throw new Error("malformed handshake response");
+    const serverEphPubBytes = respBytes.subarray(0, 65);
+    const respIv = respBytes.subarray(65, 77);
+    const respCiphertext = respBytes.subarray(77);
+    const serverEphPub = ecDecodePoint(serverEphPubBytes);
+    const sharedEE = ecDeriveSharedSecret(priv, serverEphPub);
+    const ee = hkdf(sharedEE, serverEphPubBytes, infoStr("ee"), 32);
+    const { plaintext: acceptPlain, tagMatch } = aes256GcmDecrypt(ee, respIv, respCiphertext, infoStr("accept"));
+    if (!tagMatch)
+      throw new Error("handshake response tag mismatch");
+    const accept = JSON.parse(new TextDecoder().decode(acceptPlain));
+    const sid = accept.sid;
+    const master = hkdf(concatBytes(kEs, ee), b64urlToBytes(sid), infoStr("master"), 32);
+    return {
+      id: sid,
+      master,
+      stages: generateStages(master),
+      schema: generateSchema(master),
+      c2sKey: hkdf(master, new Uint8Array(0), infoStr("c2s"), 32),
+      s2cKey: hkdf(master, new Uint8Array(0), infoStr("s2c"), 32),
+      seq: 0,
+      seenSeq: 0,
+      cinejoyOrigin,
+      headers
+    };
   });
-  if (!resp.ok)
-    throw new Error("handshake HTTP " + resp.status);
-  const respBytes = new Uint8Array(await resp.arrayBuffer());
-  if (respBytes.length < 65 + 12 + 16)
-    throw new Error("malformed handshake response");
-  const serverEphPubBytes = respBytes.subarray(0, 65);
-  const respIv = respBytes.subarray(65, 77);
-  const respCiphertext = respBytes.subarray(77);
-  const serverEphPub = ecDecodePoint(serverEphPubBytes);
-  const sharedEE = ecDeriveSharedSecret(priv, serverEphPub);
-  const ee = hkdf(sharedEE, serverEphPubBytes, infoStr("ee"), 32);
-  const { plaintext: acceptPlain, tagMatch } = aes256GcmDecrypt(ee, respIv, respCiphertext, infoStr("accept"));
-  if (!tagMatch)
-    throw new Error("handshake response tag mismatch");
-  const accept = JSON.parse(new TextDecoder().decode(acceptPlain));
-  const sid = accept.sid;
-  const master = hkdf(concatBytes(kEs, ee), b64urlToBytes(sid), infoStr("master"), 32);
-  return {
-    id: sid,
-    master,
-    stages: generateStages(master),
-    schema: generateSchema(master),
-    c2sKey: hkdf(master, new Uint8Array(0), infoStr("c2s"), 32),
-    s2cKey: hkdf(master, new Uint8Array(0), infoStr("s2c"), 32),
-    seq: 0,
-    seenSeq: 0,
-    cinejoyOrigin,
-    headers
-  };
 }
-async function gateCall(session, path, payload) {
-  const seq = ++session.seq;
-  const plain = utf8(JSON.stringify({ path, payload: payload ?? null }));
-  const scrambled = transformForward(plain, session.stages);
-  const iv = randomBytes(12);
-  const aad = infoStr("c2s", session.id, String(seq));
-  const encrypted = aes256GcmEncrypt(session.c2sKey, iv, scrambled, aad);
-  const b = session.schema;
-  const reqBody = {
-    [b.session]: session.id,
-    [b.seq]: seq,
-    [b.nonce]: bytesToB64url(iv),
-    [b.payload]: bytesToB64url(encrypted)
-  };
-  const resp = await fetch(GATE_ORIGIN + "/g/" + session.schema.path, {
-    method: "POST",
-    headers: { ...session.headers, "Content-Type": "application/json" },
-    body: JSON.stringify(reqBody),
-    skipSizeCheck: true
+function gateCall(session, path, payload) {
+  return __async(this, null, function* () {
+    const seq = ++session.seq;
+    const plain = utf8(JSON.stringify({ path, payload: payload != null ? payload : null }));
+    const scrambled = transformForward(plain, session.stages);
+    const iv = randomBytes(12);
+    const aad = infoStr("c2s", session.id, String(seq));
+    const encrypted = aes256GcmEncrypt(session.c2sKey, iv, scrambled, aad);
+    const b = session.schema;
+    const reqBody = {
+      [b.session]: session.id,
+      [b.seq]: seq,
+      [b.nonce]: bytesToB64url(iv),
+      [b.payload]: bytesToB64url(encrypted)
+    };
+    const resp = yield fetch(GATE_ORIGIN + "/g/" + session.schema.path, {
+      method: "POST",
+      headers: __spreadProps(__spreadValues({}, session.headers), { "Content-Type": "application/json" }),
+      body: JSON.stringify(reqBody),
+      skipSizeCheck: true
+    });
+    if (!resp.ok)
+      throw new Error("gate call HTTP " + resp.status);
+    const respJson = yield resp.json();
+    const e = session.schema;
+    const respSeq = respJson[e.seq];
+    if (typeof respSeq !== "number" || respSeq <= session.seenSeq)
+      throw new Error("rejected: bad seq");
+    session.seenSeq = respSeq;
+    const respIv = b64urlToBytes(String(respJson[e.nonce]));
+    const respCiphertext = b64urlToBytes(String(respJson[e.payload]));
+    const respAad = infoStr("s2c", session.id, String(respSeq));
+    const { plaintext, tagMatch } = aes256GcmDecrypt(session.s2cKey, respIv, respCiphertext, respAad);
+    if (!tagMatch)
+      throw new Error("response tag mismatch");
+    const descrambled = transformReverse(plaintext, session.stages);
+    return JSON.parse(new TextDecoder().decode(descrambled));
   });
-  if (!resp.ok)
-    throw new Error("gate call HTTP " + resp.status);
-  const respJson = await resp.json();
-  const e = session.schema;
-  const respSeq = respJson[e.seq];
-  if (typeof respSeq !== "number" || respSeq <= session.seenSeq)
-    throw new Error("rejected: bad seq");
-  session.seenSeq = respSeq;
-  const respIv = b64urlToBytes(String(respJson[e.nonce]));
-  const respCiphertext = b64urlToBytes(String(respJson[e.payload]));
-  const respAad = infoStr("s2c", session.id, String(respSeq));
-  const { plaintext, tagMatch } = aes256GcmDecrypt(session.s2cKey, respIv, respCiphertext, respAad);
-  if (!tagMatch)
-    throw new Error("response tag mismatch");
-  const descrambled = transformReverse(plaintext, session.stages);
-  return JSON.parse(new TextDecoder().decode(descrambled));
 }
-async function gateResolve(session, id) {
-  const begin = await gateCall(session, "/resolve/begin", { id });
-  const fragmentCount = begin.fragmentCount;
-  if (typeof fragmentCount !== "number" || fragmentCount < 1 || fragmentCount > 16) {
-    throw new Error("bad fragment plan");
-  }
-  const e = session.schema;
-  const fragments = [];
-  let cont = null;
-  for (let idx = 0; idx < fragmentCount; idx++) {
-    const r = await gateCall(session, "/resolve/fragment", { id, index: idx, cont });
-    fragments.push(b64urlToBytes(r[e.fragment]));
-    cont = r[e.continuation];
-  }
-  const combined = concatBytes(...fragments);
-  const contentKey = hkdf(combined, session.master, infoStr("content"), 32);
-  const finish = await gateCall(session, "/resolve/finish", { id, cont });
-  const finishBytes = b64urlToBytes(finish[e.payload]);
-  const finishIv = finishBytes.subarray(0, 12);
-  const finishCiphertext = finishBytes.subarray(12);
-  const { plaintext, tagMatch } = aes256GcmDecrypt(contentKey, finishIv, finishCiphertext, infoStr("content"));
-  if (!tagMatch)
-    throw new Error("resolve finish tag mismatch");
-  return JSON.parse(new TextDecoder().decode(plaintext));
+function gateResolve(session, id) {
+  return __async(this, null, function* () {
+    const begin = yield gateCall(session, "/resolve/begin", { id });
+    const fragmentCount = begin.fragmentCount;
+    if (typeof fragmentCount !== "number" || fragmentCount < 1 || fragmentCount > 16) {
+      throw new Error("bad fragment plan");
+    }
+    const e = session.schema;
+    const fragments = [];
+    let cont = null;
+    for (let idx = 0; idx < fragmentCount; idx++) {
+      const r = yield gateCall(session, "/resolve/fragment", { id, index: idx, cont });
+      fragments.push(b64urlToBytes(r[e.fragment]));
+      cont = r[e.continuation];
+    }
+    const combined = concatBytes(...fragments);
+    const contentKey = hkdf(combined, session.master, infoStr("content"), 32);
+    const finish = yield gateCall(session, "/resolve/finish", { id, cont });
+    const finishBytes = b64urlToBytes(finish[e.payload]);
+    const finishIv = finishBytes.subarray(0, 12);
+    const finishCiphertext = finishBytes.subarray(12);
+    const { plaintext, tagMatch } = aes256GcmDecrypt(contentKey, finishIv, finishCiphertext, infoStr("content"));
+    if (!tagMatch)
+      throw new Error("resolve finish tag mismatch");
+    return JSON.parse(new TextDecoder().decode(plaintext));
+  });
 }
 function buildResolveId(server, mediaType, params) {
   const sorted = Array.from(params.entries()).sort(([a], [b]) => a.localeCompare(b));
@@ -1126,11 +1320,13 @@ function buildResolveId(server, mediaType, params) {
   const path = "/" + server + "/" + mediaType;
   return qs ? path + "?" + qs : path;
 }
-async function fetchMetadata(tmdbId, mediaType) {
-  const endpoint = mediaType === "tv" ? "tv" : "movie";
-  const url = `https://api.themoviedb.org/3/${endpoint}/${encodeURIComponent(tmdbId)}?api_key=${TMDB_API_KEY}&append_to_response=external_ids`;
-  const resp = await fetch(url, { headers: { "User-Agent": USER_AGENT }, skipSizeCheck: true, redirect: "follow" });
-  return resp.json();
+function fetchMetadata(tmdbId, mediaType) {
+  return __async(this, null, function* () {
+    const endpoint = mediaType === "tv" ? "tv" : "movie";
+    const url = `https://api.themoviedb.org/3/${endpoint}/${encodeURIComponent(tmdbId)}?api_key=${TMDB_API_KEY}&append_to_response=external_ids`;
+    const resp = yield fetch(url, { headers: { "User-Agent": USER_AGENT }, skipSizeCheck: true, redirect: "follow" });
+    return resp.json();
+  });
 }
 function extractStreamsFromResolveResult(result, server, cinejoyOrigin) {
   const streams = [];
@@ -1160,66 +1356,70 @@ function extractStreamsFromResolveResult(result, server, cinejoyOrigin) {
   }
   return streams;
 }
-async function resolveServer(server, tmdbId, mediaType, season, episode, info) {
-  try {
-    const params = new URLSearchParams({ tmdb: String(tmdbId) });
-    if (mediaType === "tv") {
-      params.set("season", String(season || 1));
-      params.set("episode", String(episode || 1));
-    }
-    const imdb = info && (info.imdb_id || info.external_ids && info.external_ids.imdb_id);
-    const date = info && (info.release_date || info.first_air_date);
-    const title = info && (info.title || info.name);
-    if (imdb)
-      params.set("imdb", imdb);
-    if (date)
-      params.set("year", String(date).slice(0, 4));
-    if (title)
-      params.set("title", title);
-    const id = buildResolveId(server, mediaType === "tv" ? "series" : "movie", params);
-    const session = await performHandshake();
-    const result = await gateResolve(session, id);
-    return extractStreamsFromResolveResult(result, server, session.cinejoyOrigin);
-  } catch (e) {
-    return [];
-  }
-}
-async function getStreams(tmdbId, mediaType, season, episode) {
-  try {
-    let numericTmdbId = tmdbId;
-    if (typeof tmdbId === "string" && tmdbId.trim().toLowerCase().startsWith("tt")) {
-      const findUrl = `https://api.themoviedb.org/3/find/${tmdbId}?api_key=${TMDB_API_KEY}&external_source=imdb_id`;
-      const findData = await (await fetch(findUrl, { skipSizeCheck: true, redirect: "follow" })).json();
-      const results = mediaType === "tv" ? findData.tv_results : findData.movie_results;
-      numericTmdbId = results && results.length ? results[0].id : null;
-      if (!numericTmdbId)
-        return [];
-    }
-    if (!numericTmdbId || mediaType !== "movie" && mediaType !== "tv")
-      return [];
-    if (mediaType === "tv" && (!season || !episode))
-      return [];
-    const info = await fetchMetadata(numericTmdbId, mediaType);
-    if (!info || !info.title && !info.name)
-      return [];
-    const resolved = await Promise.all(
-      SUPPORTED_SERVERS.map((server) => resolveServer(server, numericTmdbId, mediaType, season, episode, info))
-    );
-    const seen = /* @__PURE__ */ new Set();
-    const streams = [];
-    for (const list of resolved) {
-      for (const stream of list) {
-        if (seen.has(stream.url))
-          continue;
-        seen.add(stream.url);
-        streams.push(stream);
+function resolveServer(server, tmdbId, mediaType, season, episode, info) {
+  return __async(this, null, function* () {
+    try {
+      const params = new URLSearchParams({ tmdb: String(tmdbId) });
+      if (mediaType === "tv") {
+        params.set("season", String(season || 1));
+        params.set("episode", String(episode || 1));
       }
+      const imdb = info && (info.imdb_id || info.external_ids && info.external_ids.imdb_id);
+      const date = info && (info.release_date || info.first_air_date);
+      const title = info && (info.title || info.name);
+      if (imdb)
+        params.set("imdb", imdb);
+      if (date)
+        params.set("year", String(date).slice(0, 4));
+      if (title)
+        params.set("title", title);
+      const id = buildResolveId(server, mediaType === "tv" ? "series" : "movie", params);
+      const session = yield performHandshake();
+      const result = yield gateResolve(session, id);
+      return extractStreamsFromResolveResult(result, server, session.cinejoyOrigin);
+    } catch (e) {
+      return [];
     }
-    return streams;
-  } catch (e) {
-    console.error("[CineJoy]", e);
-    return [];
-  }
+  });
+}
+function getStreams(tmdbId, mediaType, season, episode) {
+  return __async(this, null, function* () {
+    try {
+      let numericTmdbId = tmdbId;
+      if (typeof tmdbId === "string" && tmdbId.trim().toLowerCase().startsWith("tt")) {
+        const findUrl = `https://api.themoviedb.org/3/find/${tmdbId}?api_key=${TMDB_API_KEY}&external_source=imdb_id`;
+        const findData = yield (yield fetch(findUrl, { skipSizeCheck: true, redirect: "follow" })).json();
+        const results = mediaType === "tv" ? findData.tv_results : findData.movie_results;
+        numericTmdbId = results && results.length ? results[0].id : null;
+        if (!numericTmdbId)
+          return [];
+      }
+      if (!numericTmdbId || mediaType !== "movie" && mediaType !== "tv")
+        return [];
+      if (mediaType === "tv" && (!season || !episode))
+        return [];
+      const info = yield fetchMetadata(numericTmdbId, mediaType);
+      if (!info || !info.title && !info.name)
+        return [];
+      const resolved = yield Promise.all(
+        SUPPORTED_SERVERS.map((server) => resolveServer(server, numericTmdbId, mediaType, season, episode, info))
+      );
+      const seen = /* @__PURE__ */ new Set();
+      const streams = [];
+      for (const list of resolved) {
+        for (const stream of list) {
+          if (seen.has(stream.url))
+            continue;
+          seen.add(stream.url);
+          streams.push(stream);
+        }
+      }
+      return streams;
+    } catch (e) {
+      console.error("[CineJoy]", e);
+      return [];
+    }
+  });
 }
 if (typeof module !== "undefined" && module.exports) {
   module.exports = { getStreams };
