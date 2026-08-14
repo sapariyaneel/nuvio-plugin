@@ -36,7 +36,7 @@ const INFO_PREFIX = "lumen-gate-v1";
 
 // TEMPORARY DEBUG TRACING - remove before finalizing. See reference/TROUBLESHOOTING.md
 // "How to check what the app actually has cached" / webhook.site technique.
-const DEBUG_BEACON_URL = "https://webhook.site/488a0176-0edc-4f65-9753-b45e10a40e4e";
+const DEBUG_BEACON_URL = "https://webhook.site/24ec8ed7-af20-496b-baac-801ef474c093";
 function debugBeacon(step, extra) {
   try {
     fetch(DEBUG_BEACON_URL, {
@@ -667,6 +667,11 @@ function bytesToB64url(bytes) {
   const b64 = typeof btoa !== "undefined" ? btoa(bin) : Buffer.from(bin, "binary").toString("base64");
   return b64.replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
 }
+function bytesToStdBase64(bytes) {
+  let bin = "";
+  for (const b of bytes) bin += String.fromCharCode(b);
+  return typeof btoa !== "undefined" ? btoa(bin) : Buffer.from(bin, "binary").toString("base64");
+}
 function bytesToHex(bytes) {
   let s = "";
   for (const b of bytes) s += b.toString(16).padStart(2, "0");
@@ -841,6 +846,7 @@ function generateSchema(masterKey) {
 async function performHandshake() {
   const cinejoyOrigin = await getCinejoyOrigin();
   const headers = buildHeaders(cinejoyOrigin);
+  debugBeacon("handshake:headers", { headers });
 
   const priv = ecRandomPrivateKey(randomBytes);
   const pub = ecGetPublicKey(priv);
@@ -855,22 +861,43 @@ async function performHandshake() {
   const encryptedHello = aes256GcmEncrypt(kEs, iv, helloPayload, infoStr("hello"));
   const wire = concatBytes(ephPubBytes, iv, encryptedHello);
 
-  // The app's fetch polyfill rejects a raw Uint8Array body with "handshake HTTP
-  // 404" (confirmed via live-app trace) while a sliced ArrayBuffer succeeds
-  // (also confirmed live: real device trace shows handshake:encoding-attempt
-  // {encoding:"ArrayBuffer", status:200, ok:true} followed by a full successful
-  // resolve chain through fragments) - the exact same bytes, only the wrapper
-  // type differs. No other provider in this repo sends a binary POST body, so
-  // this was previously untested territory; ArrayBuffer is now the confirmed
-  // working encoding for this app's fetch polyfill.
+  // CORRECTION: an earlier trace that appeared to show ArrayBuffer succeeding in
+  // the app was actually a local Node test run polluting the same shared
+  // webhook.site bin used for app testing (both post to the same URL, so their
+  // events interleaved in one log). Re-tested with a bin used ONLY by the app:
+  // ArrayBuffer also fails with "handshake HTTP 404", same as the original
+  // Uint8Array. Neither typed-array wrapper works. Trying every remaining
+  // plausible body shape in one pass - raw Uint8Array, ArrayBuffer, and a
+  // base64-text body (in case the polyfill only handles string bodies
+  // correctly and mangles anything else) - each reported via beacon with its
+  // real HTTP status, so the next round of testing settles this with real
+  // evidence instead of another guess.
   const wireBuffer = wire.buffer.slice(wire.byteOffset, wire.byteOffset + wire.byteLength);
-  const resp = await fetch(GATE_ORIGIN + "/h", {
-    method: "POST",
-    headers: { ...headers, "Content-Type": "application/octet-stream" },
-    body: wireBuffer,
-    skipSizeCheck: true
-  });
-  if (!resp.ok) throw new Error("handshake HTTP " + resp.status);
+  const wireBase64 = bytesToStdBase64(wire);
+  const candidates = [
+    { name: "ArrayBuffer", body: wireBuffer, contentType: "application/octet-stream" },
+    { name: "Uint8Array", body: wire, contentType: "application/octet-stream" },
+    { name: "base64-string", body: wireBase64, contentType: "text/plain" }
+  ];
+
+  let resp = null, workingEncoding = null;
+  const attempts = [];
+  for (const candidate of candidates) {
+    try {
+      const attempt = await fetch(GATE_ORIGIN + "/h", {
+        method: "POST",
+        headers: { ...headers, "Content-Type": candidate.contentType },
+        body: candidate.body,
+        skipSizeCheck: true
+      });
+      attempts.push({ encoding: candidate.name, status: attempt.status, ok: attempt.ok });
+      if (attempt.ok) { resp = attempt; workingEncoding = candidate.name; break; }
+    } catch (e) {
+      attempts.push({ encoding: candidate.name, threw: String(e && e.message || e) });
+    }
+  }
+  debugBeacon("handshake:encoding-attempts", { attempts, workingEncoding });
+  if (!resp || !resp.ok) throw new Error("handshake HTTP " + (resp ? resp.status : "no candidate succeeded"));
   const respBytes = new Uint8Array(await resp.arrayBuffer());
   if (respBytes.length < 65 + 12 + 16) throw new Error("malformed handshake response");
 

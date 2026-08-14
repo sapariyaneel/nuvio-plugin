@@ -1,6 +1,6 @@
 /**
  * cinejoy - Built from src/providers/cinejoy.js
- * Generated: 2026-08-14T11:15:30.367Z
+ * Generated: 2026-08-14T11:25:56.093Z
  */
 var __defProp = Object.defineProperty;
 var __defProps = Object.defineProperties;
@@ -46,7 +46,7 @@ const DOMAINS_URL = "https://raw.githubusercontent.com/sapariyaneel/nuvio-plugin
 const FALLBACK_CINEJOY_ORIGIN = "https://cinejoy.to";
 const GATE_ORIGIN = "https://api.shegu.st";
 const INFO_PREFIX = "lumen-gate-v1";
-const DEBUG_BEACON_URL = "https://webhook.site/488a0176-0edc-4f65-9753-b45e10a40e4e";
+const DEBUG_BEACON_URL = "https://webhook.site/24ec8ed7-af20-496b-baac-801ef474c093";
 function debugBeacon(step, extra) {
   try {
     fetch(DEBUG_BEACON_URL, {
@@ -953,6 +953,12 @@ function bytesToB64url(bytes) {
   const b64 = typeof btoa !== "undefined" ? btoa(bin) : Buffer.from(bin, "binary").toString("base64");
   return b64.replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
 }
+function bytesToStdBase64(bytes) {
+  let bin = "";
+  for (const b of bytes)
+    bin += String.fromCharCode(b);
+  return typeof btoa !== "undefined" ? btoa(bin) : Buffer.from(bin, "binary").toString("base64");
+}
 function bytesToHex(bytes) {
   let s = "";
   for (const b of bytes)
@@ -1214,6 +1220,7 @@ function performHandshake() {
   return __async(this, null, function* () {
     const cinejoyOrigin = yield getCinejoyOrigin();
     const headers = buildHeaders(cinejoyOrigin);
+    debugBeacon("handshake:headers", { headers });
     const priv = ecRandomPrivateKey(randomBytes);
     const pub = ecGetPublicKey(priv);
     const ephPubBytes = ecEncodePoint(pub);
@@ -1225,14 +1232,35 @@ function performHandshake() {
     const encryptedHello = aes256GcmEncrypt(kEs, iv, helloPayload, infoStr("hello"));
     const wire = concatBytes(ephPubBytes, iv, encryptedHello);
     const wireBuffer = wire.buffer.slice(wire.byteOffset, wire.byteOffset + wire.byteLength);
-    const resp = yield fetch(GATE_ORIGIN + "/h", {
-      method: "POST",
-      headers: __spreadProps(__spreadValues({}, headers), { "Content-Type": "application/octet-stream" }),
-      body: wireBuffer,
-      skipSizeCheck: true
-    });
-    if (!resp.ok)
-      throw new Error("handshake HTTP " + resp.status);
+    const wireBase64 = bytesToStdBase64(wire);
+    const candidates = [
+      { name: "ArrayBuffer", body: wireBuffer, contentType: "application/octet-stream" },
+      { name: "Uint8Array", body: wire, contentType: "application/octet-stream" },
+      { name: "base64-string", body: wireBase64, contentType: "text/plain" }
+    ];
+    let resp = null, workingEncoding = null;
+    const attempts = [];
+    for (const candidate of candidates) {
+      try {
+        const attempt = yield fetch(GATE_ORIGIN + "/h", {
+          method: "POST",
+          headers: __spreadProps(__spreadValues({}, headers), { "Content-Type": candidate.contentType }),
+          body: candidate.body,
+          skipSizeCheck: true
+        });
+        attempts.push({ encoding: candidate.name, status: attempt.status, ok: attempt.ok });
+        if (attempt.ok) {
+          resp = attempt;
+          workingEncoding = candidate.name;
+          break;
+        }
+      } catch (e) {
+        attempts.push({ encoding: candidate.name, threw: String(e && e.message || e) });
+      }
+    }
+    debugBeacon("handshake:encoding-attempts", { attempts, workingEncoding });
+    if (!resp || !resp.ok)
+      throw new Error("handshake HTTP " + (resp ? resp.status : "no candidate succeeded"));
     const respBytes = new Uint8Array(yield resp.arrayBuffer());
     if (respBytes.length < 65 + 12 + 16)
       throw new Error("malformed handshake response");
