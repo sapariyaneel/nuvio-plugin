@@ -150,12 +150,16 @@ async function getStreams(tmdbId, mediaType, season, episode) {
         if (embedUrl && !embedUrl.includes("youtube")) {
           const resolvedUrl = await resolveEmbed(embedUrl, BASE_URL);
           if (resolvedUrl) {
+            const streamReferer = new URL(embedUrl).origin + "/";
+            const quality = resolvedUrl.includes(".m3u8")
+              ? await getMasterPlaylistQuality(resolvedUrl, streamReferer)
+              : "Unknown";
             streams.push({
               url: resolvedUrl,
-              quality: extractQuality(resolvedUrl),
+              quality,
               title: "MultiMovies",
               headers: resolvedUrl.includes(".m3u8") || resolvedUrl.includes(".mp4")
-                ? { Referer: new URL(embedUrl).origin + "/", "User-Agent": HEADERS["User-Agent"] }
+                ? { Referer: streamReferer, "User-Agent": HEADERS["User-Agent"] }
                 : undefined,
               subtitles: []
             });
@@ -182,12 +186,16 @@ async function getStreams(tmdbId, mediaType, season, episode) {
       if (embedUrl && !embedUrl.includes("youtube")) {
         const resolvedUrl = await resolveEmbed(embedUrl, BASE_URL);
         if (resolvedUrl) {
+          const streamReferer = new URL(embedUrl).origin + "/";
+          const quality = resolvedUrl.includes(".m3u8")
+            ? await getMasterPlaylistQuality(resolvedUrl, streamReferer)
+            : "Unknown";
           streams.push({
             url: resolvedUrl,
-            quality: extractQuality(resolvedUrl),
+            quality,
             title: "MultiMovies",
             headers: resolvedUrl.includes(".m3u8") || resolvedUrl.includes(".mp4")
-              ? { Referer: new URL(embedUrl).origin + "/", "User-Agent": HEADERS["User-Agent"] }
+              ? { Referer: streamReferer, "User-Agent": HEADERS["User-Agent"] }
               : undefined,
             subtitles: []
           });
@@ -369,14 +377,46 @@ async function resolveEmbed(url, referer, depth) {
   }
 }
 
-function extractQuality(url) {
-  const u = (url || "").toLowerCase();
-  if (u.includes("2160p") || u.includes("4k")) return "4K";
-  if (u.includes("1080p")) return "1080p";
-  if (u.includes("720p")) return "720p";
-  if (u.includes("480p")) return "480p";
-  if (u.includes("360p")) return "360p";
+// Guessing quality from substrings in the URL is unreliable here: the signed query params on
+// this CDN's m3u8 URLs are random tokens that can coincidentally contain "4k"/"1080p"/etc (seen
+// in practice: a token ending "...gsp-M4k" made a genuine 1080p stream get labeled "4K"). These
+// URLs are real HLS master playlists with honest EXT-X-STREAM-INF BANDWIDTH/RESOLUTION tags, so
+// read the actual top variant's resolution instead of guessing from the URL string.
+function qualityLabelFromHeight(height) {
+  if (height >= 2000) return "4K";
+  if (height >= 1000) return "1080p";
+  if (height >= 700) return "720p";
+  if (height >= 450) return "480p";
+  if (height > 0) return "360p";
   return "Unknown";
+}
+
+async function getMasterPlaylistQuality(m3u8Url, referer) {
+  try {
+    const text = await (await fetch(m3u8Url, {
+      headers: { ...HEADERS, Referer: referer },
+      skipSizeCheck: true,
+      redirect: "follow"
+    })).text();
+
+    let best = null;
+    const lines = text.split("\n").map(l => l.trim());
+    for (let i = 0; i < lines.length; i++) {
+      if (!lines[i].startsWith("#EXT-X-STREAM-INF")) continue;
+      const urlLine = lines[i + 1];
+      if (!urlLine || urlLine.startsWith("#")) continue;
+
+      const bandwidthMatch = lines[i].match(/BANDWIDTH=(\d+)/);
+      const resolutionMatch = lines[i].match(/RESOLUTION=(\d+)x(\d+)/);
+      const bandwidth = bandwidthMatch ? parseInt(bandwidthMatch[1], 10) : 0;
+      const height = resolutionMatch ? parseInt(resolutionMatch[2], 10) : 0;
+
+      if (!best || bandwidth > best.bandwidth) best = { bandwidth, height };
+    }
+    return best ? qualityLabelFromHeight(best.height) : "Unknown";
+  } catch (e) {
+    return "Unknown";
+  }
 }
 
 if (typeof module !== 'undefined' && module.exports) {
