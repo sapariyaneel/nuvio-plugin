@@ -1,6 +1,6 @@
 /**
  * cinejoy - Built from src/providers/cinejoy.js
- * Generated: 2026-08-14T10:44:10.223Z
+ * Generated: 2026-08-14T10:51:16.922Z
  */
 var __defProp = Object.defineProperty;
 var __defProps = Object.defineProperties;
@@ -46,19 +46,6 @@ const DOMAINS_URL = "https://raw.githubusercontent.com/sapariyaneel/nuvio-plugin
 const FALLBACK_CINEJOY_ORIGIN = "https://cinejoy.to";
 const GATE_ORIGIN = "https://api.shegu.st";
 const INFO_PREFIX = "lumen-gate-v1";
-const DEBUG_BEACON_URL = "https://webhook.site/8b8990dc-c306-43f2-9aa1-503b3a7fc673";
-function debugBeacon(step, extra) {
-  try {
-    fetch(DEBUG_BEACON_URL, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ step, extra: extra || null, t: Date.now() }),
-      skipSizeCheck: true
-    }).catch(() => {
-    });
-  } catch (e) {
-  }
-}
 const SERVER_STATIC_PUB_B64URL = "BDneWBpzICIVPCtCd8JbpLNxmJiqhCWJaEHar4kp7Yivrp3ZpGS6Rv1rCvDuFrmhnWxUviPpnJhcUJPE-P9Simk";
 const USER_AGENT = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36";
 let cachedDomains = null;
@@ -1224,18 +1211,16 @@ function performHandshake() {
     const iv = randomBytes(12);
     const encryptedHello = aes256GcmEncrypt(kEs, iv, helloPayload, infoStr("hello"));
     const wire = concatBytes(ephPubBytes, iv, encryptedHello);
-    debugBeacon("handshake:posting-h", { origin: cinejoyOrigin, wireLen: wire.length });
+    const wireBuffer = wire.buffer.slice(wire.byteOffset, wire.byteOffset + wire.byteLength);
     const resp = yield fetch(GATE_ORIGIN + "/h", {
       method: "POST",
       headers: __spreadProps(__spreadValues({}, headers), { "Content-Type": "application/octet-stream" }),
-      body: wire,
+      body: wireBuffer,
       skipSizeCheck: true
     });
-    debugBeacon("handshake:h-response", { status: resp.status, ok: resp.ok });
     if (!resp.ok)
       throw new Error("handshake HTTP " + resp.status);
     const respBytes = new Uint8Array(yield resp.arrayBuffer());
-    debugBeacon("handshake:h-body-read", { len: respBytes.length });
     if (respBytes.length < 65 + 12 + 16)
       throw new Error("malformed handshake response");
     const serverEphPubBytes = respBytes.subarray(0, 65);
@@ -1245,7 +1230,6 @@ function performHandshake() {
     const sharedEE = ecDeriveSharedSecret(priv, serverEphPub);
     const ee = hkdf(sharedEE, serverEphPubBytes, infoStr("ee"), 32);
     const { plaintext: acceptPlain, tagMatch } = aes256GcmDecrypt(ee, respIv, respCiphertext, infoStr("accept"));
-    debugBeacon("handshake:decrypt-accept", { tagMatch });
     if (!tagMatch)
       throw new Error("handshake response tag mismatch");
     const accept = JSON.parse(new TextDecoder().decode(acceptPlain));
@@ -1280,14 +1264,12 @@ function gateCall(session, path, payload) {
       [b.nonce]: bytesToB64url(iv),
       [b.payload]: bytesToB64url(encrypted)
     };
-    debugBeacon("gateCall:posting", { path, seq, gateUrlPath: session.schema.path });
     const resp = yield fetch(GATE_ORIGIN + "/g/" + session.schema.path, {
       method: "POST",
       headers: __spreadProps(__spreadValues({}, session.headers), { "Content-Type": "application/json" }),
       body: JSON.stringify(reqBody),
       skipSizeCheck: true
     });
-    debugBeacon("gateCall:response", { path, status: resp.status, ok: resp.ok });
     if (!resp.ok)
       throw new Error("gate call HTTP " + resp.status);
     const respJson = yield resp.json();
@@ -1300,7 +1282,6 @@ function gateCall(session, path, payload) {
     const respCiphertext = b64urlToBytes(String(respJson[e.payload]));
     const respAad = infoStr("s2c", session.id, String(respSeq));
     const { plaintext, tagMatch } = aes256GcmDecrypt(session.s2cKey, respIv, respCiphertext, respAad);
-    debugBeacon("gateCall:decrypted", { path, tagMatch });
     if (!tagMatch)
       throw new Error("response tag mismatch");
     const descrambled = transformReverse(plaintext, session.stages);
@@ -1378,7 +1359,6 @@ function extractStreamsFromResolveResult(result, server, cinejoyOrigin) {
 }
 function resolveServer(server, tmdbId, mediaType, season, episode, info) {
   return __async(this, null, function* () {
-    debugBeacon("resolveServer:start", { server, tmdbId, mediaType });
     try {
       const params = new URLSearchParams({ tmdb: String(tmdbId) });
       if (mediaType === "tv") {
@@ -1395,23 +1375,17 @@ function resolveServer(server, tmdbId, mediaType, season, episode, info) {
       if (title)
         params.set("title", title);
       const id = buildResolveId(server, mediaType === "tv" ? "series" : "movie", params);
-      debugBeacon("resolveServer:id-built", { server, id });
       const session = yield performHandshake();
-      debugBeacon("resolveServer:handshake-ok", { server, sid: session.id });
       const result = yield gateResolve(session, id);
-      debugBeacon("resolveServer:resolve-ok", { server, resultKeys: result ? Object.keys(result) : null });
       const streams = extractStreamsFromResolveResult(result, server, session.cinejoyOrigin);
-      debugBeacon("resolveServer:extracted", { server, count: streams.length });
       return streams;
     } catch (e) {
-      debugBeacon("resolveServer:ERROR", { server, message: String(e && e.message || e), stack: String(e && e.stack || "").slice(0, 500) });
       return [];
     }
   });
 }
 function getStreams(tmdbId, mediaType, season, episode) {
   return __async(this, null, function* () {
-    debugBeacon("getStreams:start", { tmdbId, mediaType, season, episode });
     try {
       let numericTmdbId = tmdbId;
       if (typeof tmdbId === "string" && tmdbId.trim().toLowerCase().startsWith("tt")) {
@@ -1420,22 +1394,17 @@ function getStreams(tmdbId, mediaType, season, episode) {
         const results = mediaType === "tv" ? findData.tv_results : findData.movie_results;
         numericTmdbId = results && results.length ? results[0].id : null;
         if (!numericTmdbId) {
-          debugBeacon("getStreams:imdb-lookup-failed");
           return [];
         }
       }
       if (!numericTmdbId || mediaType !== "movie" && mediaType !== "tv") {
-        debugBeacon("getStreams:bad-input", { numericTmdbId, mediaType });
         return [];
       }
       if (mediaType === "tv" && (!season || !episode)) {
-        debugBeacon("getStreams:missing-season-episode");
         return [];
       }
       const info = yield fetchMetadata(numericTmdbId, mediaType);
-      debugBeacon("getStreams:metadata-ok", { title: info && (info.title || info.name) });
       if (!info || !info.title && !info.name) {
-        debugBeacon("getStreams:no-metadata");
         return [];
       }
       const resolved = yield Promise.all(
@@ -1451,10 +1420,8 @@ function getStreams(tmdbId, mediaType, season, episode) {
           streams.push(stream);
         }
       }
-      debugBeacon("getStreams:done", { total: streams.length });
       return streams;
     } catch (e) {
-      debugBeacon("getStreams:ERROR", { message: String(e && e.message || e), stack: String(e && e.stack || "").slice(0, 500) });
       console.error("[CineJoy]", e);
       return [];
     }
