@@ -1,23 +1,3 @@
-// moviebox.js
-// MovieBox (aoneroom.com) - TMDB-id-based movie & TV streaming via the official mobile-app API.
-// Flow: GET  {api}/wefeed-mobile-bff/tab-operating?page=1&tabId=0&version=  (signed, no auth token yet)
-//       -> response's `x-user` header carries {"token":"<guest JWT>"} - this is the session token,
-//          minted server-side on first contact, not something computed client-side.
-//       POST {api}/wefeed-mobile-bff/subject-api/search/v2  {page,perPage,keyword}  (token as Bearer)
-//       -> {data:{results:[{subjects:[{subjectId,subjectType,title,releaseDate,...}]}]}}
-//       GET  {api}/wefeed-mobile-bff/subject-api/play-info?subjectId=X&se=Y&ep=Z  (token as Bearer)
-//       -> {data:{streams:[{url,resolutions,format,size,codecName,signCookie?}]}}
-// Every request is signed with HMAC-MD5 (x-tr-signature) over a canonical string built from the
-// method/headers/body/timestamp/path - the same scheme the real Android app uses. Reverse-engineered
-// from a since-archived open-source Stremio addon (mesamirh/stremio-moviebox) that implemented this
-// exact flow; independently confirmed live against api3.aoneroom.com - bootstrap mints a real JWT,
-// search returns real subjectIds, play-info returns real signed stream URLs including genuine 2160p
-// (4K) HEVC files on the hakunaymatata.com CDN for titles that have them. No binary request bodies,
-// no WASM, no browser-only APIs - HMAC-MD5 and plain JSON only.
-//
-// Multiple API hosts exist (api3-api6.aoneroom.com); one is tried, falling back through the rest on
-// network failure or a 403/429/5xx response, matching the reference client's own host-pool behavior.
-
 const CryptoJS = typeof require === "function" ? require("crypto-js") : global.CryptoJS;
 
 const TMDB_API_KEY = "1865f43a0549ca50d341dd9ab8b29f49";
@@ -30,8 +10,6 @@ const HOST_POOL = [
   "https://api6.aoneroom.com"
 ];
 
-// Base64-encoded, then base64-decoded-again signing key used by the real client. Reverse-engineered,
-// not guessed - HMAC-MD5 signatures computed with it are accepted by the live server.
 const SIGNING_KEY_B64 = "NzZpUmwwN3MweFNOOWpxbUVXQXQ3OUVCSlp1bElRSXNWNjRGWnIyTw==";
 
 const PACKAGE_INFO = {
@@ -48,10 +26,6 @@ const BRAND_MODELS = {
 
 const REQUEST_TIMEOUT_MS = 15000;
 
-// The app's fetch polyfill (JsBindings.kt) doesn't read options.signal at all - passing an
-// AbortController does nothing to the underlying request. A bare fetch() call therefore has no
-// way to be cancelled, only raced: this still lets getStreams give up and move on to the next
-// host/candidate within a bounded time instead of hanging indefinitely on a stalled connection.
 function fetchWithTimeout(url, options) {
   return Promise.race([
     fetch(url, Object.assign({ redirect: "follow" }, options)),
@@ -220,13 +194,6 @@ function normalizeTitle(s) {
     .trim();
 }
 
-// Regional-language dub markers frequently attached to Indian-catalog MovieBox entries. TMDB
-// titles are almost always the English/original title, so a subject carrying one of these tags
-// is very likely a dub of the real thing, not the thing itself - real streams do exist under
-// these entries sometimes, but an exact-title-minus-language-tag match should never outrank the
-// plain original when both are present (confirmed live: "Rick and Morty [Hindi]" scores as a
-// perfect match after normalization but has zero playable resource, while the untagged
-// "Rick and Morty S1-S9" entry has real streams).
 const DUB_TAG_RE = /\[(hindi|tamil|telugu|dual audio|dubbed)\]/i;
 
 async function searchMovieBox(session, keyword) {
@@ -242,10 +209,6 @@ async function searchMovieBox(session, keyword) {
   return subjects;
 }
 
-// Returns every plausible candidate ranked best-first, rather than a single guess - an
-// exact-title match with no playable resource (e.g. a regional dub entry MovieBox lists but
-// never actually encoded) is common enough that the caller needs to be able to fall through to
-// the next-best candidate instead of failing outright on the top pick.
 function rankMatches(subjects, title, year, mediaType) {
   const targetType = mediaType === "tv" ? 2 : 1;
   const normTarget = normalizeTitle(title);
@@ -273,6 +236,23 @@ function qualityLabel(resolutions) {
   if (!nums.length) return "Auto";
   const max = Math.max(...nums);
   return max >= 2000 ? "4K" : `${max}p`;
+}
+
+function qualityRank(quality) {
+  if (quality === "4K") return 2160;
+  return parseInt(quality, 10) || 0;
+}
+
+// invisible zero-width prefix so quality still sorts correctly even if something re-sorts
+// the title as plain text ("1080p" < "4K" < "480p" < "720p" alphabetically otherwise)
+function invertedSortTag(value, max) {
+  const clamped = Math.max(0, Math.min(max, Math.floor(value) || 0));
+  const inverted = max - clamped;
+  const bits = inverted.toString(2).padStart(20, "0");
+  return bits
+    .split("")
+    .map((bit) => (bit === "1" ? "﻿" : "​"))
+    .join("");
 }
 
 function formatBytes(bytes) {
@@ -315,20 +295,22 @@ async function getStreamsForSubject(session, subjectId, season, episode) {
     const quality = qualityLabel(stream.resolutions);
     const headers = { "User-Agent": `${PACKAGE_INFO.package_name}/${PACKAGE_INFO.version_code} (Linux; U; Android 16; en_IN)` };
     if (stream.signCookie) headers.Cookie = stream.signCookie;
+    // size on a multi-resolution entry is the combined size of every tier, not just the top one
+    const isBundle = String(stream.resolutions || "").split(",").filter(Boolean).length > 1;
+    const sortTag = invertedSortTag(qualityRank(quality), 2160);
     out.push({
       url: stream.url,
       quality,
-      title: `MovieBox ${quality}${season ? ` S${season}E${episode}` : ""}`,
+      isBundle,
+      title: `${sortTag}MovieBox ${quality}${isBundle ? " (Adaptive)" : ""}${season ? ` S${season}E${episode}` : ""}`,
       name: "MovieBox",
       size: formatBytes(stream.size),
+      sizeBytes: parseInt(stream.size, 10) || 0,
       headers,
       subtitles: []
     });
   }
-  out.sort((a, b) => {
-    const rank = (q) => (q === "4K" ? 2160 : parseInt(q, 10) || 0);
-    return rank(b.quality) - rank(a.quality);
-  });
+  out.sort((a, b) => qualityRank(b.quality) - qualityRank(a.quality));
   return out;
 }
 
@@ -360,31 +342,24 @@ async function getStreams(tmdbId, mediaType, season, episode) {
     const se = isTv ? season || 1 : 0;
     const ep = isTv ? episode || 1 : 0;
 
-    // Duplicate listings for the same title/year are common (e.g. multiple independently-
-    // uploaded "Obsession (2026)" entries), the search API doesn't return them in a stable
-    // order, and - confirmed live - the best-quality upload is not reliably the top title-match:
-    // a dub-tagged duplicate ("Obsession [Hindi]") carried a real 2160p encode while the
-    // plain-titled "Obsession" duplicate topped out at 1080p. Title/year score only orders
-    // which candidates are plausible at all (guards against matching an unrelated show); it must
-    // not gate which ones get checked for streams, or the actual best quality can be silently
-    // dropped. Query every plausible candidate and keep the best stream per quality across all
-    // of them.
     const seenQuality = new Map();
     for (const candidate of candidates.slice(0, 8)) {
       const streams = await getStreamsForSubject(session, candidate.subjectId, se, ep);
       for (const stream of streams) {
         const existing = seenQuality.get(stream.quality);
-        const sizeOf = (s) => parseFloat(s.size) || 0;
-        if (!existing || sizeOf(stream) > sizeOf(existing)) {
+        if (!existing) {
+          seenQuality.set(stream.quality, stream);
+          continue;
+        }
+        if (existing.isBundle && !stream.isBundle) {
+          seenQuality.set(stream.quality, stream);
+        } else if (existing.isBundle === stream.isBundle && stream.sizeBytes > existing.sizeBytes) {
           seenQuality.set(stream.quality, stream);
         }
       }
     }
-    const merged = Array.from(seenQuality.values());
-    merged.sort((a, b) => {
-      const rank = (q) => (q === "4K" ? 2160 : parseInt(q, 10) || 0);
-      return rank(b.quality) - rank(a.quality);
-    });
+    const merged = Array.from(seenQuality.values()).map(({ isBundle, sizeBytes, ...rest }) => rest);
+    merged.sort((a, b) => qualityRank(b.quality) - qualityRank(a.quality));
     return merged;
   } catch (e) {
     console.error("[MovieBox]", e);

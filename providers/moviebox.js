@@ -1,6 +1,6 @@
 /**
  * moviebox - Built from src/moviebox/
- * Generated: 2026-08-17T09:03:21.332Z
+ * Generated: 2026-08-17T09:36:47.001Z
  */
 var __defProp = Object.defineProperty;
 var __defProps = Object.defineProperties;
@@ -21,6 +21,18 @@ var __spreadValues = (a, b) => {
   return a;
 };
 var __spreadProps = (a, b) => __defProps(a, __getOwnPropDescs(b));
+var __objRest = (source, exclude) => {
+  var target = {};
+  for (var prop in source)
+    if (__hasOwnProp.call(source, prop) && exclude.indexOf(prop) < 0)
+      target[prop] = source[prop];
+  if (source != null && __getOwnPropSymbols)
+    for (var prop of __getOwnPropSymbols(source)) {
+      if (exclude.indexOf(prop) < 0 && __propIsEnum.call(source, prop))
+        target[prop] = source[prop];
+    }
+  return target;
+};
 var __async = (__this, __arguments, generator) => {
   return new Promise((resolve, reject) => {
     var fulfilled = (value) => {
@@ -273,6 +285,17 @@ function qualityLabel(resolutions) {
   const max = Math.max(...nums);
   return max >= 2e3 ? "4K" : `${max}p`;
 }
+function qualityRank(quality) {
+  if (quality === "4K")
+    return 2160;
+  return parseInt(quality, 10) || 0;
+}
+function invertedSortTag(value, max) {
+  const clamped = Math.max(0, Math.min(max, Math.floor(value) || 0));
+  const inverted = max - clamped;
+  const bits = inverted.toString(2).padStart(20, "0");
+  return bits.split("").map((bit) => bit === "1" ? "\uFEFF" : "\u200B").join("");
+}
 function formatBytes(bytes) {
   const n = parseInt(bytes, 10);
   if (!n)
@@ -318,20 +341,21 @@ function getStreamsForSubject(session, subjectId, season, episode) {
       const headers = { "User-Agent": `${PACKAGE_INFO.package_name}/${PACKAGE_INFO.version_code} (Linux; U; Android 16; en_IN)` };
       if (stream.signCookie)
         headers.Cookie = stream.signCookie;
+      const isBundle = String(stream.resolutions || "").split(",").filter(Boolean).length > 1;
+      const sortTag = invertedSortTag(qualityRank(quality), 2160);
       out.push({
         url: stream.url,
         quality,
-        title: `MovieBox ${quality}${season ? ` S${season}E${episode}` : ""}`,
+        isBundle,
+        title: `${sortTag}MovieBox ${quality}${isBundle ? " (Adaptive)" : ""}${season ? ` S${season}E${episode}` : ""}`,
         name: "MovieBox",
         size: formatBytes(stream.size),
+        sizeBytes: parseInt(stream.size, 10) || 0,
         headers,
         subtitles: []
       });
     }
-    out.sort((a, b) => {
-      const rank = (q) => q === "4K" ? 2160 : parseInt(q, 10) || 0;
-      return rank(b.quality) - rank(a.quality);
-    });
+    out.sort((a, b) => qualityRank(b.quality) - qualityRank(a.quality));
     return out;
   });
 }
@@ -368,17 +392,22 @@ function getStreams(tmdbId, mediaType, season, episode) {
         const streams = yield getStreamsForSubject(session, candidate.subjectId, se, ep);
         for (const stream of streams) {
           const existing = seenQuality.get(stream.quality);
-          const sizeOf = (s) => parseFloat(s.size) || 0;
-          if (!existing || sizeOf(stream) > sizeOf(existing)) {
+          if (!existing) {
+            seenQuality.set(stream.quality, stream);
+            continue;
+          }
+          if (existing.isBundle && !stream.isBundle) {
+            seenQuality.set(stream.quality, stream);
+          } else if (existing.isBundle === stream.isBundle && stream.sizeBytes > existing.sizeBytes) {
             seenQuality.set(stream.quality, stream);
           }
         }
       }
-      const merged = Array.from(seenQuality.values());
-      merged.sort((a, b) => {
-        const rank = (q) => q === "4K" ? 2160 : parseInt(q, 10) || 0;
-        return rank(b.quality) - rank(a.quality);
+      const merged = Array.from(seenQuality.values()).map((_a) => {
+        var _b = _a, { isBundle, sizeBytes } = _b, rest = __objRest(_b, ["isBundle", "sizeBytes"]);
+        return rest;
       });
+      merged.sort((a, b) => qualityRank(b.quality) - qualityRank(a.quality));
       return merged;
     } catch (e) {
       console.error("[MovieBox]", e);
