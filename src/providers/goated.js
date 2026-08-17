@@ -333,7 +333,6 @@ async function getStreams(tmdbId, mediaType, season, episode) {
       subtitles
     }];
   } catch (e) {
-    console.error("[Goated]", e);
     return [];
   }
 }

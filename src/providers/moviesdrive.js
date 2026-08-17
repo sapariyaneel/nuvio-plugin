@@ -181,7 +181,6 @@ function fetchAndUpdateDomain() {
         return Promise.resolve();
     }
 
-    console.log('[Moviesdrive] Fetching latest domain...');
     return fetch(DOMAINS_URL, {
         method: 'GET',
         headers: {
@@ -196,7 +195,6 @@ function fetchAndUpdateDomain() {
                     // entry doesn't override a known-working MAIN_URL.
                     return fetch(newDomain, { method: 'HEAD', headers: HEADERS }).then(function (probe) {
                         if (probe.ok || (probe.status >= 300 && probe.status < 500)) {
-                            console.log(`[Moviesdrive] Updating domain from ${MAIN_URL} to ${newDomain}`);
                             MAIN_URL = newDomain;
                             HEADERS.Referer = `${MAIN_URL}/`;
                         }
@@ -209,7 +207,6 @@ function fetchAndUpdateDomain() {
             });
         }
     }).catch(function (error) {
-        console.error(`[Moviesdrive] Failed to fetch latest domains: ${error.message}`);
     });
 }
 
@@ -272,7 +269,6 @@ function pixelDrainExtractor(link) {
                 }];
             })
             .catch(e => {
-                console.warn(`[Pixeldrain] Could not fetch file info for ${fileId}:`, e.message);
                 const directUrl = `https://pixeldrain.com/api/file/${fileId}?download`;
                 return [{
                     source: 'Pixeldrain',
@@ -283,7 +279,6 @@ function pixelDrainExtractor(link) {
                 }];
             });
     }).catch(e => {
-        console.error('[Pixeldrain] extraction failed', e.message);
         return [{ source: 'Pixeldrain', quality: 'Unknown', url: link }];
     });
 }
@@ -326,10 +321,6 @@ function streamTapeExtractor(link) {
             return [];
         })
         .catch(e => {
-            // A 404 error just means the link is dead. We can ignore it and return nothing.
-            if (!e.response || e.response.status !== 404) {
-                console.error(`[StreamTape] An unexpected error occurred for ${normalizedLink}:`, e.message);
-            }
             return []; // Return empty array on any failure
         });
 }
@@ -341,7 +332,6 @@ function hubStreamExtractor(url, referer) {
             return [{ source: 'Hubstream', quality: 'Unknown', url }];
         })
         .catch(e => {
-            console.error(`[Hubstream] Failed to extract from ${url}:`, e.message);
             return [];
         });
 }
@@ -535,8 +525,6 @@ function hubCloudExtractor(url, referer) {
                 if (/telegram/i.test(text) || /telegram/i.test(link)) {
                     return Promise.resolve();
                 }
-
-                console.log(`[HubCloud] Found ${text} link ${link}`);
 
                 const fileName = header || headerDetails || 'Unknown';
 
@@ -924,7 +912,6 @@ function loadExtractor(url, referer = MAIN_URL) {
         hostname.includes('doubleclick.') ||
         hostname.includes('ddl2')
     ) {
-        console.warn('[Moviesdrive] Blocked redirect host:', hostname);
         return Promise.resolve([]);
     }
 
@@ -950,13 +937,11 @@ function search(query, page = 1, imdbId = null) {
     return getCurrentDomain()
         .then(currentDomain => {
             const apiUrl = `${currentDomain}/search.php?q=${encodeURIComponent(query)}&page=${page}`;
-            console.log(`[Moviesdrive] Searching API: ${apiUrl}`);
             return fetch(apiUrl, { headers: HEADERS });
         })
         .then(res => res.json())
         .then(json => {
             if (!json?.hits?.length) {
-                console.log('[Moviesdrive] No results');
                 return [];
             }
 
@@ -975,7 +960,6 @@ function search(query, page = 1, imdbId = null) {
                     imdbId: doc.imdb_id
                 }));
 
-            console.log(`[Moviesdrive] Search results: ${results.length}`);
             return results;
         });
 }
@@ -1015,8 +999,6 @@ function getDownloadLinks(mediaUrl, season, episode) {
                     .get()
                     .filter(Boolean);
 
-                console.error(`[Moviesdrive] Found ${links.length} h5 links`);
-
                 const hosterRegex = /hubcloud|gdflix|gdlink/i;
 
                 // h5 links point straight at a hoster (hubcloud.foo/etc) on the current site theme -
@@ -1043,7 +1025,6 @@ function getDownloadLinks(mediaUrl, season, episode) {
                                 .filter(Boolean);
                         })
                         .catch(e => {
-                            console.error('[Moviesdrive] Error extracting links:', e.message);
                             return [];
                         });
                 };
@@ -1055,16 +1036,11 @@ function getDownloadLinks(mediaUrl, season, episode) {
                             extractedUrls.map(serverUrl =>
                                 loadExtractor(serverUrl, mediaUrl)
                                     .catch(err => {
-                                        console.error(
-                                            `[Moviesdrive] Failed extractor ${serverUrl}:`,
-                                            err.message
-                                        );
                                         return [];
                                     })
                             )
                         );
                     }).catch(err => {
-                        console.error('[Moviesdrive] Failed extractMdrive:', err.message);
                         return [];
                     });
                 });
@@ -1079,10 +1055,6 @@ function getDownloadLinks(mediaUrl, season, episode) {
                         seen.add(link.url);
                         return true;
                     });
-
-                    console.error(
-                        `[Moviesdrive] Final extracted movie streams: ${finalLinks.length}`
-                    );
 
                     return {
                         finalLinks,
@@ -1120,7 +1092,6 @@ function getDownloadLinks(mediaUrl, season, episode) {
                 });
 
                 if (seasonPageUrls.length === 0) {
-                    console.error('[Moviesdrive] No single-episode pages found for season', season);
                     return Promise.resolve({ finalLinks: [], isMovie: false });
                 }
 
@@ -1148,8 +1119,6 @@ function getDownloadLinks(mediaUrl, season, episode) {
                                 }
                             });
 
-                            //console.log(`[DEBUG] Episode links from ${seasonPageUrl}:`,episodeLinks);
-
                             return episodeLinks;
                         })
                         .catch(() => [])
@@ -1159,18 +1128,12 @@ function getDownloadLinks(mediaUrl, season, episode) {
                     const flatLinks = allEpisodeLinks.flat();
 
                     if (flatLinks.length === 0) {
-                        console.error('[Moviesdrive] No episode links found for episode', episode);
                         return { finalLinks: [], isMovie: false };
                     }
 
                     const extractorPromises = flatLinks.map(serverUrl =>
-                        console.log('[DEBUG] Loading extractor for', serverUrl) ||
                         loadExtractor(serverUrl, seasonPageUrls[0])
                             .catch(e => {
-                                console.error(
-                                    `[Moviesdrive] Failed extractor ${serverUrl}:`,
-                                    e.message
-                                );
                                 return [];
                             })
                     );
@@ -1185,10 +1148,6 @@ function getDownloadLinks(mediaUrl, season, episode) {
                             seen.add(link.url);
                             return true;
                         });
-
-                        console.log(
-                            `[Moviesdrive] Final extracted episode streams: ${finalLinks.length}`
-                        );
 
                         return {
                             finalLinks,
@@ -1231,7 +1190,6 @@ function getTMDBDetails(tmdbId, mediaType) {
             'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
         }
     }).then(function (response) {
-        console.error('[TMDB] HTTP status:', response.status);
         if (!response.ok) {
             throw new Error(`TMDB API error: ${response.status}`);
         }
@@ -1355,10 +1313,6 @@ function findBestTitleMatch(mediaInfo, searchResults, mediaType, season) {
         }
     }
 
-    if (bestMatch) {
-        console.log(`[Moviesdrive] Best title match: "${bestMatch.title}" (score: ${bestScore.toFixed(2)})`);
-    }
-
     return bestMatch;
 }
 
@@ -1371,8 +1325,6 @@ function findBestTitleMatch(mediaInfo, searchResults, mediaType, season) {
  * @returns {Promise<Array>} Array of stream objects
  */
 function getStreams(tmdbId, mediaType = 'movie', season = null, episode = null) {
-    console.log(`[Moviesdrive] Fetching streams for TMDB ID: ${tmdbId}, Type: ${mediaType}${mediaType === 'tv' ? `, S:${season}E:${episode}` : ''}`);
-
     const resolveStep = (typeof tmdbId === 'string' && tmdbId.trim().toLowerCase().startsWith('tt'))
         ? resolveImdbToTmdb(tmdbId, mediaType).then(function (resolved) {
             if (!resolved) return null;
@@ -1390,17 +1342,13 @@ function getStreams(tmdbId, mediaType = 'movie', season = null, episode = null) 
             throw new Error('Could not extract title from TMDB response');
         }
 
-        console.log(`[Moviesdrive] TMDB Info: "${mediaInfo.title}" (${mediaInfo.year || 'N/A'})`);
-
         // Search by title text - the site's Typesense index is text-searched, not ID-keyed, so
         // querying with the raw IMDb ID string returns unrelated fuzzy matches that all get filtered
         // out by search()'s imdb_id check below, producing 0 results even for catalogued titles.
         const searchQuery = mediaInfo.title;
-        console.log(`[Moviesdrive] Searching for: "${searchQuery}"`);
 
         return search(searchQuery, 1, mediaInfo.imdbId).then(function (searchResults) {
             if (searchResults.length === 0) {
-                console.log('[Moviesdrive] No search results found');
                 return [];
             }
 
@@ -1409,8 +1357,6 @@ function getStreams(tmdbId, mediaType = 'movie', season = null, episode = null) 
 
             const selectedMedia = bestMatch || searchResults[0];
 
-            console.log(`[Moviesdrive] Selected: "${selectedMedia.title}" (${selectedMedia.url})`);
-            
             // Get download links
             return getDownloadLinks(selectedMedia.url, season, episode).then(function (result) {
                 const { finalLinks, isMovie } = result;
@@ -1419,7 +1365,6 @@ function getStreams(tmdbId, mediaType = 'movie', season = null, episode = null) 
 
                 const streams = filteredLinks
                     .filter(function (link) {
-                        console.log('[Moviesdrive] Processing link from source:', link.source);
                         return link && link.url;
                     })
                     .map(function (link) {
@@ -1479,14 +1424,12 @@ function getStreams(tmdbId, mediaType = 'movie', season = null, episode = null) 
                 });
 
                 const filteredStreams = streams.filter(function (s) { return meetsMinSize(s.size); });
-                console.log(`[Moviesdrive] Found ${filteredStreams.length} streams`);
                 return filteredStreams;
             });
 
         });
     });
     }).catch(function (error) {
-        console.error(`[Moviesdrive] Scraping error: ${error.message}`);
         return [];
     });
 }

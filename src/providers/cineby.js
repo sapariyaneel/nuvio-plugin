@@ -328,7 +328,6 @@ async function getStreams(tmdbId, mediaType, season, episode) {
       const plainText = decryptSourcesPayload(cipherText, seedData.seed, numericTmdbId);
       payload = JSON.parse(plainText);
     } catch (e) {
-      console.error("[Cineby] decrypt failed:", e.message);
       return [];
     }
 
@@ -355,7 +354,6 @@ async function getStreams(tmdbId, mediaType, season, episode) {
     streams.sort((a, b) => qualityRank(b.quality) - qualityRank(a.quality));
     return streams.filter(s => meetsMinSize(s.size));
   } catch (e) {
-    console.error("[Cineby]", e);
     return [];
   }
 }

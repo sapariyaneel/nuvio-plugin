@@ -126,7 +126,6 @@ async function getStreams(tmdbId, mediaType, season, episode) {
 
     return streams;
   } catch (e) {
-    console.error("[Desicinemas]", e);
     return [];
   }
 }

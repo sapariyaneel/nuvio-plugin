@@ -110,18 +110,13 @@ async function getBaseUrl() {
 
   for (const base of candidates) {
     if (await probeOrigin(base)) {
-      if (base !== primary) {
-        console.log(`[Vegamovies] primary origin ${primary} unreachable, using mirror ${base}`);
-      }
       resolvedBaseUrl = base;
       return base;
     }
   }
 
   // Every known origin is blocked or down. Return the primary so the caller
-  // still produces a coherent (empty) result instead of throwing here, and log
-  // once so this is distinguishable from "the site genuinely has no match".
-  console.error(`[Vegamovies] all origins unreachable (tried ${candidates.join(", ")}) - likely DNS/ISP blocking`);
+  // still produces a coherent (empty) result instead of throwing here.
   resolvedBaseUrl = primary;
   return primary;
 }
@@ -192,7 +187,6 @@ async function searchSite(query) {
   const url = `${baseUrl}/search.php?q=${encodeURIComponent(query)}&page=1`;
   const res = await fetchWithTimeout(url, { headers: HEADERS, skipSizeCheck: true });
   if (isOriginUnreachable(res)) {
-    console.error(`[Vegamovies] search request to ${baseUrl} could not connect - origin blocked or offline`);
     return [];
   }
   if (!res.ok) return [];
@@ -609,7 +603,6 @@ async function getStreams(tmdbId, mediaType, season, episode) {
       })
       .filter(s => meetsMinSize(s.size));
   } catch (e) {
-    console.error("[Vegamovies]", e);
     return [];
   }
 }

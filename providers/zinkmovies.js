@@ -1,46 +1,7 @@
 /**
  * zinkmovies - Built from src/providers/zinkmovies.js
- * Generated: 2026-08-17T09:56:23.818Z
+ * Generated: 2026-08-17T12:20:48.250Z
  */
-var __defProp = Object.defineProperty;
-var __defProps = Object.defineProperties;
-var __getOwnPropDescs = Object.getOwnPropertyDescriptors;
-var __getOwnPropSymbols = Object.getOwnPropertySymbols;
-var __hasOwnProp = Object.prototype.hasOwnProperty;
-var __propIsEnum = Object.prototype.propertyIsEnumerable;
-var __defNormalProp = (obj, key, value) => key in obj ? __defProp(obj, key, { enumerable: true, configurable: true, writable: true, value }) : obj[key] = value;
-var __spreadValues = (a, b) => {
-  for (var prop in b || (b = {}))
-    if (__hasOwnProp.call(b, prop))
-      __defNormalProp(a, prop, b[prop]);
-  if (__getOwnPropSymbols)
-    for (var prop of __getOwnPropSymbols(b)) {
-      if (__propIsEnum.call(b, prop))
-        __defNormalProp(a, prop, b[prop]);
-    }
-  return a;
-};
-var __spreadProps = (a, b) => __defProps(a, __getOwnPropDescs(b));
-var __async = (__this, __arguments, generator) => {
-  return new Promise((resolve, reject) => {
-    var fulfilled = (value) => {
-      try {
-        step(generator.next(value));
-      } catch (e) {
-        reject(e);
-      }
-    };
-    var rejected = (value) => {
-      try {
-        step(generator.throw(value));
-      } catch (e) {
-        reject(e);
-      }
-    };
-    var step = (x) => x.done ? resolve(x.value) : Promise.resolve(x.value).then(fulfilled, rejected);
-    step((generator = generator.apply(__this, __arguments)).next());
-  });
-};
 
 // src/providers/zinkmovies.js
 var DOMAINS_URL = "https://raw.githubusercontent.com/sapariyaneel/nuvio-plugin/refs/heads/main/domains.json";
@@ -56,24 +17,20 @@ var DL_REGEX = /https:\/\/[^"'\s]+\/dl\//;
 var SERVER_HANDLER_REGEX = /SERVER_HANDLER_URL\s*=\s*["']([^"']+)/;
 var WORKER_REGEX = /handleServerRequest\(['"]worker['"]\s*,\s*['"]([^'"]+)/;
 var cachedDomains = null;
-function getDomains() {
-  return __async(this, null, function* () {
-    if (cachedDomains)
-      return cachedDomains;
-    try {
-      const resp = yield fetch(DOMAINS_URL, { skipSizeCheck: true });
-      cachedDomains = yield resp.json();
-    } catch (e) {
-      cachedDomains = {};
-    }
+async function getDomains() {
+  if (cachedDomains)
     return cachedDomains;
-  });
+  try {
+    const resp = await fetch(DOMAINS_URL, { skipSizeCheck: true });
+    cachedDomains = await resp.json();
+  } catch (e) {
+    cachedDomains = {};
+  }
+  return cachedDomains;
 }
-function getBaseUrl() {
-  return __async(this, null, function* () {
-    const d = yield getDomains();
-    return d.zinkmovies || FALLBACK_BASE_URL;
-  });
+async function getBaseUrl() {
+  const d = await getDomains();
+  return d.zinkmovies || FALLBACK_BASE_URL;
 }
 function originOf(url) {
   const m = (url || "").match(/^(https?:\/\/[^/]+)/);
@@ -157,427 +114,404 @@ function cleanHubTitle(title) {
   }
   return out.join(" ");
 }
-function retry(times, delayMs, block) {
-  return __async(this, null, function* () {
-    for (let i = 0; i < times; i++) {
-      try {
-        const result = yield block();
-        if (result)
-          return result;
-      } catch (e) {
-      }
-      if (i < times - 1)
-        yield new Promise((r) => setTimeout(r, delayMs));
-    }
-    return null;
-  });
-}
-function bypassShortlink(url) {
-  return __async(this, null, function* () {
-    if (!url.includes("tpi.li") && !url.includes("oii.la"))
-      return url;
+async function retry(times, delayMs, block) {
+  for (let i = 0; i < times; i++) {
     try {
-      const docText = yield (yield fetch(url, { headers: HEADERS, skipSizeCheck: true })).text();
-      const match = docText.match(/aHR0c[a-zA-Z0-9+/=]+/);
-      if (!match)
-        return url;
-      const decodedUrl = base64Decode(match[0]);
-      if (decodedUrl.startsWith("http"))
-        return decodedUrl;
-      const $ = cheerio.load(docText);
-      const link = $("a.get-link").attr("href");
-      return link && link.trim() ? link : url;
+      const result = await block();
+      if (result)
+        return result;
     } catch (e) {
-      return url;
     }
-  });
+    if (i < times - 1)
+      await new Promise((r) => setTimeout(r, delayMs));
+  }
+  return null;
 }
-function generateZinkLinks(url) {
-  return __async(this, null, function* () {
-    try {
-      const firstHtml = yield (yield fetch(url, { headers: HEADERS, skipSizeCheck: true })).text();
-      const randomIdMatch = firstHtml.match(RANDOM_ID_REGEX);
-      if (!randomIdMatch)
-        return [];
-      const randomId = randomIdMatch[1];
-      const ajaxMatch = firstHtml.match(AJAX_REGEX);
-      if (!ajaxMatch)
-        return [];
-      const ajaxEndpoint = ajaxMatch[0];
-      const dlMatch = firstHtml.match(DL_REGEX);
-      if (!dlMatch)
-        return [];
-      const downloadBase = dlMatch[0];
-      const token = yield retry(3, 1e3, () => __async(this, null, function* () {
-        const resp = yield fetch(`${ajaxEndpoint}?random_id=${randomId}`, {
+async function bypassShortlink(url) {
+  if (!url.includes("tpi.li") && !url.includes("oii.la"))
+    return url;
+  try {
+    const docText = await (await fetch(url, { headers: HEADERS, skipSizeCheck: true })).text();
+    const match = docText.match(/aHR0c[a-zA-Z0-9+/=]+/);
+    if (!match)
+      return url;
+    const decodedUrl = base64Decode(match[0]);
+    if (decodedUrl.startsWith("http"))
+      return decodedUrl;
+    const $ = cheerio.load(docText);
+    const link = $("a.get-link").attr("href");
+    return link && link.trim() ? link : url;
+  } catch (e) {
+    return url;
+  }
+}
+async function generateZinkLinks(url) {
+  try {
+    const firstHtml = await (await fetch(url, { headers: HEADERS, skipSizeCheck: true })).text();
+    const randomIdMatch = firstHtml.match(RANDOM_ID_REGEX);
+    if (!randomIdMatch)
+      return [];
+    const randomId = randomIdMatch[1];
+    const ajaxMatch = firstHtml.match(AJAX_REGEX);
+    if (!ajaxMatch)
+      return [];
+    const ajaxEndpoint = ajaxMatch[0];
+    const dlMatch = firstHtml.match(DL_REGEX);
+    if (!dlMatch)
+      return [];
+    const downloadBase = dlMatch[0];
+    const token = await retry(3, 1e3, async () => {
+      const resp = await fetch(`${ajaxEndpoint}?random_id=${randomId}`, {
+        method: "POST",
+        headers: {
+          ...HEADERS,
+          "X-Requested-With": "XMLHttpRequest",
+          "Content-Type": "application/x-www-form-urlencoded"
+        },
+        body: `random_id=${encodeURIComponent(randomId)}`,
+        skipSizeCheck: true
+      });
+      const text = await resp.text();
+      const data = JSON.parse(text);
+      return data && data.token ? data.token : null;
+    });
+    if (!token)
+      return [];
+    const generatedUrl = `${downloadBase}${token}`;
+    const generatedHtml = await (await fetch(generatedUrl, { headers: HEADERS, skipSizeCheck: true })).text();
+    const $ = cheerio.load(generatedHtml);
+    const results = [];
+    $("#mirror-buttons a[href]").each((i, el) => {
+      const href = ($(el).attr("href") || "").trim();
+      if (!href)
+        return;
+      const name = $(el).text().replace("Generate", "").trim();
+      results.push({ name, url: href });
+    });
+    const workerOnclick = $("#worker-btn").attr("onclick") || "";
+    const workerMatch = workerOnclick.match(WORKER_REGEX);
+    const workerId = workerMatch ? workerMatch[1] : "";
+    const handlerMatch = generatedHtml.match(SERVER_HANDLER_REGEX);
+    const serverHandler = handlerMatch ? handlerMatch[1] : "";
+    if (workerId && serverHandler) {
+      try {
+        const workerResp = await fetch(serverHandler, {
           method: "POST",
-          headers: __spreadProps(__spreadValues({}, HEADERS), {
+          headers: {
+            ...HEADERS,
             "X-Requested-With": "XMLHttpRequest",
-            "Content-Type": "application/x-www-form-urlencoded"
-          }),
-          body: `random_id=${encodeURIComponent(randomId)}`,
+            "Content-Type": "application/json",
+            "Origin": generatedUrl.split("/dl/")[0],
+            "Referer": generatedUrl
+          },
+          body: JSON.stringify({ server: "worker", random_id: workerId }),
           skipSizeCheck: true
         });
-        const text = yield resp.text();
-        const data = JSON.parse(text);
-        return data && data.token ? data.token : null;
-      }));
-      if (!token)
+        const workerJson = JSON.parse(await workerResp.text());
+        const workerUrl = workerJson && (workerJson.url || workerJson.download) || "";
+        if (workerUrl && workerUrl.trim())
+          results.push({ name: "WORKER", url: workerUrl });
+      } catch (e) {
+      }
+    }
+    const seen = /* @__PURE__ */ new Set();
+    return results.filter((l) => {
+      if (seen.has(l.url))
+        return false;
+      seen.add(l.url);
+      return true;
+    });
+  } catch (e) {
+    return [];
+  }
+}
+async function pixelDrainExtractor(link, quality, label) {
+  try {
+    const base = originOf(link) || "https://pixeldrain.dev";
+    const finalUrl = link.includes("download") ? link : `${base}/api/file/${link.split("/").pop()}?download`;
+    return [{ url: finalUrl, quality, title: `Zinkmovies Pixeldrain ${label}`.trim() }];
+  } catch (e) {
+    return [];
+  }
+}
+async function hubCdnExtractor(url) {
+  try {
+    const html = await (await fetch(url, { headers: HEADERS, skipSizeCheck: true })).text();
+    const $ = cheerio.load(html);
+    const scriptText = $("script:contains(var reurl)").first().html() || html;
+    const m = scriptText.match(/reurl\s*=\s*"([^"]+)"/);
+    if (!m)
+      return [];
+    const encodedUrl = m[1].split("?r=")[1];
+    if (!encodedUrl)
+      return [];
+    const decoded = base64Decode(encodedUrl);
+    const idx = decoded.lastIndexOf("link=");
+    if (idx === -1)
+      return [];
+    const decodedUrl = decoded.substring(idx + 5);
+    if (!decodedUrl)
+      return [];
+    return [{ url: decodedUrl, quality: "Unknown", title: "Zinkmovies HUBCDN" }];
+  } catch (e) {
+    return [];
+  }
+}
+async function hubDriveExtractor(url) {
+  try {
+    const html = await (await fetch(url, { headers: HEADERS, skipSizeCheck: true })).text();
+    const $ = cheerio.load(html);
+    const href = $(".btn.btn-primary.btn-user.btn-success1.m-1").attr("href");
+    if (!href)
+      return [];
+    if (href.toLowerCase().includes("hubcloud"))
+      return hubCloudExtractor(href, "HubDrive");
+    return loadExtractor(href, "HubDrive");
+  } catch (e) {
+    return [];
+  }
+}
+async function hubCloudExtractor(url, referer) {
+  try {
+    const ref = referer || "";
+    const baseUrl = originOf(url);
+    if (!baseUrl)
+      return [];
+    let href;
+    if (url.includes("hubcloud.php")) {
+      href = url;
+    } else {
+      const html = await (await fetch(url, { headers: HEADERS, skipSizeCheck: true })).text();
+      const $first = cheerio.load(html);
+      const raw = $first("#download").attr("href") || "";
+      if (!raw)
         return [];
-      const generatedUrl = `${downloadBase}${token}`;
-      const generatedHtml = yield (yield fetch(generatedUrl, { headers: HEADERS, skipSizeCheck: true })).text();
-      const $ = cheerio.load(generatedHtml);
-      const results = [];
-      $("#mirror-buttons a[href]").each((i, el) => {
-        const href = ($(el).attr("href") || "").trim();
-        if (!href)
-          return;
-        const name = $(el).text().replace("Generate", "").trim();
-        results.push({ name, url: href });
-      });
-      const workerOnclick = $("#worker-btn").attr("onclick") || "";
-      const workerMatch = workerOnclick.match(WORKER_REGEX);
-      const workerId = workerMatch ? workerMatch[1] : "";
-      const handlerMatch = generatedHtml.match(SERVER_HANDLER_REGEX);
-      const serverHandler = handlerMatch ? handlerMatch[1] : "";
-      if (workerId && serverHandler) {
-        try {
-          const workerResp = yield fetch(serverHandler, {
-            method: "POST",
-            headers: __spreadProps(__spreadValues({}, HEADERS), {
-              "X-Requested-With": "XMLHttpRequest",
-              "Content-Type": "application/json",
-              "Origin": generatedUrl.split("/dl/")[0],
-              "Referer": generatedUrl
-            }),
-            body: JSON.stringify({ server: "worker", random_id: workerId }),
+      href = raw.toLowerCase().startsWith("http") ? raw : `${baseUrl.replace(/\/+$/, "")}/${raw.replace(/^\/+/, "")}`;
+    }
+    if (!href.trim())
+      return [];
+    const pageHtml = await (await fetch(href, { headers: HEADERS, skipSizeCheck: true })).text();
+    const $ = cheerio.load(pageHtml);
+    const size = $("i#size").first().text() || "";
+    const header = $("div.card-header").first().text() || "";
+    const headerDetails = cleanHubTitle(header);
+    const quality = indexQuality(header);
+    const sizeInBytes = toBytes(size);
+    let labelExtras = "";
+    if (headerDetails.length > 0)
+      labelExtras += `[${headerDetails}]`;
+    if (size.length > 0)
+      labelExtras += `[${size}]`;
+    const buttons = $("a.btn").toArray().map((el) => ({
+      link: $(el).attr("href") || "",
+      label: ($(el).text() || "").toLowerCase()
+    }));
+    const streams = [];
+    for (const { link, label } of buttons) {
+      if (!link)
+        continue;
+      try {
+        if (label.includes("fsl server")) {
+          streams.push({ url: link, quality, title: `${ref} [FSL Server] ${labelExtras}`.trim(), size: formatBytes(sizeInBytes) });
+        } else if (label.includes("download file")) {
+          streams.push({ url: link, quality, title: `${ref} ${labelExtras}`.trim(), size: formatBytes(sizeInBytes) });
+        } else if (label.includes("buzzserver")) {
+          const resp = await fetch(`${link}/download`, {
+            headers: { ...HEADERS, Referer: link },
+            redirect: "manual",
             skipSizeCheck: true
           });
-          const workerJson = JSON.parse(yield workerResp.text());
-          const workerUrl = workerJson && (workerJson.url || workerJson.download) || "";
-          if (workerUrl && workerUrl.trim())
-            results.push({ name: "WORKER", url: workerUrl });
-        } catch (e) {
+          const dlink = resp.headers.get("hx-redirect") || resp.headers.get("HX-Redirect") || "";
+          if (dlink.trim()) {
+            streams.push({ url: dlink, quality, title: `${ref} [BuzzServer] ${labelExtras}`.trim(), size: formatBytes(sizeInBytes) });
+          }
+        } else if (label.includes("pixeldra") || label.includes("pixelserver") || label.includes("pixel server") || label.includes("pixeldrain")) {
+          const base = originOf(link);
+          const finalUrl = link.includes("download") ? link : `${base}/api/file/${link.split("/").pop()}?download`;
+          streams.push({ url: finalUrl, quality, title: `${ref} Pixeldrain ${labelExtras}`.trim(), size: formatBytes(sizeInBytes) });
+        } else if (label.includes("s3 server")) {
+          streams.push({ url: link, quality, title: `${ref} [S3 Server] ${labelExtras}`.trim(), size: formatBytes(sizeInBytes) });
+        } else if (label.includes("fslv2")) {
+          streams.push({ url: link, quality, title: `${ref} [FSLv2] ${labelExtras}`.trim(), size: formatBytes(sizeInBytes) });
+        } else if (label.includes("mega server")) {
+          streams.push({ url: link, quality, title: `${ref} [Mega Server] ${labelExtras}`.trim(), size: formatBytes(sizeInBytes) });
+        } else {
+          const nested = await loadExtractor(link, "");
+          streams.push(...nested.map((s) => ({ ...s, size: s.size || formatBytes(sizeInBytes) })));
         }
+      } catch (e) {
       }
-      const seen = /* @__PURE__ */ new Set();
-      return results.filter((l) => {
-        if (seen.has(l.url))
-          return false;
-        seen.add(l.url);
-        return true;
+    }
+    return streams;
+  } catch (e) {
+    return [];
+  }
+}
+async function tpiLiExtractor(url) {
+  try {
+    const finalUrl = await bypassShortlink(url);
+    if (finalUrl === url || !finalUrl.trim())
+      return [];
+    return loadExtractor(finalUrl, url);
+  } catch (e) {
+    return [];
+  }
+}
+async function loadExtractor(url, referer) {
+  if (!url || !url.startsWith("http"))
+    return [];
+  const host = (originOf(url) || "").toLowerCase();
+  try {
+    if (host.includes("hubcdn"))
+      return await hubCdnExtractor(url);
+    if (host.includes("hubdrive"))
+      return await hubDriveExtractor(url);
+    if (host.includes("hubcloud"))
+      return await hubCloudExtractor(url, referer || "HubCloud");
+    if (host.includes("pixeldrain"))
+      return await pixelDrainExtractor(url, "Unknown", "");
+    if (host.includes("tpi.li") || host.includes("oii.la"))
+      return await tpiLiExtractor(url);
+    return [{ url, quality: indexQuality(url), title: "Zinkmovies" }];
+  } catch (e) {
+    return [];
+  }
+}
+async function resolvePageLinks(pageUrl) {
+  try {
+    const finalUrl = await bypassShortlink(pageUrl);
+    const zinkLinks = await generateZinkLinks(finalUrl);
+    const streams = [];
+    for (const link of zinkLinks) {
+      try {
+        if (link.name.toLowerCase().includes("worker")) {
+          streams.push({ url: link.url, quality: indexQuality(link.url), title: "Zink Worker" });
+        } else {
+          const extracted = await loadExtractor(link.url, "Zinkmovies");
+          streams.push(...extracted);
+        }
+      } catch (e) {
+      }
+    }
+    return streams;
+  } catch (e) {
+    return [];
+  }
+}
+async function resolveImdbToTmdb(imdbId, mediaType) {
+  try {
+    const url = `https://api.themoviedb.org/3/find/${imdbId}?api_key=${TMDB_API_KEY}&external_source=imdb_id`;
+    const data = await (await fetch(url, { skipSizeCheck: true })).json();
+    const results = mediaType === "tv" ? data.tv_results : data.movie_results;
+    return results && results.length ? results[0].id : null;
+  } catch (e) {
+    return null;
+  }
+}
+async function getStreams(tmdbId, mediaType, season, episode) {
+  try {
+    if (typeof tmdbId === "string" && tmdbId.trim().toLowerCase().startsWith("tt")) {
+      tmdbId = await resolveImdbToTmdb(tmdbId, mediaType);
+      if (!tmdbId)
+        return [];
+    }
+    const baseUrl = await getBaseUrl();
+    const tmdbUrl = `https://api.themoviedb.org/3/${mediaType}/${tmdbId}?api_key=${TMDB_API_KEY}`;
+    const mediaInfo = await (await fetch(tmdbUrl, { skipSizeCheck: true })).json();
+    const title = mediaInfo.title || mediaInfo.name;
+    if (!title)
+      return [];
+    const searchUrl = `${baseUrl}/page/1/?s=${encodeURIComponent(title)}`;
+    const searchHtml = await (await fetch(searchUrl, { headers: HEADERS, skipSizeCheck: true })).text();
+    const $search = cheerio.load(searchHtml);
+    const results = [];
+    $search("article").each((i, el) => {
+      const href = $search("a", el).attr("href");
+      const name = $search("a", el).text().trim();
+      if (href)
+        results.push({ title: name, url: href });
+    });
+    if (!results.length)
+      return [];
+    const isTV = mediaType === "tv";
+    const lcTitle = title.toLowerCase();
+    let match = results.find((r) => r.title.toLowerCase().includes(lcTitle));
+    if (!match)
+      match = results[0];
+    const pageUrl = match.url.startsWith("http") ? match.url : `${baseUrl}${match.url}`;
+    const pageHtml = await (await fetch(pageUrl, { headers: HEADERS, skipSizeCheck: true })).text();
+    const $page = cheerio.load(pageHtml);
+    const targetPages = [];
+    if (isTV) {
+      const seasonRegex = /Season\s*(\d+)/i;
+      const episodeRegex = /EPISODE\s*[-:]?\s*(\d+)/i;
+      const hasClass = (el, cls) => new RegExp(`\\b${cls}\\b`).test($page(el).attr("class") || "");
+      const seasonUrls = [];
+      $page(".lgtagmessage").each((i, el) => {
+        const sm = $page(el).text().match(seasonRegex);
+        if (!sm)
+          return;
+        const seasonNum = parseInt(sm[1], 10);
+        if (seasonNum !== season)
+          return;
+        let next = $page(el).next();
+        while (next.length && !hasClass(next, "lgtagmessage")) {
+          if (hasClass(next, "movie-button-container")) {
+            const href = ($page("a[href]", next).first().attr("href") || "").trim();
+            if (href)
+              seasonUrls.push(href);
+            break;
+          }
+          next = next.next();
+        }
       });
-    } catch (e) {
-      return [];
-    }
-  });
-}
-function pixelDrainExtractor(link, quality, label) {
-  return __async(this, null, function* () {
-    try {
-      const base = originOf(link) || "https://pixeldrain.dev";
-      const finalUrl = link.includes("download") ? link : `${base}/api/file/${link.split("/").pop()}?download`;
-      return [{ url: finalUrl, quality, title: `Zinkmovies Pixeldrain ${label}`.trim() }];
-    } catch (e) {
-      return [];
-    }
-  });
-}
-function hubCdnExtractor(url) {
-  return __async(this, null, function* () {
-    try {
-      const html = yield (yield fetch(url, { headers: HEADERS, skipSizeCheck: true })).text();
-      const $ = cheerio.load(html);
-      const scriptText = $("script:contains(var reurl)").first().html() || html;
-      const m = scriptText.match(/reurl\s*=\s*"([^"]+)"/);
-      if (!m)
-        return [];
-      const encodedUrl = m[1].split("?r=")[1];
-      if (!encodedUrl)
-        return [];
-      const decoded = base64Decode(encodedUrl);
-      const idx = decoded.lastIndexOf("link=");
-      if (idx === -1)
-        return [];
-      const decodedUrl = decoded.substring(idx + 5);
-      if (!decodedUrl)
-        return [];
-      return [{ url: decodedUrl, quality: "Unknown", title: "Zinkmovies HUBCDN" }];
-    } catch (e) {
-      return [];
-    }
-  });
-}
-function hubDriveExtractor(url) {
-  return __async(this, null, function* () {
-    try {
-      const html = yield (yield fetch(url, { headers: HEADERS, skipSizeCheck: true })).text();
-      const $ = cheerio.load(html);
-      const href = $(".btn.btn-primary.btn-user.btn-success1.m-1").attr("href");
-      if (!href)
-        return [];
-      if (href.toLowerCase().includes("hubcloud"))
-        return hubCloudExtractor(href, "HubDrive");
-      return loadExtractor(href, "HubDrive");
-    } catch (e) {
-      return [];
-    }
-  });
-}
-function hubCloudExtractor(url, referer) {
-  return __async(this, null, function* () {
-    try {
-      const ref = referer || "";
-      const baseUrl = originOf(url);
-      if (!baseUrl)
-        return [];
-      let href;
-      if (url.includes("hubcloud.php")) {
-        href = url;
-      } else {
-        const html = yield (yield fetch(url, { headers: HEADERS, skipSizeCheck: true })).text();
-        const $first = cheerio.load(html);
-        const raw = $first("#download").attr("href") || "";
-        if (!raw)
-          return [];
-        href = raw.toLowerCase().startsWith("http") ? raw : `${baseUrl.replace(/\/+$/, "")}/${raw.replace(/^\/+/, "")}`;
-      }
-      if (!href.trim())
-        return [];
-      const pageHtml = yield (yield fetch(href, { headers: HEADERS, skipSizeCheck: true })).text();
-      const $ = cheerio.load(pageHtml);
-      const size = $("i#size").first().text() || "";
-      const header = $("div.card-header").first().text() || "";
-      const headerDetails = cleanHubTitle(header);
-      const quality = indexQuality(header);
-      const sizeInBytes = toBytes(size);
-      let labelExtras = "";
-      if (headerDetails.length > 0)
-        labelExtras += `[${headerDetails}]`;
-      if (size.length > 0)
-        labelExtras += `[${size}]`;
-      const buttons = $("a.btn").toArray().map((el) => ({
-        link: $(el).attr("href") || "",
-        label: ($(el).text() || "").toLowerCase()
-      }));
-      const streams = [];
-      for (const { link, label } of buttons) {
-        if (!link)
-          continue;
+      for (const seasonUrl of seasonUrls) {
         try {
-          if (label.includes("fsl server")) {
-            streams.push({ url: link, quality, title: `${ref} [FSL Server] ${labelExtras}`.trim(), size: formatBytes(sizeInBytes) });
-          } else if (label.includes("download file")) {
-            streams.push({ url: link, quality, title: `${ref} ${labelExtras}`.trim(), size: formatBytes(sizeInBytes) });
-          } else if (label.includes("buzzserver")) {
-            const resp = yield fetch(`${link}/download`, {
-              headers: __spreadProps(__spreadValues({}, HEADERS), { Referer: link }),
-              redirect: "manual",
-              skipSizeCheck: true
-            });
-            const dlink = resp.headers.get("hx-redirect") || resp.headers.get("HX-Redirect") || "";
-            if (dlink.trim()) {
-              streams.push({ url: dlink, quality, title: `${ref} [BuzzServer] ${labelExtras}`.trim(), size: formatBytes(sizeInBytes) });
-            }
-          } else if (label.includes("pixeldra") || label.includes("pixelserver") || label.includes("pixel server") || label.includes("pixeldrain")) {
-            const base = originOf(link);
-            const finalUrl = link.includes("download") ? link : `${base}/api/file/${link.split("/").pop()}?download`;
-            streams.push({ url: finalUrl, quality, title: `${ref} Pixeldrain ${labelExtras}`.trim(), size: formatBytes(sizeInBytes) });
-          } else if (label.includes("s3 server")) {
-            streams.push({ url: link, quality, title: `${ref} [S3 Server] ${labelExtras}`.trim(), size: formatBytes(sizeInBytes) });
-          } else if (label.includes("fslv2")) {
-            streams.push({ url: link, quality, title: `${ref} [FSLv2] ${labelExtras}`.trim(), size: formatBytes(sizeInBytes) });
-          } else if (label.includes("mega server")) {
-            streams.push({ url: link, quality, title: `${ref} [Mega Server] ${labelExtras}`.trim(), size: formatBytes(sizeInBytes) });
-          } else {
-            const nested = yield loadExtractor(link, "");
-            streams.push(...nested.map((s) => __spreadProps(__spreadValues({}, s), { size: s.size || formatBytes(sizeInBytes) })));
-          }
-        } catch (e) {
-        }
-      }
-      return streams;
-    } catch (e) {
-      return [];
-    }
-  });
-}
-function tpiLiExtractor(url) {
-  return __async(this, null, function* () {
-    try {
-      const finalUrl = yield bypassShortlink(url);
-      if (finalUrl === url || !finalUrl.trim())
-        return [];
-      return loadExtractor(finalUrl, url);
-    } catch (e) {
-      return [];
-    }
-  });
-}
-function loadExtractor(url, referer) {
-  return __async(this, null, function* () {
-    if (!url || !url.startsWith("http"))
-      return [];
-    const host = (originOf(url) || "").toLowerCase();
-    try {
-      if (host.includes("hubcdn"))
-        return yield hubCdnExtractor(url);
-      if (host.includes("hubdrive"))
-        return yield hubDriveExtractor(url);
-      if (host.includes("hubcloud"))
-        return yield hubCloudExtractor(url, referer || "HubCloud");
-      if (host.includes("pixeldrain"))
-        return yield pixelDrainExtractor(url, "Unknown", "");
-      if (host.includes("tpi.li") || host.includes("oii.la"))
-        return yield tpiLiExtractor(url);
-      return [{ url, quality: indexQuality(url), title: "Zinkmovies" }];
-    } catch (e) {
-      return [];
-    }
-  });
-}
-function resolvePageLinks(pageUrl) {
-  return __async(this, null, function* () {
-    try {
-      const finalUrl = yield bypassShortlink(pageUrl);
-      const zinkLinks = yield generateZinkLinks(finalUrl);
-      const streams = [];
-      for (const link of zinkLinks) {
-        try {
-          if (link.name.toLowerCase().includes("worker")) {
-            streams.push({ url: link.url, quality: indexQuality(link.url), title: "Zink Worker" });
-          } else {
-            const extracted = yield loadExtractor(link.url, "Zinkmovies");
-            streams.push(...extracted);
-          }
-        } catch (e) {
-        }
-      }
-      return streams;
-    } catch (e) {
-      return [];
-    }
-  });
-}
-function resolveImdbToTmdb(imdbId, mediaType) {
-  return __async(this, null, function* () {
-    try {
-      const url = `https://api.themoviedb.org/3/find/${imdbId}?api_key=${TMDB_API_KEY}&external_source=imdb_id`;
-      const data = yield (yield fetch(url, { skipSizeCheck: true })).json();
-      const results = mediaType === "tv" ? data.tv_results : data.movie_results;
-      return results && results.length ? results[0].id : null;
-    } catch (e) {
-      return null;
-    }
-  });
-}
-function getStreams(tmdbId, mediaType, season, episode) {
-  return __async(this, null, function* () {
-    try {
-      if (typeof tmdbId === "string" && tmdbId.trim().toLowerCase().startsWith("tt")) {
-        tmdbId = yield resolveImdbToTmdb(tmdbId, mediaType);
-        if (!tmdbId)
-          return [];
-      }
-      const baseUrl = yield getBaseUrl();
-      const tmdbUrl = `https://api.themoviedb.org/3/${mediaType}/${tmdbId}?api_key=${TMDB_API_KEY}`;
-      const mediaInfo = yield (yield fetch(tmdbUrl, { skipSizeCheck: true })).json();
-      const title = mediaInfo.title || mediaInfo.name;
-      if (!title)
-        return [];
-      const searchUrl = `${baseUrl}/page/1/?s=${encodeURIComponent(title)}`;
-      const searchHtml = yield (yield fetch(searchUrl, { headers: HEADERS, skipSizeCheck: true })).text();
-      const $search = cheerio.load(searchHtml);
-      const results = [];
-      $search("article").each((i, el) => {
-        const href = $search("a", el).attr("href");
-        const name = $search("a", el).text().trim();
-        if (href)
-          results.push({ title: name, url: href });
-      });
-      if (!results.length)
-        return [];
-      const isTV = mediaType === "tv";
-      const lcTitle = title.toLowerCase();
-      let match = results.find((r) => r.title.toLowerCase().includes(lcTitle));
-      if (!match)
-        match = results[0];
-      const pageUrl = match.url.startsWith("http") ? match.url : `${baseUrl}${match.url}`;
-      const pageHtml = yield (yield fetch(pageUrl, { headers: HEADERS, skipSizeCheck: true })).text();
-      const $page = cheerio.load(pageHtml);
-      const targetPages = [];
-      if (isTV) {
-        const seasonRegex = /Season\s*(\d+)/i;
-        const episodeRegex = /EPISODE\s*[-:]?\s*(\d+)/i;
-        const hasClass = (el, cls) => new RegExp(`\\b${cls}\\b`).test($page(el).attr("class") || "");
-        const seasonUrls = [];
-        $page(".lgtagmessage").each((i, el) => {
-          const sm = $page(el).text().match(seasonRegex);
-          if (!sm)
-            return;
-          const seasonNum = parseInt(sm[1], 10);
-          if (seasonNum !== season)
-            return;
-          let next = $page(el).next();
-          while (next.length && !hasClass(next, "lgtagmessage")) {
-            if (hasClass(next, "movie-button-container")) {
-              const href = ($page("a[href]", next).first().attr("href") || "").trim();
-              if (href)
-                seasonUrls.push(href);
-              break;
-            }
-            next = next.next();
-          }
-        });
-        for (const seasonUrl of seasonUrls) {
-          try {
-            const seasonHtml = yield (yield fetch(seasonUrl, { headers: HEADERS, skipSizeCheck: true })).text();
-            const $season = cheerio.load(seasonHtml);
-            $season(".entry-content a[href]").each((i, el) => {
-              const text = $season(el).text();
-              const em = text.match(episodeRegex);
-              if (!em)
-                return;
-              if (parseInt(em[1], 10) !== episode)
-                return;
-              const href = ($season(el).attr("href") || "").trim();
-              if (!href || text.toLowerCase().includes("zip"))
-                return;
-              targetPages.push(href);
-            });
-          } catch (e) {
-          }
-        }
-      } else {
-        $page("div.movie-button-container a").each((i, el) => {
-          const href = $page(el).attr("href");
-          if (href)
+          const seasonHtml = await (await fetch(seasonUrl, { headers: HEADERS, skipSizeCheck: true })).text();
+          const $season = cheerio.load(seasonHtml);
+          $season(".entry-content a[href]").each((i, el) => {
+            const text = $season(el).text();
+            const em = text.match(episodeRegex);
+            if (!em)
+              return;
+            if (parseInt(em[1], 10) !== episode)
+              return;
+            const href = ($season(el).attr("href") || "").trim();
+            if (!href || text.toLowerCase().includes("zip"))
+              return;
             targetPages.push(href);
-        });
+          });
+        } catch (e) {
+        }
       }
-      if (!targetPages.length)
-        return [];
-      const streams = [];
-      for (const page of targetPages) {
-        const resolved = yield resolvePageLinks(page);
-        streams.push(...resolved);
-      }
-      return streams.filter((s) => s && s.url).map((s) => ({
-        url: s.url,
-        quality: s.quality || "Unknown",
-        title: s.title || "Zinkmovies",
-        name: s.title || "Zinkmovies",
-        headers: { Referer: baseUrl, "User-Agent": HEADERS["User-Agent"] },
-        subtitles: [],
-        // s.size is already a formatted string from the extractor above - re-running it through
-        // formatBytes() treats it as a raw byte count and produces NaN.
-        size: s.size || ""
-      })).filter((s) => meetsMinSize(s.size));
-    } catch (e) {
-      console.error("[Zinkmovies]", e);
-      return [];
+    } else {
+      $page("div.movie-button-container a").each((i, el) => {
+        const href = $page(el).attr("href");
+        if (href)
+          targetPages.push(href);
+      });
     }
-  });
+    if (!targetPages.length)
+      return [];
+    const streams = [];
+    for (const page of targetPages) {
+      const resolved = await resolvePageLinks(page);
+      streams.push(...resolved);
+    }
+    return streams.filter((s) => s && s.url).map((s) => ({
+      url: s.url,
+      quality: s.quality || "Unknown",
+      title: s.title || "Zinkmovies",
+      name: s.title || "Zinkmovies",
+      headers: { Referer: baseUrl, "User-Agent": HEADERS["User-Agent"] },
+      subtitles: [],
+      // s.size is already a formatted string from the extractor above - re-running it through
+      // formatBytes() treats it as a raw byte count and produces NaN.
+      size: s.size || ""
+    })).filter((s) => meetsMinSize(s.size));
+  } catch (e) {
+    return [];
+  }
 }
 if (typeof module !== "undefined" && module.exports) {
   module.exports = { getStreams };

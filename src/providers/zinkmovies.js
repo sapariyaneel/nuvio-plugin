@@ -524,7 +524,6 @@ async function getStreams(tmdbId, mediaType, season, episode) {
       }))
       .filter(s => meetsMinSize(s.size));
   } catch (e) {
-    console.error("[Zinkmovies]", e);
     return [];
   }
 }

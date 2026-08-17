@@ -14,24 +14,40 @@ A collection of local scrapers for the Nuvio streaming application. These scrape
 
 ## Scraper Development
 
-**💡 Tip:** Check existing scrapers in the `providers/` directory for real working examples before starting your own.
+**💡 Tip:** Check existing scrapers in the `providers/` directory (built) or `src/providers/` (source) for real working examples before starting your own.
+
+### Runtime
+
+Nuvio runs scrapers in a sandboxed **QuickJS** engine (not Hermes/React Native). This means:
+
+- **Native `async`/`await` is fully supported** - write real async functions, no `.then()`/`.catch()` chains required.
+- No `console.*` calls in shipped provider code - the app's local cache/logging pipeline is sensitive to log volume and can behave unpredictably (stale cache, slowdowns) when providers log heavily. Do all debugging locally against the built file, then strip every `console.log`/`console.warn`/`console.error` before committing.
+- No Node.js built-ins (`fs`, `path`, `crypto`, `Buffer`). Use `fetch()` for HTTP, and hand-rolled JS (or `crypto-js`, provided as an external module) for anything crypto-shaped.
+- `WebAssembly` exists only as an inert stub (`instantiate()` returns empty exports) - a provider that depends on executing WASM cannot work in this runtime.
+
+### Build pipeline
+
+Provider source lives in `src/<providerName>/index.js` and is bundled with esbuild into `providers/<providerName>.js`:
+
+```bash
+node build.js              # build every provider under src/
+node build.js vidrock      # build a single provider
+node build.js --watch      # rebuild on change (needs nodemon)
+```
+
+Build target is `es2020` (`build.js`) - matches what QuickJS supports natively, so esbuild does not need to downlevel `async`/`await` into generators the way it used to for Hermes.
 
 ### Core Function
-**⚠️ IMPORTANT:** Your scraper must use Promise-based approach only. **async/await is NOT supported** in this sandboxed environment.
 
-Your scraper must export a `getStreams` function that returns a Promise:
+Export a `getStreams` function - `async function` is the natural shape now, but returning a plain `Promise` still works if you prefer it:
 
 ```javascript
-function getStreams(tmdbId, mediaType, seasonNum, episodeNum) {
-  return new Promise((resolve, reject) => {
-    // Your scraping logic here - NO async/await allowed
-    // Use .then() and .catch() for all async operations
-    // Return array of stream objects or empty array on error
-    resolve(streams);
-  });
+async function getStreams(tmdbId, mediaType, seasonNum, episodeNum) {
+  // Your scraping logic here - real async/await, no Promise-chain gymnastics needed
+  // Return an array of stream objects, or [] on any failure (never throw out of getStreams)
+  return streams;
 }
 
-// Export for React Native compatibility
 if (typeof module !== 'undefined' && module.exports) {
   module.exports = { getStreams };
 } else {
@@ -40,62 +56,58 @@ if (typeof module !== 'undefined' && module.exports) {
 ```
 
 **Parameters:**
-- `tmdbId` (string): TMDB ID
+- `tmdbId` (string|number): TMDB ID (or an `tt`-prefixed IMDb ID - resolve it via TMDB's `/find` endpoint first)
 - `mediaType` (string): "movie" or "tv"
 - `seasonNum` (number): Season number (TV only)
 - `episodeNum` (number): Episode number (TV only)
 
 ### Stream Object Format
-Each stream must return this exact format (see `providers/xprime.js` for real examples):
+Each stream must return this shape (see `src/providers/vidrock.js` or `src/moviebox/index.js` for real examples):
 
 ```javascript
 {
-  name: "XPrime Primebox - 1080p",  // Provider + server name
-  title: "Movie Title (2024)",       // Media title with year
-  url: "https://stream.url",         // Direct stream URL
-  quality: "1080p",                  // Quality (720p, 1080p, 4K, etc.)
-  size: "Unknown",                   // Optional file size
-  headers: WORKING_HEADERS,          // Required headers for playback
-  provider: "xprime"                 // Provider identifier
+  name: "Vidrock",            // Provider name
+  title: "Vidrock 1080p",     // Display title (quality, server, etc.)
+  url: "https://stream.url",  // Direct stream URL (m3u8/mp4/mpd)
+  quality: "1080p",           // "480p" | "720p" | "1080p" | "4K" | "Auto" | "Unknown"
+  size: "1.2 GB",             // Real size when computable, "Unknown" otherwise - never guessed
+  headers: HEADERS,           // Headers required for playback (Referer/Origin/User-Agent as needed)
+  subtitles: []               // Array of {url, lang} - empty array if none
 }
 ```
 
+**Minimum size filter:** every provider in this repo drops streams under 150MB from its return value (see `meetsMinSize`/equivalent in any `src/providers/*.js` file). Only apply this where you have a real per-stream size - never fabricate one just to pass the filter, and never drop a stream whose size you couldn't determine.
+
 ### Headers (When Needed)
-Include headers if the stream requires them for playback. Check `providers/xprime.js` for real WORKING_HEADERS example:
+Include headers if the stream requires them for playback - check any `src/providers/*.js` file for a real working example:
 
 ```javascript
-// From providers/xprime.js - real working headers
-const WORKING_HEADERS = {
-    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
-    'Accept': 'video/webm,video/ogg,video/*;q=0.9,application/ogg;q=0.7,audio/*;q=0.6,*/*;q=0.5',
-    'Accept-Language': 'en-US,en;q=0.9',
-    'Accept-Encoding': 'identity',
-    'Origin': 'https://xprime.tv',
-    'Referer': 'https://xprime.tv/',
-    'Sec-Fetch-Dest': 'video',
-    'Sec-Fetch-Mode': 'no-cors',
-    'Sec-Fetch-Site': 'cross-site',
-    'DNT': '1'
+const HEADERS = {
+  "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
+  "Referer": "https://example.com/",
+  "Origin": "https://example.com"
 };
 ```
 
-### React Native Compatibility
-- **❌ async/await is NOT supported** in this sandboxed environment
-- **✅ Promise-based approach is COMPULSORY** - use `.then()` and `.catch()`
-- Use `fetch()` for HTTP requests (no axios)
+### Runtime Compatibility
+- **✅ Native `async`/`await`** - QuickJS supports it directly, no transpilation needed
+- Use `fetch()` for HTTP requests (no axios) - pass `redirect: "follow"` explicitly, the app's fetch polyfill does not auto-follow redirects otherwise
 - Use `cheerio-without-node-native` for HTML parsing
-- Avoid Node.js modules (fs, path, crypto)
+- Avoid Node.js modules (fs, path, crypto, Buffer)
+- No `console.*` calls in shipped code
 
 ### Testing
-Create a test file to verify your scraper (see existing scrapers for examples):
+Build the provider, then run it directly against the built output:
 
-```javascript
-const { getStreams } = require('./providers/xprime.js');
-
-getStreams('550', 'movie').then(streams => {
+```bash
+node build.js vidrock
+node -e "
+const { getStreams } = require('./providers/vidrock.js');
+getStreams(550, 'movie').then(streams => {
   console.log('Found', streams.length, 'streams');
-  streams.forEach(stream => console.log(`${stream.name}: ${stream.quality}`));
+  streams.forEach(s => console.log(s.name, s.quality, s.size));
 }).catch(console.error);
+"
 ```
 
 ### Manifest Entry
@@ -192,10 +204,10 @@ Add your scraper to `manifest.json` (see existing entries for examples):
 Before submitting, ensure your scraper:
 
 - [ ] **Follows naming conventions** (camelCase, descriptive names)
-- [ ] **Has proper error handling** (try-catch blocks, graceful failures)
-- [ ] **Includes comprehensive logging** (with scraper name prefix)
-- [ ] **Is React Native compatible** (no Node.js modules, uses fetch())
-- [ ] **Has a working test file** (tests movies and TV shows)
+- [ ] **Has proper error handling** (try/catch, graceful failures - `getStreams` returns `[]`, never throws)
+- [ ] **Has zero `console.*` calls** in the shipped/built file
+- [ ] **Is QuickJS compatible** (no Node.js modules, uses native `fetch()`/`async`/`await`)
+- [ ] **Has been tested against the built output** (movies and TV, real TMDB IDs)
 - [ ] **Updates manifest.json** (correct metadata and version)
 - [ ] **Respects rate limits** (reasonable delays between requests)
 - [ ] **Handles edge cases** (missing content, network errors)
@@ -224,23 +236,19 @@ Before submitting, ensure your scraper:
 
 ### Debugging Tips
 
-#### 1. Network Issues
-```javascript
-// Add request/response logging
-console.log(`[YourScraper] Requesting: ${url}`);
-console.log(`[YourScraper] Response status: ${response.status}`);
-console.log(`[YourScraper] Response headers:`, response.headers);
+Do all debugging locally, against the real built file - never ship a `console.*` call. A `console.log` chain that helps you trace a failure locally is fine to add temporarily, but strip it before the final build/commit.
+
+```bash
+node build.js yourscraper
+node -e "
+const { getStreams } = require('./providers/yourscraper.js');
+getStreams(550, 'movie').then(s => console.log(s.length, s));
+"
 ```
 
-#### 2. HTML Parsing Issues
-```javascript
-// Log HTML content for inspection
-console.log(`[YourScraper] HTML length: ${html.length}`);
-console.log(`[YourScraper] Page title: ${$('title').text()}`);
-console.log(`[YourScraper] Found ${$('.target-selector').length} elements`);
-```
+If a request or parse step is failing, add a temporary `console.log` at that one point, run the command above, then remove it once you've found the issue - the app's own cache/logging pipeline gets slower and less predictable the more a shipped provider logs, so nothing should reach `providers/`.
 
-#### 3. URL Resolution Issues
+#### URL Resolution Issues
 ```javascript
 // Validate URLs before returning
 async function validateUrl(url) {
@@ -269,6 +277,14 @@ async function validateUrl(url) {
 - **Multiple download servers** (Resume Cloud, Worker Bot, Instant Download)
 - **Broken link filtering** (report pages, invalid URLs)
 - **Parallel processing** of multiple quality options
+
+#### MovieBox Scraper Features
+- **Official mobile-app API**, not a browser-scraped web frontend (`api3-api6.aoneroom.com`, `wefeed-mobile-bff`)
+- **Guest session bootstrap** - mints a session token via one unauthenticated call, no login required
+- **HMAC-MD5 request signing** matching the real Android client's `x-tr-signature`
+- **Multi-candidate merge** - queries every plausible search match (not just the top title score) and keeps the best stream per quality across all of them, since the best-quality upload isn't reliably the top text match
+- **Real 4K support** - verified genuine (not relabeled) via `ffprobe` reading the actual video container's resolution, not trusting API-reported labels
+- See `src/moviebox/index.js` for the full implementation - a good reference for building a provider around a real app API instead of HTML scraping
 
 ### Advanced Techniques
 
@@ -357,7 +373,7 @@ function extractFromJavaScript(html) {
 #### Getting Help
 
 - Check existing scraper implementations
-- Review error logs carefully
+- Reproduce with `node -e` against a real TMDB ID (see Testing section) - no `console.log` in shipped code, so debug locally before removing logging
 - Test with different content types
 - Ask for help in community discussions
 

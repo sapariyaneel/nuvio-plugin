@@ -1,46 +1,7 @@
 /**
  * cineby - Built from src/providers/cineby.js
- * Generated: 2026-08-17T09:56:23.739Z
+ * Generated: 2026-08-17T12:20:48.163Z
  */
-var __defProp = Object.defineProperty;
-var __defProps = Object.defineProperties;
-var __getOwnPropDescs = Object.getOwnPropertyDescriptors;
-var __getOwnPropSymbols = Object.getOwnPropertySymbols;
-var __hasOwnProp = Object.prototype.hasOwnProperty;
-var __propIsEnum = Object.prototype.propertyIsEnumerable;
-var __defNormalProp = (obj, key, value) => key in obj ? __defProp(obj, key, { enumerable: true, configurable: true, writable: true, value }) : obj[key] = value;
-var __spreadValues = (a, b) => {
-  for (var prop in b || (b = {}))
-    if (__hasOwnProp.call(b, prop))
-      __defNormalProp(a, prop, b[prop]);
-  if (__getOwnPropSymbols)
-    for (var prop of __getOwnPropSymbols(b)) {
-      if (__propIsEnum.call(b, prop))
-        __defNormalProp(a, prop, b[prop]);
-    }
-  return a;
-};
-var __spreadProps = (a, b) => __defProps(a, __getOwnPropDescs(b));
-var __async = (__this, __arguments, generator) => {
-  return new Promise((resolve, reject) => {
-    var fulfilled = (value) => {
-      try {
-        step(generator.next(value));
-      } catch (e) {
-        reject(e);
-      }
-    };
-    var rejected = (value) => {
-      try {
-        step(generator.throw(value));
-      } catch (e) {
-        reject(e);
-      }
-    };
-    var step = (x) => x.done ? resolve(x.value) : Promise.resolve(x.value).then(fulfilled, rejected);
-    step((generator = generator.apply(__this, __arguments)).next());
-  });
-};
 
 // src/providers/cineby.js
 var DOMAINS_URL = "https://raw.githubusercontent.com/sapariyaneel/nuvio-plugin/refs/heads/main/domains.json";
@@ -52,24 +13,20 @@ var HEADERS = {
   "Origin": "https://www.cineby.at"
 };
 var cachedDomains = null;
-function getDomains() {
-  return __async(this, null, function* () {
-    if (cachedDomains)
-      return cachedDomains;
-    try {
-      const resp = yield fetch(DOMAINS_URL, { skipSizeCheck: true });
-      cachedDomains = yield resp.json();
-    } catch (e) {
-      cachedDomains = {};
-    }
+async function getDomains() {
+  if (cachedDomains)
     return cachedDomains;
-  });
+  try {
+    const resp = await fetch(DOMAINS_URL, { skipSizeCheck: true });
+    cachedDomains = await resp.json();
+  } catch (e) {
+    cachedDomains = {};
+  }
+  return cachedDomains;
 }
-function getApiHost() {
-  return __async(this, null, function* () {
-    const d = yield getDomains();
-    return (d["speedracelight"] || d["api.speedracelight.com"] || FALLBACK_API_HOST).replace(/\/+$/, "");
-  });
+async function getApiHost() {
+  const d = await getDomains();
+  return (d["speedracelight"] || d["api.speedracelight.com"] || FALLBACK_API_HOST).replace(/\/+$/, "");
 }
 var SHA256_CONSTANTS = [
   1116352408,
@@ -227,20 +184,18 @@ function decryptSourcesPayload(cipherText, seedStr, mediaId) {
   const body = plain.subarray(MAGIC_BYTES.length);
   return utf8BytesToString(body);
 }
-function getTmdbMeta(tmdbId, mediaType) {
-  return __async(this, null, function* () {
-    const type = mediaType === "tv" ? "tv" : "movie";
-    const url = `https://api.themoviedb.org/3/${type}/${tmdbId}?api_key=${TMDB_API_KEY}&append_to_response=external_ids`;
-    const resp = yield fetch(url, { skipSizeCheck: true });
-    if (!resp.ok)
-      return null;
-    const data = yield resp.json();
-    const title = type === "tv" ? data.name : data.title;
-    const dateStr = type === "tv" ? data.first_air_date : data.release_date;
-    const year = dateStr ? dateStr.slice(0, 4) : "";
-    const imdbId = data.external_ids && data.external_ids.imdb_id || data.imdb_id || "";
-    return { title, year, imdbId };
-  });
+async function getTmdbMeta(tmdbId, mediaType) {
+  const type = mediaType === "tv" ? "tv" : "movie";
+  const url = `https://api.themoviedb.org/3/${type}/${tmdbId}?api_key=${TMDB_API_KEY}&append_to_response=external_ids`;
+  const resp = await fetch(url, { skipSizeCheck: true });
+  if (!resp.ok)
+    return null;
+  const data = await resp.json();
+  const title = type === "tv" ? data.name : data.title;
+  const dateStr = type === "tv" ? data.first_air_date : data.release_date;
+  const year = dateStr ? dateStr.slice(0, 4) : "";
+  const imdbId = data.external_ids && data.external_ids.imdb_id || data.imdb_id || "";
+  return { title, year, imdbId };
 }
 function qualityRank(q) {
   if (!q)
@@ -266,121 +221,113 @@ function meetsMinSize(sizeStr) {
   return parseFloat(m[1]) * (mult[m[2].toUpperCase()] || 0) >= 150;
 }
 var SEGMENT_SAMPLE_SIZE = 5;
-function getRealSegmentSize(url) {
-  return __async(this, null, function* () {
-    try {
-      const head = yield fetch(url, { method: "HEAD", headers: HEADERS, skipSizeCheck: true });
-      const len = head.headers.get("content-length");
-      if (len)
-        return parseInt(len, 10);
-    } catch (e) {
-    }
-    try {
-      const ranged = yield fetch(url, { headers: __spreadProps(__spreadValues({}, HEADERS), { "Range": "bytes=0-1" }), skipSizeCheck: true });
-      const contentRange = ranged.headers.get("content-range");
-      const match = contentRange && contentRange.match(/\/(\d+)$/);
-      if (match)
-        return parseInt(match[1], 10);
-    } catch (e) {
-    }
-    return null;
-  });
+async function getRealSegmentSize(url) {
+  try {
+    const head = await fetch(url, { method: "HEAD", headers: HEADERS, skipSizeCheck: true });
+    const len = head.headers.get("content-length");
+    if (len)
+      return parseInt(len, 10);
+  } catch (e) {
+  }
+  try {
+    const ranged = await fetch(url, { headers: { ...HEADERS, "Range": "bytes=0-1" }, skipSizeCheck: true });
+    const contentRange = ranged.headers.get("content-range");
+    const match = contentRange && contentRange.match(/\/(\d+)$/);
+    if (match)
+      return parseInt(match[1], 10);
+  } catch (e) {
+  }
+  return null;
 }
-function estimateHlsSize(playlistUrl) {
-  return __async(this, null, function* () {
-    try {
-      const resp = yield fetch(playlistUrl, { headers: HEADERS, skipSizeCheck: true });
-      if (!resp.ok)
-        return "Unknown";
-      const text = yield resp.text();
-      const segmentUrls = text.split("\n").map((l) => l.trim()).filter((l) => l.startsWith("http"));
-      if (!segmentUrls.length)
-        return "Unknown";
-      const sampleUrls = segmentUrls.filter((_, i) => i % Math.ceil(segmentUrls.length / SEGMENT_SAMPLE_SIZE) === 0).slice(0, SEGMENT_SAMPLE_SIZE);
-      const lengths = yield Promise.all(sampleUrls.map(getRealSegmentSize));
-      const validLengths = lengths.filter((l) => l && l > 0);
-      if (!validLengths.length)
-        return "Unknown";
-      const avgSegmentBytes = validLengths.reduce((a, b) => a + b, 0) / validLengths.length;
-      const estimatedTotal = avgSegmentBytes * segmentUrls.length;
-      return formatBytes(estimatedTotal);
-    } catch (e) {
+async function estimateHlsSize(playlistUrl) {
+  try {
+    const resp = await fetch(playlistUrl, { headers: HEADERS, skipSizeCheck: true });
+    if (!resp.ok)
       return "Unknown";
-    }
-  });
+    const text = await resp.text();
+    const segmentUrls = text.split("\n").map((l) => l.trim()).filter((l) => l.startsWith("http"));
+    if (!segmentUrls.length)
+      return "Unknown";
+    const sampleUrls = segmentUrls.filter((_, i) => i % Math.ceil(segmentUrls.length / SEGMENT_SAMPLE_SIZE) === 0).slice(0, SEGMENT_SAMPLE_SIZE);
+    const lengths = await Promise.all(sampleUrls.map(getRealSegmentSize));
+    const validLengths = lengths.filter((l) => l && l > 0);
+    if (!validLengths.length)
+      return "Unknown";
+    const avgSegmentBytes = validLengths.reduce((a, b) => a + b, 0) / validLengths.length;
+    const estimatedTotal = avgSegmentBytes * segmentUrls.length;
+    return formatBytes(estimatedTotal);
+  } catch (e) {
+    return "Unknown";
+  }
 }
-function getStreams(tmdbId, mediaType, season, episode) {
-  return __async(this, null, function* () {
-    try {
-      let numericTmdbId = tmdbId;
-      if (typeof tmdbId === "string" && tmdbId.trim().toLowerCase().startsWith("tt")) {
-        const findUrl = `https://api.themoviedb.org/3/find/${tmdbId}?api_key=${TMDB_API_KEY}&external_source=imdb_id`;
-        const findData = yield (yield fetch(findUrl, { skipSizeCheck: true })).json();
-        const results = mediaType === "tv" ? findData.tv_results : findData.movie_results;
-        numericTmdbId = results && results.length ? results[0].id : null;
-        if (!numericTmdbId)
-          return [];
-      }
-      numericTmdbId = parseInt(numericTmdbId, 10);
+async function getStreams(tmdbId, mediaType, season, episode) {
+  try {
+    let numericTmdbId = tmdbId;
+    if (typeof tmdbId === "string" && tmdbId.trim().toLowerCase().startsWith("tt")) {
+      const findUrl = `https://api.themoviedb.org/3/find/${tmdbId}?api_key=${TMDB_API_KEY}&external_source=imdb_id`;
+      const findData = await (await fetch(findUrl, { skipSizeCheck: true })).json();
+      const results = mediaType === "tv" ? findData.tv_results : findData.movie_results;
+      numericTmdbId = results && results.length ? results[0].id : null;
       if (!numericTmdbId)
         return [];
-      const meta = yield getTmdbMeta(numericTmdbId, mediaType);
-      if (!meta || !meta.title)
-        return [];
-      const apiHost = yield getApiHost();
-      const isTv = mediaType === "tv";
-      const seedResp = yield fetch(`${apiHost}/seed?mediaId=${numericTmdbId}`, { headers: HEADERS, skipSizeCheck: true });
-      if (!seedResp.ok)
-        return [];
-      const seedData = yield seedResp.json().catch(() => null);
-      if (!seedData || !seedData.seed)
-        return [];
-      const params = new URLSearchParams({
-        title: meta.title,
-        mediaType: isTv ? "tv" : "movie",
-        year: meta.year || "",
-        episodeId: String(isTv ? episode || 1 : 1),
-        seasonId: String(isTv ? season || 1 : 1),
-        tmdbId: String(numericTmdbId),
-        imdbId: meta.imdbId || "",
-        enc: "2",
-        seed: seedData.seed
-      });
-      const sourcesResp = yield fetch(`${apiHost}/cdn/sources-with-title?${params.toString()}`, { headers: HEADERS, skipSizeCheck: true });
-      if (!sourcesResp.ok)
-        return [];
-      const cipherText = yield sourcesResp.text();
-      let payload;
-      try {
-        const plainText = decryptSourcesPayload(cipherText, seedData.seed, numericTmdbId);
-        payload = JSON.parse(plainText);
-      } catch (e) {
-        console.error("[Cineby] decrypt failed:", e.message);
-        return [];
-      }
-      const sources = payload && payload.sources || [];
-      if (!sources.length)
-        return [];
-      const subtitles = (payload && payload.subtitles || []).filter((s) => s && s.url).map((s) => ({ url: s.url, lang: s.lang || s.language || "Unknown" }));
-      const streams = yield Promise.all(sources.filter((s) => s && s.url).map((s) => __async(this, null, function* () {
-        const size = yield estimateHlsSize(s.url);
-        return {
-          url: s.url,
-          quality: s.quality || "Unknown",
-          title: `Cineby ${s.quality || "Unknown"}`,
-          name: "Cineby",
-          size,
-          headers: HEADERS,
-          subtitles
-        };
-      })));
-      streams.sort((a, b) => qualityRank(b.quality) - qualityRank(a.quality));
-      return streams.filter((s) => meetsMinSize(s.size));
+    }
+    numericTmdbId = parseInt(numericTmdbId, 10);
+    if (!numericTmdbId)
+      return [];
+    const meta = await getTmdbMeta(numericTmdbId, mediaType);
+    if (!meta || !meta.title)
+      return [];
+    const apiHost = await getApiHost();
+    const isTv = mediaType === "tv";
+    const seedResp = await fetch(`${apiHost}/seed?mediaId=${numericTmdbId}`, { headers: HEADERS, skipSizeCheck: true });
+    if (!seedResp.ok)
+      return [];
+    const seedData = await seedResp.json().catch(() => null);
+    if (!seedData || !seedData.seed)
+      return [];
+    const params = new URLSearchParams({
+      title: meta.title,
+      mediaType: isTv ? "tv" : "movie",
+      year: meta.year || "",
+      episodeId: String(isTv ? episode || 1 : 1),
+      seasonId: String(isTv ? season || 1 : 1),
+      tmdbId: String(numericTmdbId),
+      imdbId: meta.imdbId || "",
+      enc: "2",
+      seed: seedData.seed
+    });
+    const sourcesResp = await fetch(`${apiHost}/cdn/sources-with-title?${params.toString()}`, { headers: HEADERS, skipSizeCheck: true });
+    if (!sourcesResp.ok)
+      return [];
+    const cipherText = await sourcesResp.text();
+    let payload;
+    try {
+      const plainText = decryptSourcesPayload(cipherText, seedData.seed, numericTmdbId);
+      payload = JSON.parse(plainText);
     } catch (e) {
-      console.error("[Cineby]", e);
       return [];
     }
-  });
+    const sources = payload && payload.sources || [];
+    if (!sources.length)
+      return [];
+    const subtitles = (payload && payload.subtitles || []).filter((s) => s && s.url).map((s) => ({ url: s.url, lang: s.lang || s.language || "Unknown" }));
+    const streams = await Promise.all(sources.filter((s) => s && s.url).map(async (s) => {
+      const size = await estimateHlsSize(s.url);
+      return {
+        url: s.url,
+        quality: s.quality || "Unknown",
+        title: `Cineby ${s.quality || "Unknown"}`,
+        name: "Cineby",
+        size,
+        headers: HEADERS,
+        subtitles
+      };
+    }));
+    streams.sort((a, b) => qualityRank(b.quality) - qualityRank(a.quality));
+    return streams.filter((s) => meetsMinSize(s.size));
+  } catch (e) {
+    return [];
+  }
 }
 if (typeof module !== "undefined" && module.exports) {
   module.exports = { getStreams };

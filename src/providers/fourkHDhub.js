@@ -297,7 +297,6 @@ async function getStreams(tmdbId, mediaType, season, episode) {
 
     return streams.filter(s => meetsMinSize(s.size));
   } catch (e) {
-    console.error("[4KHDHUB]", e);
     return [];
   }
 }

@@ -572,7 +572,6 @@ async function getStreams(tmdbId, mediaType, season, episode) {
       }))
       .filter(s => meetsMinSize(s.size));
   } catch (e) {
-    console.error("[HDhub4u]", e);
     return [];
   }
 }

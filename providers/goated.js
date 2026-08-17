@@ -1,27 +1,7 @@
 /**
  * goated - Built from src/providers/goated.js
- * Generated: 2026-08-17T09:56:23.775Z
+ * Generated: 2026-08-17T12:20:48.201Z
  */
-var __async = (__this, __arguments, generator) => {
-  return new Promise((resolve, reject) => {
-    var fulfilled = (value) => {
-      try {
-        step(generator.next(value));
-      } catch (e) {
-        reject(e);
-      }
-    };
-    var rejected = (value) => {
-      try {
-        step(generator.throw(value));
-      } catch (e) {
-        reject(e);
-      }
-    };
-    var step = (x) => x.done ? resolve(x.value) : Promise.resolve(x.value).then(fulfilled, rejected);
-    step((generator = generator.apply(__this, __arguments)).next());
-  });
-};
 
 // src/providers/goated.js
 var TMDB_API_KEY = "1865f43a0549ca50d341dd9ab8b29f49";
@@ -33,24 +13,20 @@ var HEADERS = {
   "Origin": "https://goated.cx"
 };
 var cachedDomains = null;
-function getDomains() {
-  return __async(this, null, function* () {
-    if (cachedDomains)
-      return cachedDomains;
-    try {
-      const resp = yield fetch(DOMAINS_URL, { skipSizeCheck: true });
-      cachedDomains = yield resp.json();
-    } catch (e) {
-      cachedDomains = {};
-    }
+async function getDomains() {
+  if (cachedDomains)
     return cachedDomains;
-  });
+  try {
+    const resp = await fetch(DOMAINS_URL, { skipSizeCheck: true });
+    cachedDomains = await resp.json();
+  } catch (e) {
+    cachedDomains = {};
+  }
+  return cachedDomains;
 }
-function getApiHost() {
-  return __async(this, null, function* () {
-    const d = yield getDomains();
-    return (d["reallyfast"] || d["api.reallyfast.xyz"] || FALLBACK_API_HOST).replace(/\/+$/, "");
-  });
+async function getApiHost() {
+  const d = await getDomains();
+  return (d["reallyfast"] || d["api.reallyfast.xyz"] || FALLBACK_API_HOST).replace(/\/+$/, "");
 }
 var SHA256_K = [
   1116352408,
@@ -196,35 +172,31 @@ function sha256Hex(input) {
     hex += ("00000000" + p.toString(16)).slice(-8);
   return hex;
 }
-function solveProofOfWork(apiHost) {
-  return __async(this, null, function* () {
-    const resp = yield fetch(`${apiHost}/api/challenge`, { skipSizeCheck: true });
-    if (!resp.ok)
-      throw new Error("failed to fetch PoW challenge");
-    const { challenge, difficulty } = yield resp.json();
-    const target = "0".repeat(difficulty);
-    for (let nonce = 0; nonce < 5e6; nonce++) {
-      const hash = sha256Hex(challenge + nonce);
-      if (hash.startsWith(target))
-        return { challenge, nonce: String(nonce) };
-    }
-    throw new Error("PoW solve timed out");
-  });
+async function solveProofOfWork(apiHost) {
+  const resp = await fetch(`${apiHost}/api/challenge`, { skipSizeCheck: true });
+  if (!resp.ok)
+    throw new Error("failed to fetch PoW challenge");
+  const { challenge, difficulty } = await resp.json();
+  const target = "0".repeat(difficulty);
+  for (let nonce = 0; nonce < 5e6; nonce++) {
+    const hash = sha256Hex(challenge + nonce);
+    if (hash.startsWith(target))
+      return { challenge, nonce: String(nonce) };
+  }
+  throw new Error("PoW solve timed out");
 }
-function getTmdbRuntimeSeconds(tmdbId, mediaType, season, episode) {
-  return __async(this, null, function* () {
-    try {
-      const url = mediaType === "tv" ? `https://api.themoviedb.org/3/tv/${tmdbId}/season/${season || 1}/episode/${episode || 1}?api_key=${TMDB_API_KEY}` : `https://api.themoviedb.org/3/movie/${tmdbId}?api_key=${TMDB_API_KEY}`;
-      const resp = yield fetch(url, { skipSizeCheck: true });
-      if (!resp.ok)
-        return null;
-      const data = yield resp.json();
-      const minutes = data.runtime;
-      return minutes ? minutes * 60 : null;
-    } catch (e) {
+async function getTmdbRuntimeSeconds(tmdbId, mediaType, season, episode) {
+  try {
+    const url = mediaType === "tv" ? `https://api.themoviedb.org/3/tv/${tmdbId}/season/${season || 1}/episode/${episode || 1}?api_key=${TMDB_API_KEY}` : `https://api.themoviedb.org/3/movie/${tmdbId}?api_key=${TMDB_API_KEY}`;
+    const resp = await fetch(url, { skipSizeCheck: true });
+    if (!resp.ok)
       return null;
-    }
-  });
+    const data = await resp.json();
+    const minutes = data.runtime;
+    return minutes ? minutes * 60 : null;
+  } catch (e) {
+    return null;
+  }
 }
 function formatBytes(bytes) {
   if (!bytes)
@@ -274,18 +246,16 @@ function parseMasterPlaylist(text, baseUrl) {
   }
   return { variants, defaultAudioUrl };
 }
-function getAudioBitrateBps(audioPlaylistUrl) {
-  return __async(this, null, function* () {
-    if (!audioPlaylistUrl)
-      return 0;
-    try {
-      const text = yield (yield fetch(audioPlaylistUrl, { skipSizeCheck: true })).text();
-      const match = text.match(/#EXT-X-BITRATE:(\d+)/);
-      return match ? parseInt(match[1], 10) * 1e3 : 0;
-    } catch (e) {
-      return 0;
-    }
-  });
+async function getAudioBitrateBps(audioPlaylistUrl) {
+  if (!audioPlaylistUrl)
+    return 0;
+  try {
+    const text = await (await fetch(audioPlaylistUrl, { skipSizeCheck: true })).text();
+    const match = text.match(/#EXT-X-BITRATE:(\d+)/);
+    return match ? parseInt(match[1], 10) * 1e3 : 0;
+  } catch (e) {
+    return 0;
+  }
 }
 function qualityLabelFromHeight(height) {
   if (height >= 2e3)
@@ -294,101 +264,98 @@ function qualityLabelFromHeight(height) {
     return "Unknown";
   return `${height}p`;
 }
-function getStreams(tmdbId, mediaType, season, episode) {
-  return __async(this, null, function* () {
-    try {
-      let numericTmdbId = tmdbId;
-      if (typeof tmdbId === "string" && tmdbId.trim().toLowerCase().startsWith("tt")) {
-        const findUrl = `https://api.themoviedb.org/3/find/${tmdbId}?api_key=${TMDB_API_KEY}&external_source=imdb_id`;
-        const findData = yield (yield fetch(findUrl, { skipSizeCheck: true })).json();
-        const results = mediaType === "tv" ? findData.tv_results : findData.movie_results;
-        numericTmdbId = results && results.length ? results[0].id : null;
-        if (!numericTmdbId)
-          return [];
-      }
-      numericTmdbId = parseInt(numericTmdbId, 10);
+async function getStreams(tmdbId, mediaType, season, episode) {
+  try {
+    let numericTmdbId = tmdbId;
+    if (typeof tmdbId === "string" && tmdbId.trim().toLowerCase().startsWith("tt")) {
+      const findUrl = `https://api.themoviedb.org/3/find/${tmdbId}?api_key=${TMDB_API_KEY}&external_source=imdb_id`;
+      const findData = await (await fetch(findUrl, { skipSizeCheck: true })).json();
+      const results = mediaType === "tv" ? findData.tv_results : findData.movie_results;
+      numericTmdbId = results && results.length ? results[0].id : null;
       if (!numericTmdbId)
         return [];
-      const apiHost = yield getApiHost();
-      const isTv = mediaType === "tv";
-      const resolvePow = yield solveProofOfWork(apiHost);
-      const resolveBody = {
+    }
+    numericTmdbId = parseInt(numericTmdbId, 10);
+    if (!numericTmdbId)
+      return [];
+    const apiHost = await getApiHost();
+    const isTv = mediaType === "tv";
+    const resolvePow = await solveProofOfWork(apiHost);
+    const resolveBody = {
+      mediaType: isTv ? "tv" : "movie",
+      id: String(numericTmdbId),
+      challenge: resolvePow.challenge,
+      nonce: resolvePow.nonce
+    };
+    if (isTv) {
+      resolveBody.season = season || 1;
+      resolveBody.episode = episode || 1;
+    }
+    const resolveResp = await fetch(`${apiHost}/api/resolve`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(resolveBody),
+      skipSizeCheck: true
+    });
+    if (!resolveResp.ok)
+      return [];
+    const resolveData = await resolveResp.json().catch(() => null);
+    if (!resolveData || !resolveData.url)
+      return [];
+    const playlistResp = await fetch(resolveData.url, { skipSizeCheck: true });
+    if (!playlistResp.ok)
+      return [];
+    const playlistText = await playlistResp.text();
+    const { variants, defaultAudioUrl } = parseMasterPlaylist(playlistText, resolveData.url);
+    if (!variants.length)
+      return [];
+    const topVariant = variants.slice().sort((a, b) => b.height - a.height)[0];
+    const [runtimeSeconds, audioBitrateBps] = await Promise.all([
+      getTmdbRuntimeSeconds(numericTmdbId, mediaType, season, episode),
+      getAudioBitrateBps(defaultAudioUrl)
+    ]);
+    let subtitles = [];
+    try {
+      const subPow = await solveProofOfWork(apiHost);
+      const subBody = {
         mediaType: isTv ? "tv" : "movie",
         id: String(numericTmdbId),
-        challenge: resolvePow.challenge,
-        nonce: resolvePow.nonce
+        challenge: subPow.challenge,
+        nonce: subPow.nonce
       };
       if (isTv) {
-        resolveBody.season = season || 1;
-        resolveBody.episode = episode || 1;
+        subBody.season = season || 1;
+        subBody.episode = episode || 1;
       }
-      const resolveResp = yield fetch(`${apiHost}/api/resolve`, {
+      const subResp = await fetch(`${apiHost}/api/subtitles`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(resolveBody),
+        body: JSON.stringify(subBody),
         skipSizeCheck: true
       });
-      if (!resolveResp.ok)
-        return [];
-      const resolveData = yield resolveResp.json().catch(() => null);
-      if (!resolveData || !resolveData.url)
-        return [];
-      const playlistResp = yield fetch(resolveData.url, { skipSizeCheck: true });
-      if (!playlistResp.ok)
-        return [];
-      const playlistText = yield playlistResp.text();
-      const { variants, defaultAudioUrl } = parseMasterPlaylist(playlistText, resolveData.url);
-      if (!variants.length)
-        return [];
-      const topVariant = variants.slice().sort((a, b) => b.height - a.height)[0];
-      const [runtimeSeconds, audioBitrateBps] = yield Promise.all([
-        getTmdbRuntimeSeconds(numericTmdbId, mediaType, season, episode),
-        getAudioBitrateBps(defaultAudioUrl)
-      ]);
-      let subtitles = [];
-      try {
-        const subPow = yield solveProofOfWork(apiHost);
-        const subBody = {
-          mediaType: isTv ? "tv" : "movie",
-          id: String(numericTmdbId),
-          challenge: subPow.challenge,
-          nonce: subPow.nonce
-        };
-        if (isTv) {
-          subBody.season = season || 1;
-          subBody.episode = episode || 1;
-        }
-        const subResp = yield fetch(`${apiHost}/api/subtitles`, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify(subBody),
-          skipSizeCheck: true
-        });
-        if (subResp.ok) {
-          const subData = yield subResp.json().catch(() => null);
-          subtitles = (subData && subData.subtitles || []).filter((s) => s && s.url).map((s) => ({ url: s.url, lang: s.label || s.language || "Unknown" }));
-        }
-      } catch (e) {
+      if (subResp.ok) {
+        const subData = await subResp.json().catch(() => null);
+        subtitles = (subData && subData.subtitles || []).filter((s) => s && s.url).map((s) => ({ url: s.url, lang: s.label || s.language || "Unknown" }));
       }
-      const totalBitrateBps = topVariant.bandwidth + audioBitrateBps;
-      const quality = qualityLabelFromHeight(topVariant.height);
-      const size = runtimeSeconds ? formatBytes(totalBitrateBps * runtimeSeconds / 8) : "Unknown";
-      if (!meetsMinSize(size))
-        return [];
-      return [{
-        url: resolveData.url,
-        quality,
-        title: `Goated ${quality} (Adaptive)`,
-        name: "Goated",
-        size,
-        headers: HEADERS,
-        subtitles
-      }];
     } catch (e) {
-      console.error("[Goated]", e);
-      return [];
     }
-  });
+    const totalBitrateBps = topVariant.bandwidth + audioBitrateBps;
+    const quality = qualityLabelFromHeight(topVariant.height);
+    const size = runtimeSeconds ? formatBytes(totalBitrateBps * runtimeSeconds / 8) : "Unknown";
+    if (!meetsMinSize(size))
+      return [];
+    return [{
+      url: resolveData.url,
+      quality,
+      title: `Goated ${quality} (Adaptive)`,
+      name: "Goated",
+      size,
+      headers: HEADERS,
+      subtitles
+    }];
+  } catch (e) {
+    return [];
+  }
 }
 if (typeof module !== "undefined" && module.exports) {
   module.exports = { getStreams };

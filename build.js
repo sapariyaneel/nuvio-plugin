@@ -63,7 +63,7 @@ async function buildProvider(providerName) {
             outfile: outFile,
             format: 'cjs',              // CommonJS for module.exports compatibility
             platform: 'neutral',        // Works in both browser and node-like environments
-            target: 'es2016',           // Transpile async/await to generators for Hermes
+            target: 'es2020',           // QuickJS supports native async/await, no downleveling needed
             minify: false,              // Keep readable for debugging
             sourcemap: false,
             external: EXTERNAL_MODULES,
@@ -104,7 +104,7 @@ async function transpileSingleFile(filename) {
     try {
         const result = await esbuild.transform(originalContent, {
             loader: 'js',
-            target: 'es2016',           // Transpile async/await to generators
+            target: 'es2020',           // QuickJS supports native async/await, no downleveling needed
             format: 'cjs'
         });
 

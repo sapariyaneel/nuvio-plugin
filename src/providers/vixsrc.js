@@ -315,7 +315,6 @@ async function getStreams(tmdbId, mediaType, season, episode) {
       subtitles: resolvedSubtitles.filter(Boolean)
     }];
   } catch (e) {
-    console.error("[VixSrc]", e);
     return [];
   }
 }

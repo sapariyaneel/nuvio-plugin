@@ -402,7 +402,6 @@ async function getStreams(tmdbId, mediaType, season, episode) {
     streams.sort((a, b) => qualityRank(b.quality) - qualityRank(a.quality));
     return streams.filter(s => meetsMinSize(s.size));
   } catch (e) {
-    console.error("[Vidrock]", e);
     return [];
   }
 }

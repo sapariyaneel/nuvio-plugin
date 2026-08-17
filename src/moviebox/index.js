@@ -364,7 +364,6 @@ async function getStreams(tmdbId, mediaType, season, episode) {
     merged.sort((a, b) => qualityRank(b.quality) - qualityRank(a.quality));
     return merged;
   } catch (e) {
-    console.error("[MovieBox]", e);
     return [];
   }
 }
