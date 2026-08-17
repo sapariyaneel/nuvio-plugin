@@ -361,37 +361,31 @@ async function getStreams(tmdbId, mediaType, season, episode) {
     const ep = isTv ? episode || 1 : 0;
 
     // Duplicate listings for the same title/year are common (e.g. multiple independently-
-    // uploaded "Obsession (2026)" entries), and the search API doesn't return them in a stable
-    // order, so a title/year match with no encoded resource (or a weaker quality set) shouldn't
-    // stop the lookup at the first hit - merge streams across every top-scoring candidate and
-    // return the best set, deduped by resolution.
-    const topScore = candidates[0].score;
-    const tied = candidates.filter((c) => c.score === topScore).slice(0, 5);
-    const merged = [];
-    const seenQuality = new Set();
-    for (const candidate of tied) {
+    // uploaded "Obsession (2026)" entries), the search API doesn't return them in a stable
+    // order, and - confirmed live - the best-quality upload is not reliably the top title-match:
+    // a dub-tagged duplicate ("Obsession [Hindi]") carried a real 2160p encode while the
+    // plain-titled "Obsession" duplicate topped out at 1080p. Title/year score only orders
+    // which candidates are plausible at all (guards against matching an unrelated show); it must
+    // not gate which ones get checked for streams, or the actual best quality can be silently
+    // dropped. Query every plausible candidate and keep the best stream per quality across all
+    // of them.
+    const seenQuality = new Map();
+    for (const candidate of candidates.slice(0, 8)) {
       const streams = await getStreamsForSubject(session, candidate.subjectId, se, ep);
       for (const stream of streams) {
-        if (seenQuality.has(stream.quality)) continue;
-        seenQuality.add(stream.quality);
-        merged.push(stream);
+        const existing = seenQuality.get(stream.quality);
+        const sizeOf = (s) => parseFloat(s.size) || 0;
+        if (!existing || sizeOf(stream) > sizeOf(existing)) {
+          seenQuality.set(stream.quality, stream);
+        }
       }
     }
-    if (merged.length) {
-      merged.sort((a, b) => {
-        const rank = (q) => (q === "4K" ? 2160 : parseInt(q, 10) || 0);
-        return rank(b.quality) - rank(a.quality);
-      });
-      return merged;
-    }
-
-    // No luck among the top-scoring tier - fall through to the next-best candidates one at a
-    // time rather than giving up (a lower title-match score can still be the right, working entry).
-    for (const candidate of candidates.slice(tied.length, 6)) {
-      const streams = await getStreamsForSubject(session, candidate.subjectId, se, ep);
-      if (streams.length) return streams;
-    }
-    return [];
+    const merged = Array.from(seenQuality.values());
+    merged.sort((a, b) => {
+      const rank = (q) => (q === "4K" ? 2160 : parseInt(q, 10) || 0);
+      return rank(b.quality) - rank(a.quality);
+    });
+    return merged;
   } catch (e) {
     console.error("[MovieBox]", e);
     return [];

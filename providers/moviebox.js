@@ -1,6 +1,6 @@
 /**
  * moviebox - Built from src/moviebox/
- * Generated: 2026-08-17T08:31:04.903Z
+ * Generated: 2026-08-17T09:03:21.332Z
  */
 var __defProp = Object.defineProperty;
 var __defProps = Object.defineProperties;
@@ -363,32 +363,23 @@ function getStreams(tmdbId, mediaType, season, episode) {
       const isTv = mediaType === "tv";
       const se = isTv ? season || 1 : 0;
       const ep = isTv ? episode || 1 : 0;
-      const topScore = candidates[0].score;
-      const tied = candidates.filter((c) => c.score === topScore).slice(0, 5);
-      const merged = [];
-      const seenQuality = /* @__PURE__ */ new Set();
-      for (const candidate of tied) {
+      const seenQuality = /* @__PURE__ */ new Map();
+      for (const candidate of candidates.slice(0, 8)) {
         const streams = yield getStreamsForSubject(session, candidate.subjectId, se, ep);
         for (const stream of streams) {
-          if (seenQuality.has(stream.quality))
-            continue;
-          seenQuality.add(stream.quality);
-          merged.push(stream);
+          const existing = seenQuality.get(stream.quality);
+          const sizeOf = (s) => parseFloat(s.size) || 0;
+          if (!existing || sizeOf(stream) > sizeOf(existing)) {
+            seenQuality.set(stream.quality, stream);
+          }
         }
       }
-      if (merged.length) {
-        merged.sort((a, b) => {
-          const rank = (q) => q === "4K" ? 2160 : parseInt(q, 10) || 0;
-          return rank(b.quality) - rank(a.quality);
-        });
-        return merged;
-      }
-      for (const candidate of candidates.slice(tied.length, 6)) {
-        const streams = yield getStreamsForSubject(session, candidate.subjectId, se, ep);
-        if (streams.length)
-          return streams;
-      }
-      return [];
+      const merged = Array.from(seenQuality.values());
+      merged.sort((a, b) => {
+        const rank = (q) => q === "4K" ? 2160 : parseInt(q, 10) || 0;
+        return rank(b.quality) - rank(a.quality);
+      });
+      return merged;
     } catch (e) {
       console.error("[MovieBox]", e);
       return [];
