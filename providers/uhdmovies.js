@@ -1,6 +1,6 @@
 /**
  * uhdmovies - Built from src/providers/uhdmovies.js
- * Generated: 2026-08-13T11:33:57.488Z
+ * Generated: 2026-08-17T09:56:23.805Z
  */
 var __defProp = Object.defineProperty;
 var __defProps = Object.defineProperties;
@@ -41,15 +41,17 @@ var __async = (__this, __arguments, generator) => {
     step((generator = generator.apply(__this, __arguments)).next());
   });
 };
-const DOMAINS_URL = "https://raw.githubusercontent.com/sapariyaneel/nuvio-plugin/refs/heads/main/domains.json";
-const FALLBACK_BASE_URL = "https://uhdmovies.autos";
-const TMDB_API_KEY = "1865f43a0549ca50d341dd9ab8b29f49";
-const HEADERS = {
+
+// src/providers/uhdmovies.js
+var DOMAINS_URL = "https://raw.githubusercontent.com/sapariyaneel/nuvio-plugin/refs/heads/main/domains.json";
+var FALLBACK_BASE_URL = "https://uhdmovies.autos";
+var TMDB_API_KEY = "1865f43a0549ca50d341dd9ab8b29f49";
+var HEADERS = {
   "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36",
   "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8",
   "Accept-Language": "en-US,en;q=0.9"
 };
-let cachedDomains = null;
+var cachedDomains = null;
 function getDomains() {
   return __async(this, null, function* () {
     if (cachedDomains)
@@ -124,6 +126,13 @@ function formatBytes(bytes) {
   const sizes = ["Bytes", "KB", "MB", "GB", "TB"];
   const i = Math.floor(Math.log(bytes) / Math.log(k));
   return `${parseFloat((bytes / Math.pow(k, i)).toFixed(1))} ${sizes[i]}`;
+}
+function meetsMinSize(sizeStr) {
+  const m = String(sizeStr || "").match(/^([\d.]+)\s*(Bytes|KB|MB|GB|TB)$/i);
+  if (!m)
+    return true;
+  const mult = { BYTES: 1 / 1048576, KB: 1 / 1024, MB: 1, GB: 1024, TB: 1048576 };
+  return parseFloat(m[1]) * (mult[m[2].toUpperCase()] || 0) >= 150;
 }
 function cleanTitle(title) {
   const name = (title || "").replace(/\.[a-zA-Z0-9]{2,4}$/, "");
@@ -536,7 +545,7 @@ function getStreams(tmdbId, mediaType, season, episode) {
         // s.size is already a formatted string from the extractor above - re-running it through
         // formatBytes() treats it as a raw byte count and produces NaN.
         size: s.size || ""
-      }));
+      })).filter((s) => meetsMinSize(s.size));
     } catch (e) {
       console.error("[UHDmovies]", e);
       return [];

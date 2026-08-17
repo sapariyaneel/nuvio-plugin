@@ -358,7 +358,9 @@ async function getStreams(tmdbId, mediaType, season, episode) {
         }
       }
     }
-    const merged = Array.from(seenQuality.values()).map(({ isBundle, sizeBytes, ...rest }) => rest);
+    const merged = Array.from(seenQuality.values())
+      .filter((s) => s.sizeBytes >= 150 * 1024 * 1024)
+      .map(({ isBundle, sizeBytes, ...rest }) => rest);
     merged.sort((a, b) => qualityRank(b.quality) - qualityRank(a.quality));
     return merged;
   } catch (e) {

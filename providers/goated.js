@@ -1,3 +1,7 @@
+/**
+ * goated - Built from src/providers/goated.js
+ * Generated: 2026-08-17T09:56:23.775Z
+ */
 var __async = (__this, __arguments, generator) => {
   return new Promise((resolve, reject) => {
     var fulfilled = (value) => {
@@ -18,15 +22,17 @@ var __async = (__this, __arguments, generator) => {
     step((generator = generator.apply(__this, __arguments)).next());
   });
 };
-const TMDB_API_KEY = "1865f43a0549ca50d341dd9ab8b29f49";
-const DOMAINS_URL = "https://raw.githubusercontent.com/sapariyaneel/nuvio-plugin/refs/heads/main/domains.json";
-const FALLBACK_API_HOST = "https://api.reallyfast.xyz";
-const HEADERS = {
+
+// src/providers/goated.js
+var TMDB_API_KEY = "1865f43a0549ca50d341dd9ab8b29f49";
+var DOMAINS_URL = "https://raw.githubusercontent.com/sapariyaneel/nuvio-plugin/refs/heads/main/domains.json";
+var FALLBACK_API_HOST = "https://api.reallyfast.xyz";
+var HEADERS = {
   "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36",
   "Referer": "https://goated.cx/",
   "Origin": "https://goated.cx"
 };
-let cachedDomains = null;
+var cachedDomains = null;
 function getDomains() {
   return __async(this, null, function* () {
     if (cachedDomains)
@@ -46,7 +52,7 @@ function getApiHost() {
     return (d["reallyfast"] || d["api.reallyfast.xyz"] || FALLBACK_API_HOST).replace(/\/+$/, "");
   });
 }
-const SHA256_K = [
+var SHA256_K = [
   1116352408,
   1899447441,
   3049323471,
@@ -228,6 +234,13 @@ function formatBytes(bytes) {
   const i = Math.floor(Math.log(bytes) / Math.log(k));
   return `${parseFloat((bytes / Math.pow(k, i)).toFixed(2))} ${sizes[i]}`;
 }
+function meetsMinSize(sizeStr) {
+  const m = String(sizeStr || "").match(/^([\d.]+)\s*(Bytes|KB|MB|GB|TB)$/i);
+  if (!m)
+    return true;
+  const mult = { BYTES: 1 / 1048576, KB: 1 / 1024, MB: 1, GB: 1024, TB: 1048576 };
+  return parseFloat(m[1]) * (mult[m[2].toUpperCase()] || 0) >= 150;
+}
 function resolveUrl(urlLine, baseUrl) {
   try {
     return new URL(urlLine, baseUrl).toString();
@@ -359,12 +372,15 @@ function getStreams(tmdbId, mediaType, season, episode) {
       }
       const totalBitrateBps = topVariant.bandwidth + audioBitrateBps;
       const quality = qualityLabelFromHeight(topVariant.height);
+      const size = runtimeSeconds ? formatBytes(totalBitrateBps * runtimeSeconds / 8) : "Unknown";
+      if (!meetsMinSize(size))
+        return [];
       return [{
         url: resolveData.url,
         quality,
         title: `Goated ${quality} (Adaptive)`,
         name: "Goated",
-        size: runtimeSeconds ? formatBytes(totalBitrateBps * runtimeSeconds / 8) : "Unknown",
+        size,
         headers: HEADERS,
         subtitles
       }];

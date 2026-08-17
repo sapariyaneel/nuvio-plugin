@@ -1,6 +1,6 @@
 /**
  * moviebox - Built from src/moviebox/
- * Generated: 2026-08-17T09:36:47.001Z
+ * Generated: 2026-08-17T09:56:36.296Z
  */
 var __defProp = Object.defineProperty;
 var __defProps = Object.defineProperties;
@@ -403,7 +403,7 @@ function getStreams(tmdbId, mediaType, season, episode) {
           }
         }
       }
-      const merged = Array.from(seenQuality.values()).map((_a) => {
+      const merged = Array.from(seenQuality.values()).filter((s) => s.sizeBytes >= 150 * 1024 * 1024).map((_a) => {
         var _b = _a, { isBundle, sizeBytes } = _b, rest = __objRest(_b, ["isBundle", "sizeBytes"]);
         return rest;
       });

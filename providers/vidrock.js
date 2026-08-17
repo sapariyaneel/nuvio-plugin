@@ -1,3 +1,7 @@
+/**
+ * vidrock - Built from src/providers/vidrock.js
+ * Generated: 2026-08-17T09:56:23.813Z
+ */
 var __async = (__this, __arguments, generator) => {
   return new Promise((resolve, reject) => {
     var fulfilled = (value) => {
@@ -18,18 +22,20 @@ var __async = (__this, __arguments, generator) => {
     step((generator = generator.apply(__this, __arguments)).next());
   });
 };
-const TMDB_API_KEY = "1865f43a0549ca50d341dd9ab8b29f49";
-const DOMAINS_URL = "https://raw.githubusercontent.com/sapariyaneel/nuvio-plugin/refs/heads/main/domains.json";
-const FALLBACK_BASE_URL = "https://vidrock.net";
-const HEADERS = {
+
+// src/providers/vidrock.js
+var TMDB_API_KEY = "1865f43a0549ca50d341dd9ab8b29f49";
+var DOMAINS_URL = "https://raw.githubusercontent.com/sapariyaneel/nuvio-plugin/refs/heads/main/domains.json";
+var FALLBACK_BASE_URL = "https://vidrock.net";
+var HEADERS = {
   "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/137.0.0.0 Safari/537.36",
   "Referer": "https://vidrock.net/",
   "Origin": "https://vidrock.net"
 };
-const STREAM_KEY_HEX = "7f3e9c2a8b5d1f4e6a9c3b7d2e5f8a1c4b6d9e2f5a8c1b4d7e9f2a5c8b1d4e7f";
-const GCM_IV_LENGTH = 12;
-const GCM_TAG_LENGTH = 16;
-let cachedDomains = null;
+var STREAM_KEY_HEX = "7f3e9c2a8b5d1f4e6a9c3b7d2e5f8a1c4b6d9e2f5a8c1b4d7e9f2a5c8b1d4e7f";
+var GCM_IV_LENGTH = 12;
+var GCM_TAG_LENGTH = 16;
+var cachedDomains = null;
 function getDomains() {
   return __async(this, null, function* () {
     if (cachedDomains)
@@ -49,8 +55,8 @@ function getBaseUrl() {
     return (d.vidrock || FALLBACK_BASE_URL).replace(/\/+$/, "");
   });
 }
-const AES_SBOX = new Uint8Array(256);
-const AES_RCON = [1, 2, 4, 8, 16, 32, 64, 128, 27, 54, 108, 216, 171, 77];
+var AES_SBOX = new Uint8Array(256);
+var AES_RCON = [1, 2, 4, 8, 16, 32, 64, 128, 27, 54, 108, 216, 171, 77];
 (function buildSbox() {
   const pow = new Uint8Array(256);
   const log = new Uint8Array(256);
@@ -156,7 +162,7 @@ function hexToBytes(hex) {
     bytes[i] = parseInt(hex.substr(i * 2, 2), 16);
   return bytes;
 }
-const BASE64_CHARS = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+var BASE64_CHARS = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
 function base64UrlToBytes(str) {
   const normalized = str.replace(/-/g, "+").replace(/_/g, "/").replace(/=+$/, "");
   const out = new Uint8Array(Math.floor(normalized.length * 3 / 4));
@@ -200,7 +206,7 @@ function utf8BytesToString(bytes) {
   }
   return result;
 }
-let cachedKeySchedule = null;
+var cachedKeySchedule = null;
 function decryptStreamUrl(encoded) {
   const all = base64UrlToBytes(encoded);
   if (all.length <= GCM_IV_LENGTH + GCM_TAG_LENGTH)
@@ -234,6 +240,13 @@ function formatBytes(bytes) {
   const sizes = ["Bytes", "KB", "MB", "GB", "TB"];
   const i = Math.floor(Math.log(bytes) / Math.log(k));
   return `${parseFloat((bytes / Math.pow(k, i)).toFixed(2))} ${sizes[i]}`;
+}
+function meetsMinSize(sizeStr) {
+  const m = String(sizeStr || "").match(/^([\d.]+)\s*(Bytes|KB|MB|GB|TB)$/i);
+  if (!m)
+    return true;
+  const mult = { BYTES: 1 / 1048576, KB: 1 / 1024, MB: 1, GB: 1024, TB: 1048576 };
+  return parseFloat(m[1]) * (mult[m[2].toUpperCase()] || 0) >= 150;
 }
 function getTmdbRuntimeSeconds(tmdbId, mediaType, season, episode) {
   return __async(this, null, function* () {
@@ -366,7 +379,7 @@ function getStreams(tmdbId, mediaType, season, episode) {
         streams.push(stream);
       }
       streams.sort((a, b) => qualityRank(b.quality) - qualityRank(a.quality));
-      return streams;
+      return streams.filter((s) => meetsMinSize(s.size));
     } catch (e) {
       console.error("[Vidrock]", e);
       return [];

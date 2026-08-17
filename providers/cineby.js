@@ -1,3 +1,7 @@
+/**
+ * cineby - Built from src/providers/cineby.js
+ * Generated: 2026-08-17T09:56:23.739Z
+ */
 var __defProp = Object.defineProperty;
 var __defProps = Object.defineProperties;
 var __getOwnPropDescs = Object.getOwnPropertyDescriptors;
@@ -37,15 +41,17 @@ var __async = (__this, __arguments, generator) => {
     step((generator = generator.apply(__this, __arguments)).next());
   });
 };
-const DOMAINS_URL = "https://raw.githubusercontent.com/sapariyaneel/nuvio-plugin/refs/heads/main/domains.json";
-const FALLBACK_API_HOST = "https://api.speedracelight.com";
-const TMDB_API_KEY = "1865f43a0549ca50d341dd9ab8b29f49";
-const HEADERS = {
+
+// src/providers/cineby.js
+var DOMAINS_URL = "https://raw.githubusercontent.com/sapariyaneel/nuvio-plugin/refs/heads/main/domains.json";
+var FALLBACK_API_HOST = "https://api.speedracelight.com";
+var TMDB_API_KEY = "1865f43a0549ca50d341dd9ab8b29f49";
+var HEADERS = {
   "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36",
   "Referer": "https://www.cineby.at/",
   "Origin": "https://www.cineby.at"
 };
-let cachedDomains = null;
+var cachedDomains = null;
 function getDomains() {
   return __async(this, null, function* () {
     if (cachedDomains)
@@ -65,7 +71,7 @@ function getApiHost() {
     return (d["speedracelight"] || d["api.speedracelight.com"] || FALLBACK_API_HOST).replace(/\/+$/, "");
   });
 }
-const SHA256_CONSTANTS = [
+var SHA256_CONSTANTS = [
   1116352408,
   1899447441,
   3049323471,
@@ -83,7 +89,7 @@ const SHA256_CONSTANTS = [
   2614888103,
   3248222580
 ];
-const MAGIC_BYTES = [109, 118, 109, 49];
+var MAGIC_BYTES = [109, 118, 109, 49];
 function isCustomBranch(e) {
   return (e * (e + 1) & 1) === 0;
 }
@@ -103,7 +109,7 @@ function rotl32(x, n) {
     return x >>> 0;
   return (x << n | x >>> 32 - n) >>> 0;
 }
-const BASE64_CHARS = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+var BASE64_CHARS = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
 function pureBase64Decode(b64) {
   let clean = "";
   for (let i = 0; i < b64.length; i++) {
@@ -221,13 +227,6 @@ function decryptSourcesPayload(cipherText, seedStr, mediaId) {
   const body = plain.subarray(MAGIC_BYTES.length);
   return utf8BytesToString(body);
 }
-function resolveTmdbId(id) {
-  return __async(this, null, function* () {
-    if (typeof id === "string" && id.trim().toLowerCase().startsWith("tt"))
-      return null;
-    return String(id);
-  });
-}
 function getTmdbMeta(tmdbId, mediaType) {
   return __async(this, null, function* () {
     const type = mediaType === "tv" ? "tv" : "movie";
@@ -259,7 +258,14 @@ function formatBytes(bytes) {
   const i = Math.floor(Math.log(bytes) / Math.log(k));
   return `${parseFloat((bytes / Math.pow(k, i)).toFixed(2))} ${sizes[i]}`;
 }
-const SEGMENT_SAMPLE_SIZE = 5;
+function meetsMinSize(sizeStr) {
+  const m = String(sizeStr || "").match(/^([\d.]+)\s*(Bytes|KB|MB|GB|TB)$/i);
+  if (!m)
+    return true;
+  const mult = { BYTES: 1 / 1048576, KB: 1 / 1024, MB: 1, GB: 1024, TB: 1048576 };
+  return parseFloat(m[1]) * (mult[m[2].toUpperCase()] || 0) >= 150;
+}
+var SEGMENT_SAMPLE_SIZE = 5;
 function getRealSegmentSize(url) {
   return __async(this, null, function* () {
     try {
@@ -369,7 +375,7 @@ function getStreams(tmdbId, mediaType, season, episode) {
         };
       })));
       streams.sort((a, b) => qualityRank(b.quality) - qualityRank(a.quality));
-      return streams;
+      return streams.filter((s) => meetsMinSize(s.size));
     } catch (e) {
       console.error("[Cineby]", e);
       return [];

@@ -80,6 +80,13 @@ function formatBytes(bytes) {
   return `${parseFloat((bytes / Math.pow(k, i)).toFixed(1))} ${sizes[i]}`;
 }
 
+function meetsMinSize(sizeStr) {
+  const m = String(sizeStr || "").match(/^([\d.]+)\s*(Bytes|KB|MB|GB|TB)$/i);
+  if (!m) return true;
+  const mult = { BYTES: 1 / 1048576, KB: 1 / 1024, MB: 1, GB: 1024, TB: 1048576 };
+  return parseFloat(m[1]) * (mult[m[2].toUpperCase()] || 0) >= 150;
+}
+
 function cleanTitle(title) {
   const name = (title || "").replace(/\.[a-zA-Z0-9]{2,4}$/, "");
   const normalized = name
@@ -430,7 +437,8 @@ async function getStreams(tmdbId, mediaType, season, episode) {
         // s.size is already a formatted string from the extractor above - re-running it through
         // formatBytes() treats it as a raw byte count and produces NaN.
         size: s.size || ""
-      }));
+      }))
+      .filter(s => meetsMinSize(s.size));
   } catch (e) {
     console.error("[MoviesMod]", e);
     return [];

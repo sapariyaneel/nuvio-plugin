@@ -1,3 +1,7 @@
+/**
+ * desicinemas - Built from src/providers/desicinemas.js
+ * Generated: 2026-08-17T09:56:23.765Z
+ */
 var __async = (__this, __arguments, generator) => {
   return new Promise((resolve, reject) => {
     var fulfilled = (value) => {
@@ -18,11 +22,13 @@ var __async = (__this, __arguments, generator) => {
     step((generator = generator.apply(__this, __arguments)).next());
   });
 };
-const DOMAINS_URL = "https://raw.githubusercontent.com/sapariyaneel/nuvio-plugin/refs/heads/main/domains.json";
-const FALLBACK_BASE_URL = "https://desicinemas.to";
-const PROXY = "https://desicinemas.phisherdesicinema.workers.dev/";
-const TMDB_API_KEY = "1865f43a0549ca50d341dd9ab8b29f49";
-const HEADERS = {
+
+// src/providers/desicinemas.js
+var DOMAINS_URL = "https://raw.githubusercontent.com/sapariyaneel/nuvio-plugin/refs/heads/main/domains.json";
+var FALLBACK_BASE_URL = "https://desicinemas.to";
+var PROXY = "https://desicinemas.phisherdesicinema.workers.dev/";
+var TMDB_API_KEY = "1865f43a0549ca50d341dd9ab8b29f49";
+var HEADERS = {
   "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:139.0) Gecko/20100101 Firefox/139.0",
   "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
   "Accept-Language": "en-US,en;q=0.5",
@@ -30,7 +36,7 @@ const HEADERS = {
   "Connection": "keep-alive",
   "Cache-Control": "no-cache"
 };
-let cachedDomains = null;
+var cachedDomains = null;
 function getDomains() {
   return __async(this, null, function* () {
     if (cachedDomains)

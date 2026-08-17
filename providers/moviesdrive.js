@@ -1,3 +1,7 @@
+/**
+ * moviesdrive - Built from src/providers/moviesdrive.js
+ * Generated: 2026-08-17T09:56:23.784Z
+ */
 var __defProp = Object.defineProperty;
 var __defProps = Object.defineProperties;
 var __getOwnPropDescs = Object.getOwnPropertyDescriptors;
@@ -37,14 +41,16 @@ var __async = (__this, __arguments, generator) => {
     step((generator = generator.apply(__this, __arguments)).next());
   });
 };
-const cheerio = require("cheerio-without-node-native");
-const TMDB_API_KEY = "439c478a771f35c05022f9feabcca01c";
-const TMDB_BASE_URL = "https://api.themoviedb.org/3";
-let MAIN_URL = "https://new1.moviesdrive.christmas";
-const DOMAINS_URL = "https://raw.githubusercontent.com/sapariyaneel/nuvio-plugin/refs/heads/main/domains.json";
-const DOMAIN_CACHE_TTL = 4 * 60 * 60 * 1e3;
-let domainCacheTimestamp = 0;
-const HEADERS = {
+
+// src/providers/moviesdrive.js
+var cheerio = require("cheerio-without-node-native");
+var TMDB_API_KEY = "439c478a771f35c05022f9feabcca01c";
+var TMDB_BASE_URL = "https://api.themoviedb.org/3";
+var MAIN_URL = "https://new1.moviesdrive.christmas";
+var DOMAINS_URL = "https://raw.githubusercontent.com/sapariyaneel/nuvio-plugin/refs/heads/main/domains.json";
+var DOMAIN_CACHE_TTL = 4 * 60 * 60 * 1e3;
+var domainCacheTimestamp = 0;
+var HEADERS = {
   "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36 Edg/131.0.0.0",
   "Referer": `${MAIN_URL}/`
 };
@@ -55,6 +61,13 @@ function formatBytes(bytes) {
   const sizes = ["Bytes", "KB", "MB", "GB", "TB"];
   const i = Math.floor(Math.log(bytes) / Math.log(k));
   return parseFloat((bytes / Math.pow(k, i)).toFixed(1)) + " " + sizes[i];
+}
+function meetsMinSize(sizeStr) {
+  const m = String(sizeStr || "").match(/^([\d.]+)\s*(Bytes|KB|MB|GB|TB)$/i);
+  if (!m)
+    return true;
+  const mult = { BYTES: 1 / 1048576, KB: 1 / 1024, MB: 1, GB: 1024, TB: 1048576 };
+  return parseFloat(m[1]) * (mult[m[2].toUpperCase()] || 0) >= 150;
 }
 function extractServerName(source) {
   if (!source)
@@ -85,12 +98,7 @@ function extractServerName(source) {
     return "Hubstream";
   return src.replace(/^www\./i, "").split(/[.\s]/)[0];
 }
-function rot13(value) {
-  return value.replace(/[a-zA-Z]/g, function(c) {
-    return String.fromCharCode((c <= "Z" ? 90 : 122) >= (c = c.charCodeAt(0) + 13) ? c : c - 26);
-  });
-}
-const BASE64_CHARS = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/=";
+var BASE64_CHARS = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/=";
 function atob(value) {
   if (!value)
     return "";
@@ -105,30 +113,6 @@ function atob(value) {
         output += String.fromCharCode(255 & bs >> (-2 * bc & 6));
       }
     }
-  }
-  return output;
-}
-function btoa(value) {
-  if (value == null)
-    return "";
-  let str = String(value);
-  let output = "";
-  let i = 0;
-  while (i < str.length) {
-    const chr1 = str.charCodeAt(i++);
-    const chr2 = str.charCodeAt(i++);
-    const chr3 = str.charCodeAt(i++);
-    const enc1 = chr1 >> 2;
-    const enc2 = (chr1 & 3) << 4 | chr2 >> 4;
-    let enc3 = (chr2 & 15) << 2 | chr3 >> 6;
-    let enc4 = chr3 & 63;
-    if (isNaN(chr2)) {
-      enc3 = 64;
-      enc4 = 64;
-    } else if (isNaN(chr3)) {
-      enc4 = 64;
-    }
-    output += BASE64_CHARS.charAt(enc1) + BASE64_CHARS.charAt(enc2) + BASE64_CHARS.charAt(enc3) + BASE64_CHARS.charAt(enc4);
   }
   return output;
 }
@@ -1145,8 +1129,11 @@ function getStreams(tmdbId, mediaType = "movie", season = null, episode = null) 
             var _a, _b;
             return ((_a = qualityOrder[b.quality]) != null ? _a : -3) - ((_b = qualityOrder[a.quality]) != null ? _b : -3);
           });
-          console.log(`[Moviesdrive] Found ${streams.length} streams`);
-          return streams;
+          const filteredStreams = streams.filter(function(s) {
+            return meetsMinSize(s.size);
+          });
+          console.log(`[Moviesdrive] Found ${filteredStreams.length} streams`);
+          return filteredStreams;
         });
       });
     });

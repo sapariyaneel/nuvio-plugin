@@ -1,6 +1,6 @@
 /**
  * multimovies - Built from src/providers/multimovies.js
- * Generated: 2026-08-14T07:14:30.333Z
+ * Generated: 2026-08-17T09:56:23.797Z
  */
 var __defProp = Object.defineProperty;
 var __defProps = Object.defineProperties;
@@ -41,13 +41,15 @@ var __async = (__this, __arguments, generator) => {
     step((generator = generator.apply(__this, __arguments)).next());
   });
 };
-const DOMAINS_URL = "https://raw.githubusercontent.com/sapariyaneel/nuvio-plugin/refs/heads/main/domains.json";
-const FALLBACK_URL = "https://multimovies.motorcycles";
-const TMDB_API_KEY = "1865f43a0549ca50d341dd9ab8b29f49";
-const HEADERS = {
+
+// src/providers/multimovies.js
+var DOMAINS_URL = "https://raw.githubusercontent.com/sapariyaneel/nuvio-plugin/refs/heads/main/domains.json";
+var FALLBACK_URL = "https://multimovies.motorcycles";
+var TMDB_API_KEY = "1865f43a0549ca50d341dd9ab8b29f49";
+var HEADERS = {
   "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
 };
-let cachedBaseUrl = null;
+var cachedBaseUrl = null;
 function isReachable(url) {
   return __async(this, null, function* () {
     try {

@@ -1,3 +1,7 @@
+/**
+ * vixsrc - Built from src/providers/vixsrc.js
+ * Generated: 2026-08-17T09:56:23.816Z
+ */
 var __defProp = Object.defineProperty;
 var __defProps = Object.defineProperties;
 var __getOwnPropDescs = Object.getOwnPropertyDescriptors;
@@ -37,15 +41,17 @@ var __async = (__this, __arguments, generator) => {
     step((generator = generator.apply(__this, __arguments)).next());
   });
 };
-const TMDB_API_KEY = "1865f43a0549ca50d341dd9ab8b29f49";
-const DOMAINS_URL = "https://raw.githubusercontent.com/sapariyaneel/nuvio-plugin/refs/heads/main/domains.json";
-const FALLBACK_BASE_URL = "https://vixsrc.to";
-const HEADERS = {
+
+// src/providers/vixsrc.js
+var TMDB_API_KEY = "1865f43a0549ca50d341dd9ab8b29f49";
+var DOMAINS_URL = "https://raw.githubusercontent.com/sapariyaneel/nuvio-plugin/refs/heads/main/domains.json";
+var FALLBACK_BASE_URL = "https://vixsrc.to";
+var HEADERS = {
   "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36",
   "Referer": "https://vixsrc.to/",
   "Origin": "https://vixsrc.to"
 };
-let cachedDomains = null;
+var cachedDomains = null;
 function getDomains() {
   return __async(this, null, function* () {
     if (cachedDomains)
@@ -72,6 +78,13 @@ function formatBytes(bytes) {
   const sizes = ["Bytes", "KB", "MB", "GB", "TB"];
   const i = Math.floor(Math.log(bytes) / Math.log(k));
   return `${parseFloat((bytes / Math.pow(k, i)).toFixed(2))} ${sizes[i]}`;
+}
+function meetsMinSize(sizeStr) {
+  const m = String(sizeStr || "").match(/^([\d.]+)\s*(Bytes|KB|MB|GB|TB)$/i);
+  if (!m)
+    return true;
+  const mult = { BYTES: 1 / 1048576, KB: 1 / 1024, MB: 1, GB: 1024, TB: 1048576 };
+  return parseFloat(m[1]) * (mult[m[2].toUpperCase()] || 0) >= 150;
 }
 function qualityLabelFromHeight(height) {
   if (height >= 2e3)
@@ -185,9 +198,9 @@ function mapWithConcurrency(items, worker, limit) {
     return results;
   });
 }
-const SEGMENT_SAMPLE_SIZE = 32;
-const SEGMENT_SAMPLE_CONCURRENCY = 8;
-const SUBTITLE_CONCURRENCY = 8;
+var SEGMENT_SAMPLE_SIZE = 32;
+var SEGMENT_SAMPLE_CONCURRENCY = 8;
+var SUBTITLE_CONCURRENCY = 8;
 function measureHlsSize(variantUrl) {
   return __async(this, null, function* () {
     try {
@@ -281,6 +294,8 @@ function getStreams(tmdbId, mediaType, season, episode) {
       ]);
       const quality = qualityLabelFromHeight(topVariant.height);
       const titleSuffix = meta ? `${meta.title}${meta.year ? ` (${meta.year})` : ""}` : "";
+      if (!meetsMinSize(size))
+        return [];
       return [{
         url: masterUrl,
         quality,

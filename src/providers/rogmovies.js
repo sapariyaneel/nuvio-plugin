@@ -99,6 +99,13 @@ function formatBytes(bytes) {
   return `${parseFloat((bytes / Math.pow(k, i)).toFixed(1))} ${sizes[i]}`;
 }
 
+function meetsMinSize(sizeStr) {
+  const m = String(sizeStr || "").match(/^([\d.]+)\s*(Bytes|KB|MB|GB|TB)$/i);
+  if (!m) return true;
+  const mult = { BYTES: 1 / 1048576, KB: 1 / 1024, MB: 1, GB: 1024, TB: 1048576 };
+  return parseFloat(m[1]) * (mult[m[2].toUpperCase()] || 0) >= 150;
+}
+
 function cleanTitle(raw) {
   return (raw || "").split("(")[0].trim().replace(/\s+/g, " ");
 }
@@ -539,7 +546,8 @@ async function getStreams(tmdbId, mediaType, season, episode) {
         if (!s || !s.url || seenUrls[s.url]) return false;
         seenUrls[s.url] = true;
         return true;
-      });
+      })
+      .filter(s => meetsMinSize(s.size));
   } catch (e) {
     console.error("[RogMovies]", e);
     return [];

@@ -31,6 +31,13 @@ function formatBytes(bytes) {
     return parseFloat((bytes / Math.pow(k, i)).toFixed(1)) + ' ' + sizes[i];
 }
 
+function meetsMinSize(sizeStr) {
+    const m = String(sizeStr || '').match(/^([\d.]+)\s*(Bytes|KB|MB|GB|TB)$/i);
+    if (!m) return true;
+    const mult = { BYTES: 1 / 1048576, KB: 1 / 1024, MB: 1, GB: 1024, TB: 1048576 };
+    return parseFloat(m[1]) * (mult[m[2].toUpperCase()] || 0) >= 150;
+}
+
 // Extract server name from source string
 function extractServerName(source) {
     if (!source) return 'Unknown';
@@ -1471,8 +1478,9 @@ function getStreams(tmdbId, mediaType = 'movie', season = null, episode = null) 
                     return (qualityOrder[b.quality] ?? -3) - (qualityOrder[a.quality] ?? -3);
                 });
 
-                console.log(`[Moviesdrive] Found ${streams.length} streams`);
-                return streams;
+                const filteredStreams = streams.filter(function (s) { return meetsMinSize(s.size); });
+                console.log(`[Moviesdrive] Found ${filteredStreams.length} streams`);
+                return filteredStreams;
             });
 
         });

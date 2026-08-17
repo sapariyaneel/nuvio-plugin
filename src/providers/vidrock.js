@@ -255,6 +255,13 @@ function formatBytes(bytes) {
   return `${parseFloat((bytes / Math.pow(k, i)).toFixed(2))} ${sizes[i]}`;
 }
 
+function meetsMinSize(sizeStr) {
+  const m = String(sizeStr || "").match(/^([\d.]+)\s*(Bytes|KB|MB|GB|TB)$/i);
+  if (!m) return true;
+  const mult = { BYTES: 1 / 1048576, KB: 1 / 1024, MB: 1, GB: 1024, TB: 1048576 };
+  return parseFloat(m[1]) * (mult[m[2].toUpperCase()] || 0) >= 150;
+}
+
 async function getTmdbRuntimeSeconds(tmdbId, mediaType, season, episode) {
   try {
     const url = mediaType === "tv"
@@ -393,7 +400,7 @@ async function getStreams(tmdbId, mediaType, season, episode) {
     }
 
     streams.sort((a, b) => qualityRank(b.quality) - qualityRank(a.quality));
-    return streams;
+    return streams.filter(s => meetsMinSize(s.size));
   } catch (e) {
     console.error("[Vidrock]", e);
     return [];

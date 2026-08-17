@@ -1,3 +1,7 @@
+/**
+ * zinkmovies - Built from src/providers/zinkmovies.js
+ * Generated: 2026-08-17T09:56:23.818Z
+ */
 var __defProp = Object.defineProperty;
 var __defProps = Object.defineProperties;
 var __getOwnPropDescs = Object.getOwnPropertyDescriptors;
@@ -37,19 +41,21 @@ var __async = (__this, __arguments, generator) => {
     step((generator = generator.apply(__this, __arguments)).next());
   });
 };
-const DOMAINS_URL = "https://raw.githubusercontent.com/sapariyaneel/nuvio-plugin/refs/heads/main/domains.json";
-const FALLBACK_BASE_URL = "https://zinkmovies.vip";
-const TMDB_API_KEY = "1865f43a0549ca50d341dd9ab8b29f49";
-const HEADERS = {
+
+// src/providers/zinkmovies.js
+var DOMAINS_URL = "https://raw.githubusercontent.com/sapariyaneel/nuvio-plugin/refs/heads/main/domains.json";
+var FALLBACK_BASE_URL = "https://zinkmovies.vip";
+var TMDB_API_KEY = "1865f43a0549ca50d341dd9ab8b29f49";
+var HEADERS = {
   "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36 Edg/131.0.0.0",
   "Cookie": "xla=s4t"
 };
-const RANDOM_ID_REGEX = /generateDownloadLink\(['"]([^'"]+)/;
-const AJAX_REGEX = /https:\/\/[^"'\s]+ajax_generate_token\.php/;
-const DL_REGEX = /https:\/\/[^"'\s]+\/dl\//;
-const SERVER_HANDLER_REGEX = /SERVER_HANDLER_URL\s*=\s*["']([^"']+)/;
-const WORKER_REGEX = /handleServerRequest\(['"]worker['"]\s*,\s*['"]([^'"]+)/;
-let cachedDomains = null;
+var RANDOM_ID_REGEX = /generateDownloadLink\(['"]([^'"]+)/;
+var AJAX_REGEX = /https:\/\/[^"'\s]+ajax_generate_token\.php/;
+var DL_REGEX = /https:\/\/[^"'\s]+\/dl\//;
+var SERVER_HANDLER_REGEX = /SERVER_HANDLER_URL\s*=\s*["']([^"']+)/;
+var WORKER_REGEX = /handleServerRequest\(['"]worker['"]\s*,\s*['"]([^'"]+)/;
+var cachedDomains = null;
 function getDomains() {
   return __async(this, null, function* () {
     if (cachedDomains)
@@ -98,6 +104,13 @@ function formatBytes(bytes) {
   const sizes = ["Bytes", "KB", "MB", "GB", "TB"];
   const i = Math.floor(Math.log(bytes) / Math.log(k));
   return `${parseFloat((bytes / Math.pow(k, i)).toFixed(1))} ${sizes[i]}`;
+}
+function meetsMinSize(sizeStr) {
+  const m = String(sizeStr || "").match(/^([\d.]+)\s*(Bytes|KB|MB|GB|TB)$/i);
+  if (!m)
+    return true;
+  const mult = { BYTES: 1 / 1048576, KB: 1 / 1024, MB: 1, GB: 1024, TB: 1048576 };
+  return parseFloat(m[1]) * (mult[m[2].toUpperCase()] || 0) >= 150;
 }
 function base64Decode(value) {
   const chars = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/=";
@@ -559,7 +572,7 @@ function getStreams(tmdbId, mediaType, season, episode) {
         // s.size is already a formatted string from the extractor above - re-running it through
         // formatBytes() treats it as a raw byte count and produces NaN.
         size: s.size || ""
-      }));
+      })).filter((s) => meetsMinSize(s.size));
     } catch (e) {
       console.error("[Zinkmovies]", e);
       return [];

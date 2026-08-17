@@ -1,3 +1,7 @@
+/**
+ * vegamovies - Built from src/providers/vegamovies.js
+ * Generated: 2026-08-17T09:56:23.810Z
+ */
 var __defProp = Object.defineProperty;
 var __defProps = Object.defineProperties;
 var __getOwnPropDescs = Object.getOwnPropertyDescriptors;
@@ -37,15 +41,17 @@ var __async = (__this, __arguments, generator) => {
     step((generator = generator.apply(__this, __arguments)).next());
   });
 };
-const DOMAINS_URL = "https://raw.githubusercontent.com/sapariyaneel/nuvio-plugin/refs/heads/main/domains.json";
-const FALLBACK_BASE_URL = "https://new1.vegamovies.futbol";
-const TMDB_API_KEY = "1865f43a0549ca50d341dd9ab8b29f49";
-const MIRROR_BASE_URLS = [
+
+// src/providers/vegamovies.js
+var DOMAINS_URL = "https://raw.githubusercontent.com/sapariyaneel/nuvio-plugin/refs/heads/main/domains.json";
+var FALLBACK_BASE_URL = "https://new1.vegamovies.futbol";
+var TMDB_API_KEY = "1865f43a0549ca50d341dd9ab8b29f49";
+var MIRROR_BASE_URLS = [
   "https://vegamovies.catering",
   "https://vegamovies.navy",
   "https://vegamovies.is"
 ];
-const HEADERS = {
+var HEADERS = {
   "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36"
 };
 function fetchWithTimeout(url, options = {}) {
@@ -54,7 +60,7 @@ function fetchWithTimeout(url, options = {}) {
 function isOriginUnreachable(res) {
   return !res || !res.status;
 }
-let pageCache = null;
+var pageCache = null;
 function fetchTextCached(url, options = {}) {
   if (!pageCache)
     return fetchWithTimeout(url, options).then((r) => r.text());
@@ -68,7 +74,7 @@ function fetchTextCached(url, options = {}) {
   pageCache[url] = pending;
   return pending;
 }
-let cachedDomains = null;
+var cachedDomains = null;
 function getDomains() {
   return __async(this, null, function* () {
     if (cachedDomains)
@@ -82,7 +88,7 @@ function getDomains() {
     return cachedDomains;
   });
 }
-let resolvedBaseUrl = null;
+var resolvedBaseUrl = null;
 function probeOrigin(base) {
   return __async(this, null, function* () {
     try {
@@ -167,6 +173,13 @@ function formatBytes(bytes) {
   const sizes = ["Bytes", "KB", "MB", "GB", "TB"];
   const i = Math.floor(Math.log(bytes) / Math.log(k));
   return `${parseFloat((bytes / Math.pow(k, i)).toFixed(1))} ${sizes[i]}`;
+}
+function meetsMinSize(sizeStr) {
+  const m = String(sizeStr || "").match(/^([\d.]+)\s*(Bytes|KB|MB|GB|TB)$/i);
+  if (!m)
+    return true;
+  const mult = { BYTES: 1 / 1048576, KB: 1 / 1024, MB: 1, GB: 1024, TB: 1048576 };
+  return parseFloat(m[1]) * (mult[m[2].toUpperCase()] || 0) >= 150;
 }
 function cleanTitle(raw) {
   return (raw || "").split("(")[0].trim().replace(/\s+/g, " ");
@@ -270,7 +283,7 @@ function anchorsIn(fragment, hostPattern) {
   }
   return links;
 }
-const NEXDRIVE_HOST_RE = /nexdrive|vcloud\.(zip|fit)|fastdl\.zip|hubcloud|hubdrive/i;
+var NEXDRIVE_HOST_RE = /nexdrive|vcloud\.(zip|fit)|fastdl\.zip|hubcloud|hubdrive/i;
 function isDownloadHeading(heading) {
   if (/^\d+\s+comments?$/i.test(heading))
     return false;
@@ -299,7 +312,7 @@ function extractQualityBlocks(html) {
   }
   return blocks;
 }
-const MIRROR_HOST_RE = /vcloud\.(zip|fit)|fastdl\.zip|hubcloud|hubdrive/i;
+var MIRROR_HOST_RE = /vcloud\.(zip|fit)|fastdl\.zip|hubcloud|hubdrive/i;
 function nexdriveEpisodeOf(text) {
   const m = (text || "").match(/Episode[s]?\s*[:\-]?\s*(\d{1,3})/i);
   return m ? parseInt(m[1], 10) : null;
@@ -587,7 +600,7 @@ function getStreams(tmdbId, mediaType, season, episode) {
           return false;
         seenUrls[s.url] = true;
         return true;
-      });
+      }).filter((s) => meetsMinSize(s.size));
     } catch (e) {
       console.error("[Vegamovies]", e);
       return [];
