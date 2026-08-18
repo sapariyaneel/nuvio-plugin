@@ -1,6 +1,6 @@
 /**
  * vidsrc - Built from src/vidsrc/
- * Generated: 2026-08-18T09:52:03.591Z
+ * Generated: 2026-08-18T10:40:56.693Z
  */
 
 // src/vidsrc/index.js
@@ -214,22 +214,29 @@ function resolveUrl(line, baseUrl) {
     return line;
   }
 }
-function parseMasterTopVariant(text, baseUrl) {
+function parseSegmentUrls(text, baseUrl) {
   const lines = text.split("\n").map((l) => l.trim());
-  let best = null;
+  const segments = [];
   for (let i = 0; i < lines.length; i++) {
-    if (!lines[i].startsWith("#EXT-X-STREAM-INF"))
+    if (!lines[i].startsWith("#EXTINF"))
       continue;
     const urlLine = lines[i + 1];
-    if (!urlLine || urlLine.startsWith("#"))
-      continue;
-    const bandwidthMatch = lines[i].match(/BANDWIDTH=(\d+)/);
-    const bandwidth = bandwidthMatch ? parseInt(bandwidthMatch[1], 10) : 0;
-    if (!best || bandwidth > best.bandwidth) {
-      best = { url: resolveUrl(urlLine, baseUrl), bandwidth };
-    }
+    if (urlLine && !urlLine.startsWith("#"))
+      segments.push(resolveUrl(urlLine, baseUrl));
   }
-  return best;
+  return segments;
+}
+async function measureSegmentPlaylistSize(text, baseUrl, headers) {
+  const segments = parseSegmentUrls(text, baseUrl);
+  if (!segments.length)
+    return 0;
+  try {
+    const resp = await fetchWithTimeout(segments[0], { method: "HEAD", headers, skipSizeCheck: true });
+    const len = parseInt(resp.headers.get("content-length") || "0", 10);
+    return len > 0 ? len * segments.length : 0;
+  } catch (e) {
+    return 0;
+  }
 }
 async function getTmdbInfo(tmdbId, mediaType, season, episode) {
   try {
@@ -258,19 +265,18 @@ async function getTmdbInfo(tmdbId, mediaType, season, episode) {
     return null;
   }
 }
-async function buildStream(source, runtimeSeconds) {
+async function buildStream(source, referer) {
   try {
     if (!source.url || !/^https?:\/\//i.test(source.url))
       return null;
     const quality = normalizeQualityLabel(source.quality);
-    let bandwidth = 0;
+    const headers = referer ? { Referer: referer } : {};
+    let totalBytes = 0;
     if (source.url.includes(".m3u8")) {
-      const resp = await fetchWithTimeout(source.url, { skipSizeCheck: true }).catch(() => null);
+      const resp = await fetchWithTimeout(source.url, { headers, skipSizeCheck: true }).catch(() => null);
       if (resp && resp.ok) {
         const text = await resp.text();
-        const topVariant = parseMasterTopVariant(text, source.url);
-        if (topVariant)
-          bandwidth = topVariant.bandwidth;
+        totalBytes = await measureSegmentPlaylistSize(text, source.url, headers);
       }
     }
     return {
@@ -278,8 +284,8 @@ async function buildStream(source, runtimeSeconds) {
       quality,
       title: `VidSrc 4K ${quality}`,
       name: "VidSrc",
-      size: runtimeSeconds && bandwidth ? formatBytes(bandwidth * runtimeSeconds / 8) : "Unknown",
-      headers: {},
+      size: totalBytes ? formatBytes(totalBytes) : "Unknown",
+      headers,
       subtitles: []
     };
   } catch (e) {
@@ -317,7 +323,8 @@ async function getStreams(tmdbId, mediaType, season, episode) {
     const parsed = await fetchAndDecryptSources(apiBase, numericTmdbId, params);
     if (!parsed || !Array.isArray(parsed.sources) || !parsed.sources.length)
       return [];
-    const resolved = await Promise.all(parsed.sources.map((s) => buildStream(s, info.runtimeSeconds)));
+    const referer = isTv ? `https://vidsrc.sbs/embed/tv/${numericTmdbId}/${season || 1}/${episode || 1}` : `https://vidsrc.sbs/embed/movie/${numericTmdbId}`;
+    const resolved = await Promise.all(parsed.sources.map((s) => buildStream(s, referer)));
     const seenUrls = {};
     const streams = [];
     for (const stream of resolved) {
