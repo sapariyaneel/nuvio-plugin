@@ -34,7 +34,7 @@
         "tv"
       ],
       "filename": "providers/zinkmovies.js",
-      "enabled": true,
+      "enabled": false,
       "formats": [
         "mp4",
         "m3u8"
@@ -307,6 +307,26 @@
       ]
     },
     {
+      "id": "Vidking",
+      "name": "Vidking",
+      "description": "Vidking TMDB-id-based movie & TV streaming with quality, estimated size and subtitles",
+      "version": "1.0.0",
+      "author": "CENSORED",
+      "supportedTypes": [
+        "movie",
+        "tv"
+      ],
+      "filename": "providers/vidking.js",
+      "enabled": true,
+      "formats": [
+        "m3u8"
+      ],
+      "logo": "https://i.imgur.com/9bGkGMi.png",
+      "contentLanguage": [
+        "en"
+      ]
+    },
+    {
       "id": "Goated",
       "name": "Goated",
       "description": "Goated TMDB-id-based movie & TV streaming with adaptive quality, real size and subtitles",
@@ -317,7 +337,7 @@
         "tv"
       ],
       "filename": "providers/goated.js",
-      "enabled": true,
+      "enabled": false,
       "formats": [
         "m3u8"
       ],
