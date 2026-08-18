@@ -27,6 +27,8 @@ const EXTERNAL_MODULES = [
     'axios'
 ];
 
+const flatSrcDir = path.join(srcDir, 'providers');
+
 // Get provider names from command line or discover all
 function getProvidersToBuild() {
     const args = process.argv.slice(2).filter(arg => !arg.startsWith('-'));
@@ -41,24 +43,45 @@ function getProvidersToBuild() {
         process.exit(1);
     }
 
-    return fs.readdirSync(srcDir, { withFileTypes: true })
-        .filter(d => d.isDirectory())
+    const folderProviders = fs.readdirSync(srcDir, { withFileTypes: true })
+        .filter(d => d.isDirectory() && d.name !== 'providers')
         .map(d => d.name);
+
+    const flatProviders = fs.existsSync(flatSrcDir)
+        ? fs.readdirSync(flatSrcDir, { withFileTypes: true })
+            .filter(d => d.isFile() && d.name.endsWith('.js'))
+            .map(d => d.name.slice(0, -3))
+        : [];
+
+    return [...folderProviders, ...flatProviders];
+}
+
+// Resolves a provider name to its entry point, preferring the src/<name>/index.js folder
+// layout and falling back to the flat src/providers/<name>.js layout.
+function resolveEntryPoint(providerName) {
+    const folderEntry = path.join(srcDir, providerName, 'index.js');
+    if (fs.existsSync(folderEntry)) {
+        return { entryPoint: folderEntry, sourceDesc: `src/${providerName}/` };
+    }
+    const flatEntry = path.join(flatSrcDir, `${providerName}.js`);
+    if (fs.existsSync(flatEntry)) {
+        return { entryPoint: flatEntry, sourceDesc: `src/providers/${providerName}.js` };
+    }
+    return null;
 }
 
 async function buildProvider(providerName) {
-    const providerDir = path.join(srcDir, providerName);
-    const entryPoint = path.join(providerDir, 'index.js');
+    const resolved = resolveEntryPoint(providerName);
     const outFile = path.join(outDir, `${providerName}.js`);
 
-    if (!fs.existsSync(entryPoint)) {
-        console.warn(`⚠️  Skipping ${providerName}: no src/${providerName}/index.js found`);
+    if (!resolved) {
+        console.warn(`⚠️  Skipping ${providerName}: no src/${providerName}/index.js or src/providers/${providerName}.js found`);
         return false;
     }
 
     try {
         const result = await esbuild.build({
-            entryPoints: [entryPoint],
+            entryPoints: [resolved.entryPoint],
             bundle: true,
             outfile: outFile,
             format: 'cjs',              // CommonJS for module.exports compatibility
@@ -68,7 +91,7 @@ async function buildProvider(providerName) {
             sourcemap: false,
             external: EXTERNAL_MODULES,
             banner: {
-                js: `/**\n * ${providerName} - Built from src/${providerName}/\n * Generated: ${new Date().toISOString()}\n */`
+                js: `/**\n * ${providerName} - Built from ${resolved.sourceDesc}\n * Generated: ${new Date().toISOString()}\n */`
             },
             logLevel: 'warning'
         });

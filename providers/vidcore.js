@@ -1,9 +1,9 @@
 /**
- * vidcore - Built from src/vidcore/
- * Generated: 2026-08-18T09:52:03.695Z
+ * vidcore - Built from src/providers/vidcore.js
+ * Generated: 2026-08-18T11:57:24.394Z
  */
 
-// src/vidcore/index.js
+// src/providers/vidcore.js
 var TMDB_API_KEY = "1865f43a0549ca50d341dd9ab8b29f49";
 var DOMAINS_URL = "https://raw.githubusercontent.com/sapariyaneel/nuvio-plugin/refs/heads/main/domains.json";
 var FALLBACK_API_BASE = "https://hahaevilcraft.site";
@@ -22,7 +22,6 @@ var MIRROR_IDS = [
   "zinkmovies",
   "multivid"
 ];
-var REQUEST_TIMEOUT_MS = 12e3;
 var cachedDomains = null;
 async function getDomains() {
   if (cachedDomains)
@@ -42,10 +41,7 @@ async function getBases() {
   return { apiBase, embedBase };
 }
 function fetchWithTimeout(url, options) {
-  return Promise.race([
-    fetch(url, { redirect: "follow", ...options }),
-    new Promise((_, reject) => setTimeout(() => reject(new Error("timeout")), REQUEST_TIMEOUT_MS))
-  ]);
+  return fetch(url, { redirect: "follow", ...options });
 }
 function formatBytes(bytes) {
   if (!bytes)

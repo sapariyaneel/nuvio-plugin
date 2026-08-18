@@ -1,6 +1,6 @@
 /**
  * zinkmovies - Built from src/providers/zinkmovies.js
- * Generated: 2026-08-17T12:20:48.250Z
+ * Generated: 2026-08-18T11:46:28.379Z
  */
 
 // src/providers/zinkmovies.js

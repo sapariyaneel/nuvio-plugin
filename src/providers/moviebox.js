@@ -243,8 +243,6 @@ function qualityRank(quality) {
   return parseInt(quality, 10) || 0;
 }
 
-// invisible zero-width prefix so quality still sorts correctly even if something re-sorts
-// the title as plain text ("1080p" < "4K" < "480p" < "720p" alphabetically otherwise)
 function invertedSortTag(value, max) {
   const clamped = Math.max(0, Math.min(max, Math.floor(value) || 0));
   const inverted = max - clamped;
@@ -295,7 +293,6 @@ async function getStreamsForSubject(session, subjectId, season, episode) {
     const quality = qualityLabel(stream.resolutions);
     const headers = { "User-Agent": `${PACKAGE_INFO.package_name}/${PACKAGE_INFO.version_code} (Linux; U; Android 16; en_IN)` };
     if (stream.signCookie) headers.Cookie = stream.signCookie;
-    // size on a multi-resolution entry is the combined size of every tier, not just the top one
     const isBundle = String(stream.resolutions || "").split(",").filter(Boolean).length > 1;
     const sortTag = invertedSortTag(qualityRank(quality), 2160);
     out.push({

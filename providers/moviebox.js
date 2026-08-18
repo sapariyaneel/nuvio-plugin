@@ -1,9 +1,9 @@
 /**
- * moviebox - Built from src/moviebox/
- * Generated: 2026-08-17T12:25:17.697Z
+ * moviebox - Built from src/providers/moviebox.js
+ * Generated: 2026-08-18T11:57:24.490Z
  */
 
-// src/moviebox/index.js
+// src/providers/moviebox.js
 var CryptoJS = typeof require === "function" ? require("crypto-js") : global.CryptoJS;
 var TMDB_API_KEY = "1865f43a0549ca50d341dd9ab8b29f49";
 var DOMAINS_URL = "https://raw.githubusercontent.com/sapariyaneel/nuvio-plugin/refs/heads/main/domains.json";

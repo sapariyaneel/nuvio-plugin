@@ -1,22 +1,3 @@
-// vidcore.js
-// VidCore (https://www.vidcore.org) - TMDB-id-based movie & TV embed streaming.
-// Flow: GET {api}/scrape/source?id={mirror}&tmdbId={id}&type=movie|tv&starred=1&fallback=false&title={title}&_cb={ts}
-//       with Referer: {embedBase}/embed/movie/{tmdbId} or {embedBase}/embed/tv/{tmdbId}/{season}/{episode}
-//       -> Server-Sent Events stream: event: start/update/completed/noOutput/done
-//       event: completed carries data: {"embeds":[...], "stream":[{type:"hls", playlist, id, flags[], captions[]}]}
-//       Season/episode aren't query params at all - the backend reads them out of the Referer path,
-//       confirmed live: identical query params for S1E1 and S1E2, only the Referer differed.
-//
-// The site itself tries a whole pool of mirror ids sequentially against the same endpoint until one
-// returns event: completed instead of event: noOutput (confirmed live: only some of the mirror ids
-// resolve for any given title - varies per title, not a fixed subset). Do the same here.
-//
-// Each resolved entry is a real HLS master playlist, so quality comes from parsing its real
-// EXT-X-STREAM-INF BANDWIDTH/RESOLUTION tags rather than any label the API provides - same
-// technique as vidrock.js/goated.js. Some mirrors flag their playlist "ip-locked" (CDN-side IP
-// binding to the requesting device) - that's normal for these CDNs and not something a provider
-// needs to work around, the request already comes from the real playing device.
-
 const TMDB_API_KEY = "1865f43a0549ca50d341dd9ab8b29f49";
 const DOMAINS_URL = "https://raw.githubusercontent.com/sapariyaneel/nuvio-plugin/refs/heads/main/domains.json";
 const FALLBACK_API_BASE = "https://hahaevilcraft.site";
@@ -26,8 +7,6 @@ const MIRROR_IDS = [
   "vidsuper-castle", "vaplayer", "hera", "vidrock", "vidsuper-vidnest",
   "vidsuper-vixsrc", "vidlove", "videasy", "odin", "goated", "zinkmovies", "multivid"
 ];
-
-const REQUEST_TIMEOUT_MS = 12000;
 
 let cachedDomains = null;
 
@@ -50,10 +29,7 @@ async function getBases() {
 }
 
 function fetchWithTimeout(url, options) {
-  return Promise.race([
-    fetch(url, { redirect: "follow", ...options }),
-    new Promise((_, reject) => setTimeout(() => reject(new Error("timeout")), REQUEST_TIMEOUT_MS))
-  ]);
+  return fetch(url, { redirect: "follow", ...options });
 }
 
 function formatBytes(bytes) {
@@ -146,7 +122,6 @@ async function getTmdbTitle(tmdbId, mediaType) {
   }
 }
 
-// Parses the raw SSE body for the `completed` event's payload. Returns null on noOutput/error/timeout.
 function parseCompletedEvent(text) {
   const lines = text.split("\n");
   let curEvent = null;
