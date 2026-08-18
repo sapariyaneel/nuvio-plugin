@@ -7,7 +7,7 @@
 // still wired to the shared registry so it picks up a live domain automatically if one is added later,
 // falling back to the hardcoded domain in the meantime.
 const DOMAINS_URL = "https://raw.githubusercontent.com/sapariyaneel/nuvio-plugin/refs/heads/main/domains.json";
-const FALLBACK_BASE_URL = "https://www.5movierulz.vote";
+const FALLBACK_BASE_URL = "https://www.5movierulz.watch";
 const TMDB_API_KEY = "1865f43a0549ca50d341dd9ab8b29f49";
 const HEADERS = {
   "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/120.0.0.0 Safari/537.36",

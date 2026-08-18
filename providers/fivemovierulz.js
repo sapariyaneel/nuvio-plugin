@@ -5,7 +5,7 @@
 
 // src/providers/fivemovierulz.js
 var DOMAINS_URL = "https://raw.githubusercontent.com/sapariyaneel/nuvio-plugin/refs/heads/main/domains.json";
-var FALLBACK_BASE_URL = "https://www.5movierulz.vote";
+var FALLBACK_BASE_URL = "https://www.5movierulz.watch";
 var TMDB_API_KEY = "1865f43a0549ca50d341dd9ab8b29f49";
 var HEADERS = {
   "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/120.0.0.0 Safari/537.36",
