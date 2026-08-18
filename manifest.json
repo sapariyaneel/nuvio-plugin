@@ -389,6 +389,46 @@
         "en",
         "it"
       ]
+    },
+    {
+      "id": "VidSrc",
+      "name": "VidSrc",
+      "description": "VidSrc TMDB-id-based movie & TV embed streaming via the 4K server, real up to 2160p quality",
+      "version": "1.0.0",
+      "author": "CENSORED",
+      "supportedTypes": [
+        "movie",
+        "tv"
+      ],
+      "filename": "providers/vidsrc.js",
+      "enabled": true,
+      "formats": [
+        "m3u8"
+      ],
+      "logo": "https://i.imgur.com/9bGkGMi.png",
+      "contentLanguage": [
+        "en"
+      ]
+    },
+    {
+      "id": "VidCore",
+      "name": "VidCore",
+      "description": "VidCore TMDB-id-based movie & TV embed streaming across a multi-mirror pool with real quality and size",
+      "version": "1.0.0",
+      "author": "CENSORED",
+      "supportedTypes": [
+        "movie",
+        "tv"
+      ],
+      "filename": "providers/vidcore.js",
+      "enabled": true,
+      "formats": [
+        "m3u8"
+      ],
+      "logo": "https://i.imgur.com/9bGkGMi.png",
+      "contentLanguage": [
+        "en"
+      ]
     }
   ]
 }
