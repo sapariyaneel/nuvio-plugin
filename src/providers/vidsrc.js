@@ -190,14 +190,25 @@ function normalizeQualityLabel(quality) {
   return quality || "Unknown";
 }
 
+function invertedSortTag(value, max) {
+  const clamped = Math.max(0, Math.min(max, Math.floor(value) || 0));
+  const inverted = max - clamped;
+  const bits = inverted.toString(2).padStart(20, "0");
+  return bits
+    .split("")
+    .map((bit) => (bit === "1" ? "﻿" : "​"))
+    .join("");
+}
+
 function buildStream(source) {
   if (!source.url || !/^https?:\/\//i.test(source.url)) return null;
   const quality = normalizeQualityLabel(source.quality);
+  const sortTag = invertedSortTag(qualityRank(quality), 2160);
 
   return {
     url: source.url,
     quality,
-    title: `VidSrc 4K ${quality}`,
+    title: `${sortTag}VidSrc 4K ${quality}`,
     name: "VidSrc",
     headers: {},
     subtitles: []

@@ -1,6 +1,6 @@
 /**
  * vidsrc - Built from src/providers/vidsrc.js
- * Generated: 2026-08-18T11:57:24.291Z
+ * Generated: 2026-08-18T11:59:12.998Z
  */
 
 // src/providers/vidsrc.js
@@ -188,14 +188,21 @@ function normalizeQualityLabel(quality) {
     return "2160p";
   return quality || "Unknown";
 }
+function invertedSortTag(value, max) {
+  const clamped = Math.max(0, Math.min(max, Math.floor(value) || 0));
+  const inverted = max - clamped;
+  const bits = inverted.toString(2).padStart(20, "0");
+  return bits.split("").map((bit) => bit === "1" ? "\uFEFF" : "\u200B").join("");
+}
 function buildStream(source) {
   if (!source.url || !/^https?:\/\//i.test(source.url))
     return null;
   const quality = normalizeQualityLabel(source.quality);
+  const sortTag = invertedSortTag(qualityRank(quality), 2160);
   return {
     url: source.url,
     quality,
-    title: `VidSrc 4K ${quality}`,
+    title: `${sortTag}VidSrc 4K ${quality}`,
     name: "VidSrc",
     headers: {},
     subtitles: []

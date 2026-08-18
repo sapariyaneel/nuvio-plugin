@@ -64,6 +64,16 @@ function qualityRank(quality) {
   return Number.isFinite(n) ? n : 0;
 }
 
+function invertedSortTag(value, max) {
+  const clamped = Math.max(0, Math.min(max, Math.floor(value) || 0));
+  const inverted = max - clamped;
+  const bits = inverted.toString(2).padStart(20, "0");
+  return bits
+    .split("")
+    .map((bit) => (bit === "1" ? "﻿" : "​"))
+    .join("");
+}
+
 function resolveUrl(line, baseUrl) {
   try {
     return new URL(line, baseUrl).toString();
@@ -175,11 +185,12 @@ async function buildStream(mirrorId, entry, runtimeSeconds, referer) {
     if (!topVariant) return null;
 
     const quality = qualityLabelFromResolution(topVariant.width, topVariant.height);
+    const sortTag = invertedSortTag(qualityRank(quality), 2160);
 
     return {
       url: entry.playlist,
       quality,
-      title: `VidCore ${mirrorId} ${quality}`,
+      title: `${sortTag}VidCore ${mirrorId} ${quality}`,
       name: "VidCore",
       size: (runtimeSeconds && topVariant.bandwidth)
         ? formatBytes((topVariant.bandwidth * runtimeSeconds) / 8)

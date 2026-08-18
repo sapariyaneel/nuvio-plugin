@@ -1,6 +1,6 @@
 /**
  * vidcore - Built from src/providers/vidcore.js
- * Generated: 2026-08-18T11:57:24.394Z
+ * Generated: 2026-08-18T11:59:13.092Z
  */
 
 // src/providers/vidcore.js
@@ -80,6 +80,12 @@ function qualityRank(quality) {
     return 2160;
   const n = parseInt(quality, 10);
   return Number.isFinite(n) ? n : 0;
+}
+function invertedSortTag(value, max) {
+  const clamped = Math.max(0, Math.min(max, Math.floor(value) || 0));
+  const inverted = max - clamped;
+  const bits = inverted.toString(2).padStart(20, "0");
+  return bits.split("").map((bit) => bit === "1" ? "\uFEFF" : "\u200B").join("");
 }
 function resolveUrl(line, baseUrl) {
   try {
@@ -187,10 +193,11 @@ async function buildStream(mirrorId, entry, runtimeSeconds, referer) {
     if (!topVariant)
       return null;
     const quality = qualityLabelFromResolution(topVariant.width, topVariant.height);
+    const sortTag = invertedSortTag(qualityRank(quality), 2160);
     return {
       url: entry.playlist,
       quality,
-      title: `VidCore ${mirrorId} ${quality}`,
+      title: `${sortTag}VidCore ${mirrorId} ${quality}`,
       name: "VidCore",
       size: runtimeSeconds && topVariant.bandwidth ? formatBytes(topVariant.bandwidth * runtimeSeconds / 8) : "Unknown",
       headers,
