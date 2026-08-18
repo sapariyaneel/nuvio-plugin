@@ -38,7 +38,7 @@ let cachedDomains = null;
 async function getDomains() {
   if (cachedDomains) return cachedDomains;
   try {
-    const resp = await fetch(DOMAINS_URL, { skipSizeCheck: true });
+    const resp = await fetch(DOMAINS_URL, { skipSizeCheck: true, redirect: "follow" });
     cachedDomains = await resp.json();
   } catch (e) {
     cachedDomains = {};
@@ -53,7 +53,7 @@ async function getApiBase() {
 
 function fetchWithTimeout(url, options) {
   return Promise.race([
-    fetch(url, options),
+    fetch(url, { redirect: "follow", ...options }),
     new Promise((_, reject) => setTimeout(() => reject(new Error("timeout")), REQUEST_TIMEOUT_MS))
   ]);
 }
