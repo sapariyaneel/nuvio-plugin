@@ -9,13 +9,14 @@ const CryptoJS = typeof require === "function" ? require("crypto-js") : global.C
 
 const DOMAINS_URL = "https://raw.githubusercontent.com/sapariyaneel/nuvio-plugin/refs/heads/main/domains.json";
 const FALLBACK_BASE_URL = "https://hdhub4u.glass";
+const FALLBACK_SEARCH_URL = "https://search.pingora.fyi";
 const TMDB_API_KEY = "1865f43a0549ca50d341dd9ab8b29f49";
 
 const HEADERS = {
   "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36 Edg/131.0.0.0"
 };
 
-// search.pingora.fyi returns a Cloudflare 403 challenge page without a browser-like Referer/Origin/Accept set.
+// search.pingora.fyi 403s without a browser-like Referer/Origin/Accept
 const SEARCH_HEADERS = {
   ...HEADERS,
   "Accept": "application/json, text/plain, */*",
@@ -39,6 +40,11 @@ async function getDomains() {
 async function getBaseUrl() {
   const d = await getDomains();
   return d.HDHUB4u || FALLBACK_BASE_URL;
+}
+
+async function getSearchUrl() {
+  const d = await getDomains();
+  return d.hdhub4uSearch || FALLBACK_SEARCH_URL;
 }
 
 function originOf(url) {
@@ -307,8 +313,6 @@ async function hubCloudExtractor(url, referer) {
           if (finalLink) streams.push({ url: finalLink, quality, title: `${ref} [10Gbps] ${labelExtras}`.trim(), size: formatBytes(sizeInBytes )});
         } else {
           const nested = await loadExtractor(link, "");
-          // s.size from the nested extractor is already a formatted string (or absent) - only
-          // sizeInBytes here is a raw number that still needs formatBytes().
           streams.push(...nested.map(s => ({ ...s, size: s.size || formatBytes(sizeInBytes) })));
         }
       } catch (e) {}
@@ -470,7 +474,8 @@ async function getStreams(tmdbId, mediaType, season, episode) {
     const title = mediaInfo.title || mediaInfo.name;
     if (!title) return [];
 
-    const searchUrl = `https://search.pingora.fyi/collections/post/documents/search?q=${encodeURIComponent(title)}&query_by=post_title,category&query_by_weights=4,2&sort_by=sort_by_date:desc&limit=15&highlight_fields=none&use_cache=true&page=1`;
+    const searchBase = await getSearchUrl();
+    const searchUrl = `${searchBase}/collections/post/documents/search?q=${encodeURIComponent(title)}&query_by=post_title,category&query_by_weights=4,2&sort_by=sort_by_date:desc&limit=15&highlight_fields=none&use_cache=true&page=1`;
     const searchJson = await (await fetch(searchUrl, { headers: SEARCH_HEADERS, skipSizeCheck: true })).json();
     const hits = searchJson && searchJson.hits ? searchJson.hits : [];
     if (!hits.length) return [];
@@ -490,9 +495,7 @@ async function getStreams(tmdbId, mediaType, season, episode) {
     }
     if (!match) match = titleMatches[0] || results[0];
 
-    // search.pingora.fyi's index caches permalinks with whatever hdhub4u domain was live when
-    // it last crawled - that domain rotates and can go dead (DNS failure), so always rebuild
-    // the URL against the current baseUrl and keep only the path from the indexed permalink.
+    // index caches permalinks with whatever domain was live at crawl time, rebuild against baseUrl
     const matchPath = match.url.startsWith("http") ? match.url.replace(/^https?:\/\/[^/]+/, "") : match.url;
     const pageUrl = `${baseUrl}${matchPath.startsWith("/") ? "" : "/"}${matchPath}`;
     const pageHtml = await (await fetch(pageUrl, { headers: HEADERS, skipSizeCheck: true })).text();
@@ -510,7 +513,6 @@ async function getStreams(tmdbId, mediaType, season, episode) {
         }
       });
       if (!rawLinks.length) {
-        // fallback: generic Episode N regex without zero-padding assumptions
         const altRegex = /Episode\s*(\d+)/i;
         $("h5 a").each((i, el) => {
           const text = $(el).text();
@@ -522,7 +524,6 @@ async function getStreams(tmdbId, mediaType, season, episode) {
         });
       }
       if (!rawLinks.length) {
-        // current site markup: per-episode <h4>E01 - <a>Drive</a> | <a>Instant</a> | <a>Watch</a></h4>
         const epNumRegex = new RegExp(`^E0*${episode}\\b`, "i");
         $("h4").each((i, el) => {
           const heading = $(el).text().trim();
@@ -566,8 +567,6 @@ async function getStreams(tmdbId, mediaType, season, episode) {
         name: s.title || "HDhub4u",
         headers: s.headers || { Referer: baseUrl, "User-Agent": HEADERS["User-Agent"] },
         subtitles: s.subtitles || [],
-        // s.size is already a formatted string (e.g. "864.97 MB") from the extractor above -
-        // re-running it through formatBytes() treats it as a raw byte count and produces NaN.
         size: s.size || ""
       }))
       .filter(s => meetsMinSize(s.size));

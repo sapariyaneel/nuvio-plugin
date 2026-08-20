@@ -1,6 +1,6 @@
 /**
  * moviebox - Built from src/providers/moviebox.js
- * Generated: 2026-08-18T11:57:24.490Z
+ * Generated: 2026-08-20T09:51:42.325Z
  */
 
 // src/providers/moviebox.js

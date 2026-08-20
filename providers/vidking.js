@@ -1,6 +1,6 @@
 /**
  * vidking - Built from src/providers/vidking.js
- * Generated: 2026-08-18T12:20:55.324Z
+ * Generated: 2026-08-20T09:51:42.462Z
  */
 
 // src/providers/vidking.js

@@ -24,28 +24,6 @@
       ]
     },
     {
-      "id": "Zinkmovies",
-      "name": "Zinkmovies",
-      "description": "Zinkmovies Hindi/Indian movie & series streaming via HubCloud mirror chain",
-      "version": "1.0.0",
-      "author": "CENSORED",
-      "supportedTypes": [
-        "movie",
-        "tv"
-      ],
-      "filename": "providers/zinkmovies.js",
-      "enabled": false,
-      "formats": [
-        "mp4",
-        "m3u8"
-      ],
-      "logo": "https://i.imgur.com/9bGkGMi.png",
-      "contentLanguage": [
-        "hi",
-        "en"
-      ]
-    },
-    {
       "id": "HDhub4u",
       "name": "HDhub4u",
       "description": "HDhub4u Hindi movie streaming via HubCloud mirror chain",
@@ -131,27 +109,6 @@
       "contentLanguage": [
         "hi",
         "en"
-      ]
-    },
-    {
-      "id": "Fivemovierulz",
-      "name": "5movierulz",
-      "description": "5movierulz South Indian/Bollywood movie site",
-      "version": "1.0.0",
-      "author": "CENSORED",
-      "supportedTypes": [
-        "movie"
-      ],
-      "filename": "providers/fivemovierulz.js",
-      "enabled": true,
-      "formats": [
-        "mp4",
-        "m3u8"
-      ],
-      "logo": "https://i.imgur.com/9bGkGMi.png",
-      "contentLanguage": [
-        "hi",
-        "te"
       ]
     },
     {
@@ -318,26 +275,6 @@
       ],
       "filename": "providers/vidking.js",
       "enabled": true,
-      "formats": [
-        "m3u8"
-      ],
-      "logo": "https://i.imgur.com/9bGkGMi.png",
-      "contentLanguage": [
-        "en"
-      ]
-    },
-    {
-      "id": "Goated",
-      "name": "Goated",
-      "description": "Goated TMDB-id-based movie & TV streaming with adaptive quality, real size and subtitles",
-      "version": "1.0.0",
-      "author": "CENSORED",
-      "supportedTypes": [
-        "movie",
-        "tv"
-      ],
-      "filename": "providers/goated.js",
-      "enabled": false,
       "formats": [
         "m3u8"
       ],

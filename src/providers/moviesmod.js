@@ -1,9 +1,4 @@
-// moviesmod.js
-// MoviesMod - Hindi/English Bollywood & Hollywood movie & series site
-// Search: GET /?s={query} -> article.latestPost.excerpt (h2.title.front-view-title a)
-// Movie/TV: links.modpro.blog / posts.modpro.blog intermediate page -> a.maxbutton-fast-server-gdrive
-//           (Google Drive link, gated by cloud.unblockedgames.world bypass chain)
-// Links: same Driveseed/Driveleech(.org/.net/.pro) family and unblockedgames bypass as uhdmovies.js
+// moviesmod.js - Bollywood/Hollywood, same Driveseed/Driveleech + unblockedgames bypass as uhdmovies.js
 
 const DOMAINS_URL = "https://raw.githubusercontent.com/sapariyaneel/nuvio-plugin/refs/heads/main/domains.json";
 const FALLBACK_BASE_URL = "https://moviesmod.zone";
@@ -18,7 +13,7 @@ let cachedDomains = null;
 async function getDomains() {
   if (cachedDomains) return cachedDomains;
   try {
-    const resp = await fetch(DOMAINS_URL, { skipSizeCheck: true });
+    const resp = await fetch(DOMAINS_URL, { skipSizeCheck: true, redirect: "follow" });
     cachedDomains = await resp.json();
   } catch (e) {
     cachedDomains = {};
@@ -128,10 +123,9 @@ function removeLeadingIndex(title) {
   return (title || "").replace(/^[[(]?\s*\d+\s*[\])\-_.]*\s*/, "");
 }
 
-// Driveseed/Driveleech family extractors (shared with uhdmovies.js - same downstream site family)
 async function driveseedCFType1(url) {
   try {
-    const html = await (await fetch(`${url}?type=1`, { headers: HEADERS, skipSizeCheck: true })).text();
+    const html = await (await fetch(`${url}?type=1`, { headers: HEADERS, skipSizeCheck: true, redirect: "follow" })).text();
     const $ = cheerio.load(html);
     return $("a.btn-success").toArray().map(el => $(el).attr("href")).filter(h => h && h.startsWith("http"));
   } catch (e) {
@@ -141,7 +135,7 @@ async function driveseedCFType1(url) {
 
 async function driveseedResumeCloudLink(baseUrl, path) {
   try {
-    const html = await (await fetch(`${baseUrl}${path}`, { headers: HEADERS, skipSizeCheck: true })).text();
+    const html = await (await fetch(`${baseUrl}${path}`, { headers: HEADERS, skipSizeCheck: true, redirect: "follow" })).text();
     const $ = cheerio.load(html);
     const href = $("a.btn-success").attr("href");
     return href && href.startsWith("http") ? href : null;
@@ -152,7 +146,7 @@ async function driveseedResumeCloudLink(baseUrl, path) {
 
 async function driveseedResumeBot(url) {
   try {
-    const resp = await fetch(url, { headers: HEADERS, skipSizeCheck: true });
+    const resp = await fetch(url, { headers: HEADERS, skipSizeCheck: true, redirect: "follow" });
     const html = await resp.text();
     const cookieHeader = resp.headers.get("set-cookie") || "";
     const ssidMatch = cookieHeader.match(/PHPSESSID=([^;]+)/);
@@ -176,7 +170,8 @@ async function driveseedResumeBot(url) {
         Cookie: ssid ? `PHPSESSID=${ssid}` : ""
       },
       body,
-      skipSizeCheck: true
+      skipSizeCheck: true,
+      redirect: "follow"
     });
     const json = JSON.parse(await dl.text());
     const finalUrl = json.url;
@@ -204,7 +199,7 @@ async function driveseedGetUrl(url, referer, siteName) {
     const baseDomain = getOrigin(currentUrl);
 
     if (currentUrl.includes("r?key=")) {
-      const html = await (await fetch(currentUrl, { headers: HEADERS, skipSizeCheck: true })).text();
+      const html = await (await fetch(currentUrl, { headers: HEADERS, skipSizeCheck: true, redirect: "follow" })).text();
       const $ = cheerio.load(html);
       const scriptData = $("script").first().html() || "";
       const afterReplace = scriptData.split('replace("')[1];
@@ -212,7 +207,7 @@ async function driveseedGetUrl(url, referer, siteName) {
       currentUrl = `${baseDomain}${path}`;
     }
 
-    const pageHtml = await (await fetch(currentUrl, { headers: HEADERS, skipSizeCheck: true })).text();
+    const pageHtml = await (await fetch(currentUrl, { headers: HEADERS, skipSizeCheck: true, redirect: "follow" })).text();
     const $ = cheerio.load(pageHtml);
 
     const rawFileName = ($("li.list-group-item").first().text() || "").replace("Name : ", "").trim();
@@ -257,9 +252,7 @@ async function driveseedGetUrl(url, referer, siteName) {
   }
 }
 
-// bypassHrefli: same unblockedgames anti-adblock bypass chain as uhdmovies.js.
-// Form POSTs require Content-Type + Referer or the WAF serves an unrelated decoy page instead of the next hop.
-// The final ?go= step is gated by a client-set cookie (from the inline s_343(name, value, minutes) call).
+// unblockedgames bypass - forms need Content-Type+Referer or the WAF serves a decoy page
 async function bypassHrefli(url) {
   try {
     const host = getOrigin(url);
@@ -276,26 +269,26 @@ async function bypassHrefli(url) {
       })()
     });
 
-    let res = await fetch(url, { headers: HEADERS, skipSizeCheck: true });
+    let res = await fetch(url, { headers: HEADERS, skipSizeCheck: true, redirect: "follow" });
     let $ = cheerio.load(await res.text());
     let form = getForm($);
 
-    res = await fetch(form.action, { method: "POST", headers: { ...formHeaders, Referer: url }, body: form.data.toString(), skipSizeCheck: true });
+    res = await fetch(form.action, { method: "POST", headers: { ...formHeaders, Referer: url }, body: form.data.toString(), skipSizeCheck: true, redirect: "follow" });
     $ = cheerio.load(await res.text());
     form = getForm($);
 
-    res = await fetch(form.action, { method: "POST", headers: { ...formHeaders, Referer: url }, body: form.data.toString(), skipSizeCheck: true });
+    res = await fetch(form.action, { method: "POST", headers: { ...formHeaders, Referer: url }, body: form.data.toString(), skipSizeCheck: true, redirect: "follow" });
     const html4 = await res.text();
-    $ = cheerio.load(html4);
 
-    const scriptText = $("script:contains(?go=)").first().html() || "";
-    const cookieMatch = scriptText.match(/s_343\('([^']+)',\s*'([^']+)',\s*\d+\)/);
+    // regex the raw HTML, the decoy page template varies per request so the cheerio selector isn't reliable
+    const cookieMatch = html4.match(/s_343\('([^']+)',\s*'([^']+)',\s*\d+\)/);
     if (!cookieMatch) return null;
     const [, cookieName, cookieValue] = cookieMatch;
 
     const goResp = await fetch(`${host}/?go=${cookieName}`, {
       headers: { ...HEADERS, Cookie: `${cookieName}=${encodeURIComponent(cookieValue)}`, Referer: form.action },
-      skipSizeCheck: true
+      skipSizeCheck: true,
+      redirect: "follow"
     });
     const goHtml = await goResp.text();
     const $go = cheerio.load(goHtml);
@@ -303,7 +296,7 @@ async function bypassHrefli(url) {
     let driveUrl = metaRefresh.includes("url=") ? metaRefresh.split("url=")[1] : null;
     if (!driveUrl) return null;
 
-    const finalText = await (await fetch(driveUrl, { headers: HEADERS, skipSizeCheck: true })).text();
+    const finalText = await (await fetch(driveUrl, { headers: HEADERS, skipSizeCheck: true, redirect: "follow" })).text();
     const afterReplace = finalText.split('replace("')[1];
     const path = afterReplace ? afterReplace.split('")')[0] : "";
     if (path === "/404") return null;
@@ -342,7 +335,7 @@ async function resolveSourceLink(link) {
 async function resolveImdbToTmdb(imdbId, mediaType) {
   try {
     const url = `https://api.themoviedb.org/3/find/${imdbId}?api_key=${TMDB_API_KEY}&external_source=imdb_id`;
-    const data = await (await fetch(url, { skipSizeCheck: true })).json();
+    const data = await (await fetch(url, { skipSizeCheck: true, redirect: "follow" })).json();
     const results = mediaType === "tv" ? data.tv_results : data.movie_results;
     return results && results.length ? results[0].id : null;
   } catch (e) {
@@ -350,12 +343,9 @@ async function resolveImdbToTmdb(imdbId, mediaType) {
   }
 }
 
-// Intermediate links.modpro.blog / posts.modpro.blog page: multiple maxbutton-* mirrors.
-// maxbutton-fast-server-gdrive / maxbutton-google-drive-server-2 are unblockedgames-gated Google Drive links -
-// those are the ones that resolve through the working bypass chain to Driveseed/Driveleech.
 async function resolveModproLink(modproUrl) {
   try {
-    const html = await (await fetch(modproUrl, { headers: HEADERS, skipSizeCheck: true })).text();
+    const html = await (await fetch(modproUrl, { headers: HEADERS, skipSizeCheck: true, redirect: "follow" })).text();
     const $ = cheerio.load(html);
     const gdriveLink =
       $("a.maxbutton-fast-server-gdrive").attr("href") ||
@@ -378,12 +368,12 @@ async function getStreams(tmdbId, mediaType, season, episode) {
     const baseUrl = await getBaseUrl();
 
     const tmdbUrl = `https://api.themoviedb.org/3/${mediaType}/${tmdbId}?api_key=${TMDB_API_KEY}`;
-    const mediaInfo = await (await fetch(tmdbUrl, { skipSizeCheck: true })).json();
+    const mediaInfo = await (await fetch(tmdbUrl, { skipSizeCheck: true, redirect: "follow" })).json();
     const title = mediaInfo.title || mediaInfo.name;
     if (!title) return [];
 
     const searchUrl = `${baseUrl}/?s=${encodeURIComponent(title)}`;
-    const searchHtml = await (await fetch(searchUrl, { headers: HEADERS, skipSizeCheck: true })).text();
+    const searchHtml = await (await fetch(searchUrl, { headers: HEADERS, skipSizeCheck: true, redirect: "follow" })).text();
     const $ = cheerio.load(searchHtml);
 
     const results = [];
@@ -397,13 +387,12 @@ async function getStreams(tmdbId, mediaType, season, episode) {
     const lcTitle = title.toLowerCase();
     let match = results.find(r => r.title.toLowerCase().includes(lcTitle)) || results[0];
 
-    const pageHtml = await (await fetch(match.url, { headers: HEADERS, skipSizeCheck: true })).text();
+    const pageHtml = await (await fetch(match.url, { headers: HEADERS, skipSizeCheck: true, redirect: "follow" })).text();
     const $page = cheerio.load(pageHtml);
 
     const entryTitle = $page("h1, h2.title").first().text() || "";
     const isTvSeries = /Season/i.test(entryTitle) && !/S0/i.test(entryTitle);
 
-    // modpro.blog intermediate links, one per quality option
     const modproLinks = [];
     $page("a.maxbutton").toArray().forEach(el => {
       const href = $page(el).attr("href") || "";
@@ -412,9 +401,6 @@ async function getStreams(tmdbId, mediaType, season, episode) {
     const uniqueModproLinks = [...new Set(modproLinks)];
     if (!uniqueModproLinks.length) return [];
 
-    // TV: modpro.blog link text/href does not reliably carry episode numbers on this theme -
-    // fall back to resolving every listed link (mirrors uhdmovies' fallback-by-episode-text behavior
-    // is not applicable here since MoviesMod mostly serves movies/season-packs).
     void isTvSeries;
     void season;
     void episode;
@@ -434,8 +420,6 @@ async function getStreams(tmdbId, mediaType, season, episode) {
         name: s.title || "MoviesMod",
         headers: s.headers || { Referer: baseUrl, "User-Agent": HEADERS["User-Agent"] },
         subtitles: [],
-        // s.size is already a formatted string from the extractor above - re-running it through
-        // formatBytes() treats it as a raw byte count and produces NaN.
         size: s.size || ""
       }))
       .filter(s => meetsMinSize(s.size));

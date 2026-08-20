@@ -1,20 +1,7 @@
-// cineby.js
-// Cineby (https://www.cineby.at) - TMDB-id-based movie & TV streaming via a seeded-cipher CDN API.
-// Flow: GET {api}/seed?mediaId={tmdbId} -> {"seed":"<num>.<22 random b64url chars>","ttlMs":30000}
-//       GET {api}/cdn/sources-with-title?title=&mediaType=&year=&episodeId=&seasonId=&tmdbId=&imdbId=&enc=2&seed=
-//       -> base64url blob. XOR-decrypt with a keystream derived from the seed string + tmdbId
-//       (custom 61-slot LCG-ish PRNG seeded with FNV-1a(seed) ^ murmur3-fmix(tmdbId ^ 0x9E3779B9),
-//       mixed with SHA-256 round constants) to get JSON: {"sources":[{quality,url}],"subtitles":[...]}.
-// First 4 decrypted bytes must equal the ASCII magic "mvm1" or the payload is rejected as tampered.
-// Reverse-engineered from the site's own Next.js chunk (webpack module 84737, export `BV`, chunk
-// hash 831-75be8e900f88f162.js) by extracting and running its real decrypt function against a live
-// request/response pair captured through the browser - not guessed. The RC4-keyed branch in that
-// function is unreachable dead code (its selector `(e*(e+1))&1===1` is never true since e*(e+1) is
-// always even), so only the custom-PRNG branch is implemented here.
-// Streams are HLS (.m3u8) with no reported byte size in the API response itself - segments are
-// disguised as .jpg/.html files behind rotating CDN hostnames. Real size is estimated by sampling
-// a few real segment URLs for their real byte length (HEAD, falling back to a ranged GET for edges
-// that omit Content-Length) and scaling by the real total segment count in that playlist.
+// cineby.js - cineby.at, sources come back as an XOR-ciphered blob keyed off a per-request seed
+// keystream = custom 61-slot PRNG (FNV-1a + murmur3 fmix), decrypted payload starts with magic "mvm1"
+// reverse engineered from the site's own JS bundle, not guessed
+// no size in the API response, so size is estimated by sampling real segment byte lengths
 
 const DOMAINS_URL = "https://raw.githubusercontent.com/sapariyaneel/nuvio-plugin/refs/heads/main/domains.json";
 const FALLBACK_API_HOST = "https://api.speedracelight.com";
@@ -41,9 +28,7 @@ async function getDomains() {
 
 async function getApiHost() {
   const d = await getDomains();
-  // NOTE: the `cineby` key holds the *frontend* domain (www.cineby.at); the seed/sources API lives
-  // on a separate host, so the API keys must be checked first or every request hits the frontend
-  // and returns nothing.
+  // `cineby` key is the frontend domain, not the api - check api keys first
   return (d["speedracelight"] || d["api.speedracelight.com"] || FALLBACK_API_HOST).replace(/\/+$/, "");
 }
 
@@ -74,9 +59,7 @@ function rotl32(x, n) {
   return (x << n | x >>> (32 - n)) >>> 0;
 }
 
-// Pure-JS base64 decode, used only if the runtime somehow lacks atob. Buffer is deliberately not
-// referenced here - it does not exist in React Native/Hermes, so a Buffer fallback would throw
-// rather than fall back.
+// fallback for when atob isn't available - no Buffer here, doesn't exist in Hermes
 const BASE64_CHARS = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
 function pureBase64Decode(b64) {
   let clean = "";
@@ -156,8 +139,7 @@ function generateKeystream(seedStr, mediaId, length) {
   return out;
 }
 
-// Manual UTF-8 decode - avoids relying on TextDecoder, which isn't guaranteed to exist in every
-// React Native/Hermes runtime this provider runs under.
+// no TextDecoder in this runtime, decode UTF-8 by hand
 function utf8BytesToString(bytes) {
   let result = "";
   let i = 0;
@@ -237,30 +219,23 @@ function meetsMinSize(sizeStr) {
 
 const SEGMENT_SAMPLE_SIZE = 5;
 
-// Some CDN edges omit Content-Length on HEAD/plain GET for these segments (chunked response) but
-// still honor Range requests and report the real full size in Content-Range: bytes x-y/TOTAL.
+// some edges omit Content-Length on HEAD, fall back to a ranged GET for Content-Range
 async function getRealSegmentSize(url) {
   try {
     const head = await fetch(url, { method: "HEAD", headers: HEADERS, skipSizeCheck: true });
     const len = head.headers.get("content-length");
     if (len) return parseInt(len, 10);
-  } catch (e) {
-    // fall through to ranged GET
-  }
+  } catch (e) {}
   try {
     const ranged = await fetch(url, { headers: { ...HEADERS, "Range": "bytes=0-1" }, skipSizeCheck: true });
     const contentRange = ranged.headers.get("content-range");
     const match = contentRange && contentRange.match(/\/(\d+)$/);
     if (match) return parseInt(match[1], 10);
-  } catch (e) {
-    // give up, caller treats as unknown
-  }
+  } catch (e) {}
   return null;
 }
 
-// HLS media playlists here carry no BANDWIDTH/size metadata, so the only way to get a real number
-// is to measure real segments: fetch the playlist, sample a handful of its actual segment URLs for
-// their real total byte size, then scale the average by the real total segment count in that playlist.
+// playlists carry no size metadata, so sample real segments and scale by segment count
 async function estimateHlsSize(playlistUrl) {
   try {
     const resp = await fetch(playlistUrl, { headers: HEADERS, skipSizeCheck: true });

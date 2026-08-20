@@ -1,12 +1,13 @@
 /**
  * hdhub4u - Built from src/providers/hdhub4u.js
- * Generated: 2026-08-17T12:20:48.204Z
+ * Generated: 2026-08-20T09:51:41.990Z
  */
 
 // src/providers/hdhub4u.js
 var CryptoJS = typeof require === "function" ? require("crypto-js") : global.CryptoJS;
 var DOMAINS_URL = "https://raw.githubusercontent.com/sapariyaneel/nuvio-plugin/refs/heads/main/domains.json";
 var FALLBACK_BASE_URL = "https://hdhub4u.glass";
+var FALLBACK_SEARCH_URL = "https://search.pingora.fyi";
 var TMDB_API_KEY = "1865f43a0549ca50d341dd9ab8b29f49";
 var HEADERS = {
   "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36 Edg/131.0.0.0"
@@ -32,6 +33,10 @@ async function getDomains() {
 async function getBaseUrl() {
   const d = await getDomains();
   return d.HDHUB4u || FALLBACK_BASE_URL;
+}
+async function getSearchUrl() {
+  const d = await getDomains();
+  return d.hdhub4uSearch || FALLBACK_SEARCH_URL;
 }
 function originOf(url) {
   const m = (url || "").match(/^(https?:\/\/[^/]+)/);
@@ -460,7 +465,8 @@ async function getStreams(tmdbId, mediaType, season, episode) {
     const title = mediaInfo.title || mediaInfo.name;
     if (!title)
       return [];
-    const searchUrl = `https://search.pingora.fyi/collections/post/documents/search?q=${encodeURIComponent(title)}&query_by=post_title,category&query_by_weights=4,2&sort_by=sort_by_date:desc&limit=15&highlight_fields=none&use_cache=true&page=1`;
+    const searchBase = await getSearchUrl();
+    const searchUrl = `${searchBase}/collections/post/documents/search?q=${encodeURIComponent(title)}&query_by=post_title,category&query_by_weights=4,2&sort_by=sort_by_date:desc&limit=15&highlight_fields=none&use_cache=true&page=1`;
     const searchJson = await (await fetch(searchUrl, { headers: SEARCH_HEADERS, skipSizeCheck: true })).json();
     const hits = searchJson && searchJson.hits ? searchJson.hits : [];
     if (!hits.length)
@@ -549,8 +555,6 @@ async function getStreams(tmdbId, mediaType, season, episode) {
       name: s.title || "HDhub4u",
       headers: s.headers || { Referer: baseUrl, "User-Agent": HEADERS["User-Agent"] },
       subtitles: s.subtitles || [],
-      // s.size is already a formatted string (e.g. "864.97 MB") from the extractor above -
-      // re-running it through formatBytes() treats it as a raw byte count and produces NaN.
       size: s.size || ""
     })).filter((s) => meetsMinSize(s.size));
   } catch (e) {

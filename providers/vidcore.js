@@ -1,6 +1,6 @@
 /**
  * vidcore - Built from src/providers/vidcore.js
- * Generated: 2026-08-18T11:59:13.092Z
+ * Generated: 2026-08-20T09:51:42.451Z
  */
 
 // src/providers/vidcore.js

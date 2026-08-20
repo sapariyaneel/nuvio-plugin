@@ -1,16 +1,82 @@
 /**
  * hindmoviez - Built from src/providers/hindmoviez.js
- * Generated: 2026-08-17T12:20:48.209Z
+ * Generated: 2026-08-20T09:51:42.126Z
  */
 
 // src/providers/hindmoviez.js
 var DOMAINS_URL = "https://raw.githubusercontent.com/sapariyaneel/nuvio-plugin/refs/heads/main/domains.json";
 var FALLBACK_BASE_URL = "https://hindmovie.icu";
+var MVLINK_AJAX_URL = "https://mvlink.blog/wp-admin/admin-ajax.php";
 var TMDB_API_KEY = "1865f43a0549ca50d341dd9ab8b29f49";
 var HEADERS = {
   "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/120.0.0.0 Safari/537.36",
   "Referer": `${FALLBACK_BASE_URL}/`
 };
+var B64_CHARS = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+function utf8Bytes(str) {
+  const bytes = [];
+  for (let i = 0; i < str.length; i++) {
+    let code = str.codePointAt(i);
+    if (code > 65535)
+      i++;
+    if (code < 128) {
+      bytes.push(code);
+    } else if (code < 2048) {
+      bytes.push(192 | code >> 6, 128 | code & 63);
+    } else if (code < 65536) {
+      bytes.push(224 | code >> 12, 128 | code >> 6 & 63, 128 | code & 63);
+    } else {
+      bytes.push(
+        240 | code >> 18,
+        128 | code >> 12 & 63,
+        128 | code >> 6 & 63,
+        128 | code & 63
+      );
+    }
+  }
+  return bytes;
+}
+function base64UrlEncode(str) {
+  const bytes = utf8Bytes(str);
+  let out = "";
+  for (let i = 0; i < bytes.length; i += 3) {
+    const b0 = bytes[i];
+    const b1 = i + 1 < bytes.length ? bytes[i + 1] : void 0;
+    const b2 = i + 2 < bytes.length ? bytes[i + 2] : void 0;
+    out += B64_CHARS[b0 >> 2];
+    out += B64_CHARS[(b0 & 3) << 4 | (b1 === void 0 ? 0 : b1 >> 4)];
+    out += b1 === void 0 ? "" : B64_CHARS[(b1 & 15) << 2 | (b2 === void 0 ? 0 : b2 >> 6)];
+    out += b2 === void 0 ? "" : B64_CHARS[b2 & 63];
+  }
+  return out.replace(/\+/g, "-").replace(/\//g, "_");
+}
+async function resolveHshareUrl(href) {
+  try {
+    const m = String(href || "").match(/^https?:\/\/hshare\.ink\/\?id=(.+)$/i);
+    if (!m)
+      return href;
+    const rawId = decodeURIComponent(m[1]);
+    if (!rawId)
+      return href;
+    const encodedId = base64UrlEncode(rawId);
+    const body = `action=hindshare_sign&d=${encodeURIComponent(encodedId)}`;
+    const resp = await fetch(MVLINK_AJAX_URL, {
+      method: "POST",
+      headers: {
+        ...HEADERS,
+        "Content-Type": "application/x-www-form-urlencoded",
+        "Referer": "https://mvlink.blog/"
+      },
+      body,
+      skipSizeCheck: true,
+      redirect: "follow"
+    });
+    const data = await resp.json();
+    return data && data.success && data.data && data.data.url ? data.data.url : href;
+  } catch (e) {
+    return href;
+  }
+}
 var cachedDomains = null;
 async function getDomains() {
   if (cachedDomains)
@@ -90,7 +156,7 @@ async function getStreams(tmdbId, mediaType, season, episode) {
     if (!title)
       return [];
     const searchUrl = `${baseUrl}/page/1/?s=${encodeURIComponent(title)}`;
-    const searchHtml = await (await fetch(searchUrl, { headers: HEADERS, skipSizeCheck: true })).text();
+    const searchHtml = await (await fetch(searchUrl, { headers: HEADERS, skipSizeCheck: true, redirect: "follow" })).text();
     const $ = cheerio.load(searchHtml);
     const results = [];
     $("article").each((i, el) => {
@@ -111,7 +177,7 @@ async function getStreams(tmdbId, mediaType, season, episode) {
     if (!match)
       match = results[0];
     const pageUrl = match.url.startsWith("http") ? match.url : `${baseUrl}${match.url}`;
-    const pageHtml = await (await fetch(pageUrl, { headers: HEADERS, skipSizeCheck: true })).text();
+    const pageHtml = await (await fetch(pageUrl, { headers: HEADERS, skipSizeCheck: true, redirect: "follow" })).text();
     const $page = cheerio.load(pageHtml);
     const streams = [];
     if (isTV) {
@@ -131,7 +197,7 @@ async function getStreams(tmdbId, mediaType, season, episode) {
         if (!episodeListUrl)
           continue;
         try {
-          const epListHtml = await (await fetch(episodeListUrl, { headers: HEADERS, skipSizeCheck: true })).text();
+          const epListHtml = await (await fetch(episodeListUrl, { headers: HEADERS, skipSizeCheck: true, redirect: "follow" })).text();
           const $epList = cheerio.load(epListHtml);
           const epAnchors = $epList("h3 > a").toArray();
           for (const epA of epAnchors) {
@@ -145,17 +211,18 @@ async function getStreams(tmdbId, mediaType, season, episode) {
             if (!epHref)
               continue;
             try {
-              const epPageHtml = await (await fetch(epHref, { headers: HEADERS, skipSizeCheck: true })).text();
+              const resolvedEpUrl = await resolveHshareUrl(epHref);
+              const epPageHtml = await (await fetch(resolvedEpUrl, { headers: HEADERS, skipSizeCheck: true, redirect: "follow" })).text();
               const $epPage = cheerio.load(epPageHtml);
+              const epName = ($epPage("div.container p").filter((i, p2) => $epPage(p2).text().includes("Name:")).first().text() || "").replace("Name:", "").trim();
               const epSizeText = ($epPage("div.container p").filter((i, p2) => $epPage(p2).text().includes("Size:")).first().text() || "").replace("Size:", "").trim();
               const epSizeBytes = toBytes(epSizeText);
               $epPage("a.btn").each((i, btn) => {
                 const btnHref = $epPage(btn).attr("href") || "";
                 if (btnHref && btnHref.startsWith("http")) {
-                  const h2text = $epPage("div.container h2").text() || "";
                   streams.push({
                     url: btnHref,
-                    quality: extractQuality(h2text || btnHref),
+                    quality: extractQuality(epName || btnHref),
                     title: `Hindmoviez [S${season}E${episode}]`,
                     subtitles: [],
                     size: formatBytes(epSizeBytes)
@@ -176,7 +243,7 @@ async function getStreams(tmdbId, mediaType, season, episode) {
           const btnUrl = $page(btn).attr("href");
           if (!btnUrl)
             continue;
-          const btnPageHtml = await (await fetch(btnUrl, { headers: HEADERS, skipSizeCheck: true })).text();
+          const btnPageHtml = await (await fetch(btnUrl, { headers: HEADERS, skipSizeCheck: true, redirect: "follow" })).text();
           const $btnPage = cheerio.load(btnPageHtml);
           const getLinksAnchors = $btnPage("div.entry-content a:contains('Get Links')").toArray();
           for (const linkA of getLinksAnchors) {
@@ -184,18 +251,18 @@ async function getStreams(tmdbId, mediaType, season, episode) {
               const linkUrl = $btnPage(linkA).attr("href");
               if (!linkUrl)
                 continue;
-              const linkPageHtml = await (await fetch(linkUrl, { headers: HEADERS, skipSizeCheck: true })).text();
+              const resolvedLinkUrl = await resolveHshareUrl(linkUrl);
+              const linkPageHtml = await (await fetch(resolvedLinkUrl, { headers: HEADERS, skipSizeCheck: true, redirect: "follow" })).text();
               const $linkPage = cheerio.load(linkPageHtml);
               const name = ($linkPage("div.container p").filter((i, p) => $linkPage(p).text().includes("Name:")).first().text() || "").replace("Name:", "").trim();
               const sizeText = ($linkPage("div.container p").filter((i, p) => $linkPage(p).text().includes("Size:")).first().text() || "").replace("Size:", "").trim();
-              const h2text = $linkPage("div.container h2").text() || "";
               const sizeBytes = toBytes(sizeText);
               $linkPage("a.btn").each((i, dlBtn) => {
                 const dlHref = $linkPage(dlBtn).attr("href") || "";
                 if (dlHref && dlHref.startsWith("http")) {
                   streams.push({
                     url: dlHref,
-                    quality: extractQuality(h2text || dlHref),
+                    quality: extractQuality(name || dlHref),
                     title: `Hindmoviez [${name || "Download"}]`,
                     subtitles: [],
                     size: formatBytes(sizeBytes)

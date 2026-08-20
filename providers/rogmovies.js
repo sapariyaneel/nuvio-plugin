@@ -1,6 +1,6 @@
 /**
  * rogmovies - Built from src/providers/rogmovies.js
- * Generated: 2026-08-17T12:20:48.231Z
+ * Generated: 2026-08-20T09:51:42.404Z
  */
 
 // src/providers/rogmovies.js
@@ -478,8 +478,7 @@ async function getStreams(tmdbId, mediaType, season, episode) {
         name: s.title || "RogMovies",
         headers: { Referer: baseUrl, "User-Agent": HEADERS["User-Agent"] },
         subtitles: [],
-        // s.size is already a formatted string from the extractor above - re-running it
-        // through formatBytes() treats it as a raw byte count and produces NaN.
+        // s.size is already formatted, don't re-run through formatBytes
         size: s.size || ""
       }));
     }));

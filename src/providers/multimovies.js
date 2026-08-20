@@ -1,5 +1,4 @@
-// multimovies.js
-// MultiMovies - Hindi/Bollywood/Anime provider via multimovies.autos with WordPress player extraction
+// multimovies.js - Hindi/Bollywood/Anime, WordPress player extraction
 
 const DOMAINS_URL = "https://raw.githubusercontent.com/sapariyaneel/nuvio-plugin/refs/heads/main/domains.json";
 const FALLBACK_URL = "https://multimovies.motorcycles";
@@ -11,10 +10,7 @@ const HEADERS = {
 
 let cachedBaseUrl = null;
 
-// The domain in domains.json can rotate to one that's dead/unreachable (confirmed: this
-// happened to HDhub4u earlier, and multimovies.makeup is currently unreachable too) - trusting
-// it unconditionally means every call for the rest of the process uses a dead domain. Verify it
-// actually responds before caching it, falling back to FALLBACK_URL otherwise.
+// domains.json can point at a dead mirror, so verify before caching it
 async function isReachable(url) {
   try {
     const resp = await fetch(url, { headers: HEADERS, skipSizeCheck: true, redirect: "follow" });
@@ -57,13 +53,11 @@ async function getStreams(tmdbId, mediaType, season, episode) {
 
     const BASE_URL = await getBaseUrl();
 
-    // Step 1: Get title from TMDB
     const tmdbUrl = `https://api.themoviedb.org/3/${mediaType}/${tmdbId}?api_key=${TMDB_API_KEY}`;
     const mediaInfo = await (await fetch(tmdbUrl, { skipSizeCheck: true, redirect: "follow" })).json();
     const title = mediaInfo.title || mediaInfo.name;
     if (!title) return [];
 
-    // Step 2: Search MultiMovies
     const searchResp = await fetch(`${BASE_URL}/?s=${encodeURIComponent(title)}`, {
       headers: HEADERS,
       skipSizeCheck: true,
@@ -87,7 +81,6 @@ async function getStreams(tmdbId, mediaType, season, episode) {
       r.name.toLowerCase().includes(title.toLowerCase())
     ) || results[0];
 
-    // Step 3: Load content page
     const pageResp = await fetch(match.href, { headers: HEADERS, skipSizeCheck: true, redirect: "follow" });
     const pageHtml = await pageResp.text();
     const $p = cheerio.load(pageHtml);
@@ -95,7 +88,6 @@ async function getStreams(tmdbId, mediaType, season, episode) {
     const streams = [];
 
     if (!isMovie && mediaType === "tv") {
-      // TV Series: get episode list
       const episodes = [];
       $p("#seasons ul.episodios li").each((seasonIdx, sEl) => {
         $p(sEl).find("li").each((epIdx, epEl) => {
@@ -110,7 +102,6 @@ async function getStreams(tmdbId, mediaType, season, episode) {
         });
       });
 
-      // Simpler: iterate directly over all li in all episodios lists
       if (episodes.length === 0) {
         let seasonNum = 1;
         $p("#seasons ul.episodios").each((sIdx, sList) => {
@@ -130,7 +121,6 @@ async function getStreams(tmdbId, mediaType, season, episode) {
 
       if (!targetEp) return [];
 
-      // Load episode page and get player options
       const epResp = await fetch(targetEp.href, { headers: HEADERS, skipSizeCheck: true, redirect: "follow" });
       const epHtml = await epResp.text();
       const $ep = cheerio.load(epHtml);
@@ -172,7 +162,6 @@ async function getStreams(tmdbId, mediaType, season, episode) {
       return streams;
     }
 
-    // Movie: get player options directly
     const playerItems = [];
     $p("ul#playeroptionsul li").each((i, el) => {
       playerItems.push({
@@ -230,7 +219,6 @@ async function fetchEmbedUrl(baseUrl, post, nume, type, referer) {
     const data = await resp.json();
     const embedUrl = data.embed_url || "";
 
-    // Extract real URL from possible HTML wrappers
     const srcMatch = embedUrl.match(/SRC="(https?:[^"]+)"/i);
     if (srcMatch) return srcMatch[1].trim();
 
@@ -243,9 +231,7 @@ async function fetchEmbedUrl(baseUrl, post, nume, type, referer) {
   }
 }
 
-// Dean Edwards-style JS packer decoder (eval(function(p,a,c,k,e,d){...}(payload,radix,count,keywords)))
-// used by JWPlayer-based embed hosts (vibuxer.com and similar) to hide the real m3u8 URL from plain
-// regex scraping of the raw HTML - the URL only exists inside this eval'd blob until unpacked.
+// decodes the eval(function(p,a,c,k,e,d){...}) packer some embed hosts wrap the player in
 function unpackJsPacker(html) {
   const marker = "eval(function(p,a,c,k,e,d)";
   const start = html.indexOf(marker);
@@ -308,11 +294,7 @@ function unpackJsPacker(html) {
   return payload.replace(/\b\w+\b/g, (word) => (dict[word] !== undefined ? dict[word] : word));
 }
 
-// Some mirror chains (modiplay.xyz -> proxy.php -> vibuxer.com) hand the video off through a
-// plain <iframe src="..."> or an inline `EMBED_URL = '...'` JS assignment before the page that
-// actually has the packed player script. None of this needs real JS execution - the intermediate
-// pages are static HTML - but resolveEmbed only ever looked at the *first* page's own content, so
-// it never found the real stream when a mirror needed one of these extra static hops.
+// some mirrors chain through an intermediate iframe/EMBED_URL page before the real player
 function nextEmbedHop(html, baseUrl) {
   const $ = cheerio.load(html);
   const iframeSrc = $("iframe").first().attr("src");
@@ -327,18 +309,12 @@ function nextEmbedHop(html, baseUrl) {
 
 async function resolveEmbed(url, referer, depth) {
   if (!url || !url.startsWith("http")) return null;
-  if ((depth || 0) > 3) return null; // guard against a redirect loop between mirrors
+  if ((depth || 0) > 3) return null;
 
-  // If it's already a direct stream
   if (url.includes(".m3u8") || url.includes(".mp4")) return url;
 
-  // Try to load the embed page and find stream
   try {
-    // vibuxer.com (and likely other mirrors in this chain) validates Referer against the
-    // requesting origin only, not the full path+query - sending the previous hop's exact URL
-    // (e.g. ".../proxy.php?p=streamhg&c=...") as Referer gets served a placeholder error page
-    // instead of the real player. Trimming to just the origin matches what a real cross-site
-    // iframe navigation sends under a standard "strict-origin" referrer policy.
+    // some mirrors 404 on a full-path referer, only accept the bare origin
     let refererOrigin = referer;
     try { refererOrigin = referer ? new URL(referer).origin + "/" : referer; } catch (e) {}
 
@@ -349,7 +325,6 @@ async function resolveEmbed(url, referer, depth) {
     });
     const text = await resp.text();
 
-    // Check for deaddrive.xyz style
     if (url.includes("deaddrive.xyz")) {
       const $ = cheerio.load(text);
       const firstServer = $("ul.list-server-items > li").first().attr("data-video");
@@ -362,7 +337,6 @@ async function resolveEmbed(url, referer, depth) {
     const mp4 = text.match(/(https?:\/\/[^\s"']+\.mp4[^\s"']*)/i);
     if (mp4) return mp4[1];
 
-    // JWPlayer embeds (vibuxer.com etc) hide the real stream URL in packed/eval'd JS.
     const unpacked = unpackJsPacker(text);
     if (unpacked) {
       const packedM3u8 = unpacked.match(/(https?:\/\/[^\s"']+\.m3u8[^\s"']*)/i);
@@ -374,17 +348,13 @@ async function resolveEmbed(url, referer, depth) {
     const hop = nextEmbedHop(text, url);
     if (hop && hop !== url) return resolveEmbed(hop, url, (depth || 0) + 1);
 
-    return null; // No real stream found - do not fall back to the embed page URL itself
+    return null;
   } catch(e) {
     return null;
   }
 }
 
-// Guessing quality from substrings in the URL is unreliable here: the signed query params on
-// this CDN's m3u8 URLs are random tokens that can coincidentally contain "4k"/"1080p"/etc (seen
-// in practice: a token ending "...gsp-M4k" made a genuine 1080p stream get labeled "4K"). These
-// URLs are real HLS master playlists with honest EXT-X-STREAM-INF BANDWIDTH/RESOLUTION tags, so
-// read the actual top variant's resolution instead of guessing from the URL string.
+// signed query params can randomly contain "4k"/"1080p" etc, so read the real variant instead
 function qualityLabelFromHeight(height) {
   if (height >= 2000) return "4K";
   if (height >= 1000) return "1080p";
@@ -394,16 +364,7 @@ function qualityLabelFromHeight(height) {
   return "Unknown";
 }
 
-// The app's player rejects data: URIs outright ("Cannot open file 'data:...'" - confirmed live
-// in the app, it treats the url field as a plain file path/http(s) source, not a decodable
-// playlist blob), so a synthesized in-memory master delivered as a data: URI is not viable here.
-// That means the only working delivery is a real http(s) master URL, and this master's audio is a
-// separate #EXT-X-MEDIA group rather than muxed into the video - pointing the player at one bare
-// video-only variant plays picture with no sound (confirmed by fetching a variant directly: it's
-// plain #EXTINF/.ts segments, no audio-track association at all). Every other provider in this
-// repo with this same HLS shape (vidrock.js, goated.js, vixsrc.js) returns the master URL as a
-// single adaptive stream and lets the player's own ABR pick the variant plus its matching audio
-// group - matching that proven pattern here instead of the variant-splitting attempt above.
+// audio is a separate EXT-X-MEDIA group, so return the master and let the player's ABR pick it
 async function getMasterPlaylistQuality(m3u8Url, referer) {
   try {
     const text = await (await fetch(m3u8Url, {

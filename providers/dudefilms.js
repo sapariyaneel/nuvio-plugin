@@ -1,11 +1,11 @@
 /**
  * dudefilms - Built from src/providers/dudefilms.js
- * Generated: 2026-08-17T12:20:48.192Z
+ * Generated: 2026-08-20T09:51:41.304Z
  */
 
 // src/providers/dudefilms.js
 var DOMAINS_URL = "https://raw.githubusercontent.com/sapariyaneel/nuvio-plugin/refs/heads/main/domains.json";
-var FALLBACK_BASE_URL = "https://dudefilms.casa";
+var FALLBACK_BASE_URL = "https://dudefilms.garden";
 var TMDB_API_KEY = "1865f43a0549ca50d341dd9ab8b29f49";
 var HEADERS = {
   "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/120.0.0.0 Safari/537.36",

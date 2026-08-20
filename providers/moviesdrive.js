@@ -1,6 +1,6 @@
 /**
  * moviesdrive - Built from src/providers/moviesdrive.js
- * Generated: 2026-08-17T12:25:17.789Z
+ * Generated: 2026-08-20T09:51:42.365Z
  */
 
 // src/providers/moviesdrive.js
@@ -11,6 +11,27 @@ var MAIN_URL = "https://new2.moviesdrive.christmas";
 var DOMAINS_URL = "https://raw.githubusercontent.com/sapariyaneel/nuvio-plugin/refs/heads/main/domains.json";
 var DOMAIN_CACHE_TTL = 4 * 60 * 60 * 1e3;
 var domainCacheTimestamp = 0;
+var cachedRegistry = null;
+function getRegistry() {
+  if (cachedRegistry)
+    return Promise.resolve(cachedRegistry);
+  return fetch(DOMAINS_URL, { headers: { "User-Agent": "Mozilla/5.0" } }).then((r) => r.json()).then((d) => {
+    cachedRegistry = d || {};
+    return cachedRegistry;
+  }).catch(() => {
+    cachedRegistry = {};
+    return cachedRegistry;
+  });
+}
+function getHubcloudDomain() {
+  return getRegistry().then((d) => d.hubcloud || "https://hubcloud.cx");
+}
+function getGdflixDomain() {
+  return getRegistry().then((d) => d.gdflix || "https://new6.gdflix.dad");
+}
+function getDrivebotDomain() {
+  return getRegistry().then((d) => d.drivebot || "https://drivebot.sbs");
+}
 var HEADERS = {
   "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36 Edg/131.0.0.0",
   "Referer": `${MAIN_URL}/`
@@ -307,10 +328,24 @@ function resolveHubcloudSearchRecover(url) {
     return Promise.resolve(null);
   }
 }
-function hubCloudExtractor(url, referer) {
+function hubCloudExtractor(url, referer, skipDomainSwap) {
   let currentUrl = url;
-  if (currentUrl.includes("hubcloud.ink")) {
-    currentUrl = currentUrl.replace("hubcloud.ink", "hubcloud.dad");
+  if (!skipDomainSwap) {
+    return getHubcloudDomain().then((liveDomain) => {
+      try {
+        const u = new URL(currentUrl);
+        if (u.hostname.includes("hubcloud")) {
+          const live = new URL(liveDomain);
+          if (u.hostname !== live.hostname) {
+            u.protocol = live.protocol;
+            u.host = live.host;
+            currentUrl = u.toString();
+          }
+        }
+      } catch (e) {
+      }
+      return hubCloudExtractor(currentUrl, referer, true);
+    });
   }
   if (currentUrl.includes("search-recover.php")) {
     return resolveHubcloudSearchRecover(currentUrl).then((resolvedUrl) => {
@@ -327,7 +362,7 @@ function hubCloudExtractor(url, referer) {
       const hubPhp = $('a[href*="hubcloud.php"]').attr("href");
       if (!hubPhp)
         return [];
-      return hubCloudExtractor(hubPhp, currentUrl);
+      return hubCloudExtractor(hubPhp, currentUrl, true);
     }).catch(() => []);
   }
   const initialFetch = currentUrl.includes("hubcloud.php") ? fetch(currentUrl, {
@@ -546,11 +581,12 @@ async function gdFlixExtractor(url, referer = null) {
           fileName
         });
       } else if (text.includes("index")) {
-        const indexPage = await fetch(`https://new6.gdflix.dad${href}`).then((r) => r.text());
+        const gdflixBase = await getGdflixDomain();
+        const indexPage = await fetch(`${gdflixBase}${href}`).then((r) => r.text());
         const $$ = cheerio.load(indexPage);
         const btns = $$("a.btn-outline-info").get();
         for (const b of btns) {
-          const serverUrl = "https://new6.gdflix.dad" + $$(b).attr("href");
+          const serverUrl = gdflixBase + $$(b).attr("href");
           const serverPage = await fetch(serverUrl).then((r) => r.text());
           const $$$ = cheerio.load(serverPage);
           $$$("div.mb-4 > a[href]").each((_, x) => {
@@ -568,7 +604,8 @@ async function gdFlixExtractor(url, referer = null) {
         const doId = href.match(/do=([^=]+)/)?.[1];
         if (!id || !doId)
           continue;
-        const bases = ["https://drivebot.sbs", "https://drivebot.cfd"];
+        const drivebotBase = await getDrivebotDomain();
+        const bases = [.../* @__PURE__ */ new Set([drivebotBase, "https://drivebot.sbs", "https://drivebot.cfd"])];
         for (const base of bases) {
           try {
             const bot = await fetch(`${base}/download?id=${id}&do=${doId}`);

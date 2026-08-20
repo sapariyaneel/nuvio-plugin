@@ -71,7 +71,6 @@ function meetsMinSize(sizeStr) {
 
 async function resolveHubCloud(url) {
   try {
-    // HubCloud: first get the #download link
     const html1 = await (await fetch(url, { headers: HEADERS, skipSizeCheck: true })).text();
     const $1 = cheerio.load(html1);
     let href = $1("#download").attr("href") || "";
@@ -82,7 +81,6 @@ async function resolveHubCloud(url) {
       href = base + "/" + href.replace(/^\//, "");
     }
 
-    // Load the hubcloud page
     const html2 = await (await fetch(href, { headers: HEADERS, skipSizeCheck: true })).text();
     const $2 = cheerio.load(html2);
     const header = $2("div.card-header").text() || "";
@@ -138,7 +136,6 @@ async function resolveHubCloud(url) {
 }
 
 async function resolveRedirect(rawUrl) {
-  // Many links have ?id= param that needs to be followed as a redirect
   try {
     if (!rawUrl.includes("id=")) return rawUrl;
     const resp = await fetch(rawUrl, { headers: HEADERS, skipSizeCheck: true, redirect: "follow" });
@@ -148,10 +145,7 @@ async function resolveRedirect(rawUrl) {
   }
 }
 
-// Non-hubcloud mirrors (hubdrive.tips and similar) don't get the structured resolveHubCloud()
-// treatment, so they never got a size at all. Do a best-effort generic scrape instead of nothing -
-// most of these mirror pages still print a plain GB/MB figure somewhere even without hubcloud's
-// specific i#size markup.
+// non-hubcloud mirrors don't have structured markup, just scrape for a GB/MB figure
 async function probeSize(url) {
   try {
     const html = await (await fetch(url, { headers: HEADERS, skipSizeCheck: true })).text();
@@ -182,13 +176,11 @@ async function getStreams(tmdbId, mediaType, season, episode) {
 
     const baseUrl = await getBaseUrl();
 
-    // 1. Get title from TMDB
     const tmdbUrl = `https://api.themoviedb.org/3/${mediaType}/${tmdbId}?api_key=${TMDB_API_KEY}`;
     const mediaInfo = await (await fetch(tmdbUrl, { skipSizeCheck: true })).json();
     const title = mediaInfo.title || mediaInfo.name;
     if (!title) return [];
 
-    // 2. Search
     const searchUrl = `${baseUrl}/?s=${encodeURIComponent(title)}`;
     const searchHtml = await (await fetch(searchUrl, { headers: HEADERS, skipSizeCheck: true })).text();
     const $ = cheerio.load(searchHtml);
@@ -209,14 +201,12 @@ async function getStreams(tmdbId, mediaType, season, episode) {
 
     const pageUrl = match.url.startsWith("http") ? match.url : `${baseUrl}${match.url}`;
 
-    // 3. Load content page
     const pageHtml = await (await fetch(pageUrl, { headers: HEADERS, skipSizeCheck: true })).text();
     const $page = cheerio.load(pageHtml);
 
     const streams = [];
 
     if (isTV) {
-      // Find episodes by season/episode number in div.episodes-list
       let found = false;
       const episodeHrefs = [];
       $page("div.episodes-list div.season-item").each((i, seasonEl) => {
@@ -264,7 +254,6 @@ async function getStreams(tmdbId, mediaType, season, episode) {
         } catch (e) {}
       }
     } else {
-      // Movie: get download items
       const hrefs = [];
       $page("div.download-item a").each((i, a) => {
         const href = $page(a).attr("href");

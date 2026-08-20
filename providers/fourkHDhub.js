@@ -1,6 +1,6 @@
 /**
  * fourkHDhub - Built from src/providers/fourkHDhub.js
- * Generated: 2026-08-17T12:20:48.197Z
+ * Generated: 2026-08-20T09:51:41.912Z
  */
 
 // src/providers/fourkHDhub.js

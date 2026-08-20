@@ -1,6 +1,6 @@
 /**
  * vidrock - Built from src/providers/vidrock.js
- * Generated: 2026-08-17T12:20:48.243Z
+ * Generated: 2026-08-20T09:51:42.480Z
  */
 
 // src/providers/vidrock.js

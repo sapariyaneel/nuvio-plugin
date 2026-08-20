@@ -1,34 +1,6 @@
-// vidrock.js
-// Vidrock (https://vidrock.net) - TMDB-id-based movie & TV streaming.
-// Flow: GET {api}/movie/{tmdbId}  |  GET {api}/tv/{tmdbId}/{season}/{episode}
-//       -> {"<ServerName>":{"url":"<base64url blob>|null","language":"English","flag":"us","type":"hls"}, ...}
-//       Server names seen live: Nova, Atlas, Orion, Lyra, Luna, Vega, Astra, Hindi. Entries with a
-//       null url are servers that have nothing for that title and are skipped.
-//       Each non-null `url` is AES-256-GCM ciphertext, base64url encoded, laid out as
-//       [12-byte IV][ciphertext][16-byte GCM auth tag], decrypting to a plain master.m3u8 URL.
-//
-// The key and the exact blob layout were read out of the site's own Vite bundle
-// (/assets/index-*.js, functions bQ/wQ/EQ/SQ + fetchStreamSources) rather than guessed, and both
-// were confirmed against live movie and TV responses before being embedded here.
-//
-// NOTE ON THE CRYPTO: the site does this with crypto.subtle, which does not work in the
-// React Native/Hermes runtime this provider actually runs in (neither do TextDecoder/Buffer), so
-// AES-256 is implemented here in plain JS. Only the CTR half of GCM is needed: GCM encryption is
-// AES-CTR keystream over J0+1, J0+2, ... with J0 = IV||0x00000001 for a 12-byte IV, so decryption
-// is that same keystream XORed back over the ciphertext. The 16-byte auth tag is stripped, not
-// verified - verifying it would require a GHASH implementation to defend against an attacker who
-// already controls the response body, which buys nothing here. The AES core is verified against
-// the FIPS-197 AES-256 test vector at load-time cost of nothing (see the vector in the tests).
-//
-// Every source resolves to a real HLS *master* playlist carrying genuine EXT-X-STREAM-INF
-// BANDWIDTH/RESOLUTION tags, so both quality and size are real numbers, never guesses:
-// quality = the top variant's real resolution, size = that variant's real BANDWIDTH x the real
-// TMDB runtime / 8 (same technique as goated.js). The master URL itself is returned rather than a
-// single variant so the player's own ABR logic can drop down on a weak connection.
-//
-// Both CDN families gate on request headers and fail closed without them - Orion's worker returns
-// 404 unless BOTH Referer and Origin are vidrock.net, and cdn1.1shows.app returns 403 without a
-// Referer - so HEADERS is attached to every returned stream.
+// vidrock.js - /api/movie|tv/{tmdbId} -> {server: {url: <AES-256-GCM blob>}} -> decrypt -> master.m3u8
+// blob layout: [12-byte IV][ciphertext][16-byte GCM tag]. crypto.subtle isn't available in this
+// Hermes runtime, so AES is hand-rolled here - only need the CTR half of GCM, tag isn't verified
 
 const TMDB_API_KEY = "1865f43a0549ca50d341dd9ab8b29f49";
 const DOMAINS_URL = "https://raw.githubusercontent.com/sapariyaneel/nuvio-plugin/refs/heads/main/domains.json";
@@ -40,7 +12,7 @@ const HEADERS = {
   "Origin": "https://vidrock.net"
 };
 
-// Extracted verbatim from the site bundle (const xQ). Raw AES-256 key, hex encoded.
+// AES-256 key, pulled from the site's own bundle
 const STREAM_KEY_HEX = "7f3e9c2a8b5d1f4e6a9c3b7d2e5f8a1c4b6d9e2f5a8c1b4d7e9f2a5c8b1d4e7f";
 const GCM_IV_LENGTH = 12;
 const GCM_TAG_LENGTH = 16;
@@ -62,8 +34,6 @@ async function getBaseUrl() {
   const d = await getDomains();
   return (d.vidrock || FALLBACK_BASE_URL).replace(/\/+$/, "");
 }
-
-// --- Pure-JS AES-256 (encrypt-only block function, which is all CTR-mode decryption needs) ---
 
 const AES_SBOX = new Uint8Array(256);
 const AES_RCON = [0x01, 0x02, 0x04, 0x08, 0x10, 0x20, 0x40, 0x80, 0x1b, 0x36, 0x6c, 0xd8, 0xab, 0x4d];
@@ -130,7 +100,7 @@ function expandAesKey(key) {
   return { schedule, rounds };
 }
 
-// Encrypts `state` (16 bytes) in place. AES state is column-major: byte index = column * 4 + row.
+// state is column-major: byte index = column * 4 + row
 function aesEncryptBlock(state, keySchedule) {
   const schedule = keySchedule.schedule;
   const rounds = keySchedule.rounds;
@@ -166,8 +136,6 @@ function hexToBytes(hex) {
 
 const BASE64_CHARS = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
 
-// Own base64 decoder rather than relying on atob - RN exposes it, but this provider's only
-// hard dependency should be fetch, and a 20-line decoder is cheaper than a runtime surprise.
 function base64UrlToBytes(str) {
   const normalized = str.replace(/-/g, "+").replace(/_/g, "/").replace(/=+$/, "");
   const out = new Uint8Array(Math.floor((normalized.length * 3) / 4));
@@ -187,7 +155,7 @@ function base64UrlToBytes(str) {
   return out.subarray(0, outIndex);
 }
 
-// Manual UTF-8 decode - TextDecoder isn't reliably present in the Hermes runtime this runs under.
+// TextDecoder isn't reliably present in Hermes
 function utf8BytesToString(bytes) {
   let result = "";
   let i = 0;
@@ -215,8 +183,7 @@ function utf8BytesToString(bytes) {
 
 let cachedKeySchedule = null;
 
-// GCM with a 12-byte IV uses J0 = IV || 0x00000001, and the payload keystream starts at J0 + 1,
-// so the first ciphertext block is XORed with AES(IV || 0x00000002).
+// J0 = IV||0x00000001, keystream starts at J0+1, so first block XORs with AES(IV||0x00000002)
 function decryptStreamUrl(encoded) {
   const all = base64UrlToBytes(encoded);
   if (all.length <= GCM_IV_LENGTH + GCM_TAG_LENGTH) throw new Error("ciphertext too short");
@@ -244,8 +211,6 @@ function decryptStreamUrl(encoded) {
   }
   return utf8BytesToString(plain);
 }
-
-// --- HLS / metadata helpers ---
 
 function formatBytes(bytes) {
   if (!bytes) return "Unknown";
@@ -277,9 +242,7 @@ async function getTmdbRuntimeSeconds(tmdbId, mediaType, season, episode) {
   }
 }
 
-// Some of these CDNs letterbox into the encoded frame (e.g. 1280x534 for a scope-ratio 720p
-// master), so height alone under-reports quality. Width is the reliable axis; height is only a
-// fallback for the rare variant that omits a resolution width.
+// some CDNs letterbox the frame, so height alone under-reports quality - width is the reliable axis
 function qualityLabelFromResolution(width, height) {
   if (width >= 3200 || height >= 2000) return "4K";
   if (width >= 2400 || height >= 1400) return "1440p";
@@ -326,9 +289,6 @@ function parseMasterTopVariant(text, baseUrl) {
   return best;
 }
 
-// Resolves one server entry into a stream, or null when its playlist is dead/unreadable. The
-// master URL is what gets returned so the player keeps its ABR ladder; only the metadata is taken
-// from the top variant.
 async function buildStream(serverName, entry, runtimeSeconds) {
   try {
     const masterUrl = decryptStreamUrl(entry.url);

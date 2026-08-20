@@ -1,6 +1,6 @@
 /**
  * vixsrc - Built from src/providers/vixsrc.js
- * Generated: 2026-08-17T12:20:48.247Z
+ * Generated: 2026-08-20T09:51:42.489Z
  */
 
 // src/providers/vixsrc.js

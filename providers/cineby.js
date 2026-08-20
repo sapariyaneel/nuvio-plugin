@@ -1,6 +1,6 @@
 /**
  * cineby - Built from src/providers/cineby.js
- * Generated: 2026-08-18T11:46:28.287Z
+ * Generated: 2026-08-20T09:51:40.717Z
  */
 
 // src/providers/cineby.js

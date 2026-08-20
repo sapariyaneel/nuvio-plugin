@@ -1,28 +1,45 @@
-// Moviesdrive Scraper for Nuvio Local Scrapers
-// React Native compatible version with full original functionality
-
 const cheerio = require('cheerio-without-node-native');
 
-// TMDB API Configuration
 const TMDB_API_KEY = '439c478a771f35c05022f9feabcca01c';
 const TMDB_BASE_URL = 'https://api.themoviedb.org/3';
 
-// Moviesdrive Configuration
 let MAIN_URL = "https://new2.moviesdrive.christmas";
 const DOMAINS_URL = "https://raw.githubusercontent.com/sapariyaneel/nuvio-plugin/refs/heads/main/domains.json";
 const DOMAIN_CACHE_TTL = 4 * 60 * 60 * 1000; // 4 hours
 let domainCacheTimestamp = 0;
+let cachedRegistry = null;
+
+function getRegistry() {
+    if (cachedRegistry) return Promise.resolve(cachedRegistry);
+    return fetch(DOMAINS_URL, { headers: { 'User-Agent': 'Mozilla/5.0' } })
+        .then(r => r.json())
+        .then(d => {
+            cachedRegistry = d || {};
+            return cachedRegistry;
+        })
+        .catch(() => {
+            cachedRegistry = {};
+            return cachedRegistry;
+        });
+}
+
+function getHubcloudDomain() {
+    return getRegistry().then(d => d.hubcloud || "https://hubcloud.cx");
+}
+
+function getGdflixDomain() {
+    return getRegistry().then(d => d.gdflix || "https://new6.gdflix.dad");
+}
+
+function getDrivebotDomain() {
+    return getRegistry().then(d => d.drivebot || "https://drivebot.sbs");
+}
 
 const HEADERS = {
     "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36 Edg/131.0.0.0",
     "Referer": `${MAIN_URL}/`,
 };
 
-// =================================================================================
-// UTILITY FUNCTIONS (from Utils.kt)
-// =================================================================================
-
-// Format bytes to human readable size
 function formatBytes(bytes) {
     if (!bytes || bytes === 0) return 'Unknown';
     const k = 1024;
@@ -38,7 +55,6 @@ function meetsMinSize(sizeStr) {
     return parseFloat(m[1]) * (mult[m[2].toUpperCase()] || 0) >= 150;
 }
 
-// Extract server name from source string
 function extractServerName(source) {
     if (!source) return 'Unknown';
 
@@ -59,23 +75,15 @@ function extractServerName(source) {
     if (/HbLinks/i.test(src)) return 'HbLinks';
     if (/Hubstream/i.test(src)) return 'Hubstream';
 
-    // Fallback: hostname
     return src.replace(/^www\./i, '').split(/[.\s]/)[0];
 }
 
-/**
- * Applies a ROT13 cipher to a string.
- * Replicates the `pen()` function from Utils.kt.
- * @param {string} value The input string.
- * @returns {string} The ROT13'd string.
- */
 function rot13(value) {
     return value.replace(/[a-zA-Z]/g, function (c) {
         return String.fromCharCode((c <= "Z" ? 90 : 122) >= (c = c.charCodeAt(0) + 13) ? c : c - 26);
     });
 }
 
-// React Native-safe Base64 polyfill (no Buffer dependency)
 const BASE64_CHARS = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/=';
 
 function atob(value) {
@@ -126,12 +134,6 @@ function btoa(value) {
     return output;
 }
 
-/**
- * Cleans title by extracting quality and codec information.
- * Replicates the `cleanTitle` function from Utils.kt.
- * @param {string} title The title string to clean.
- * @returns {string} The cleaned title with quality/codec info.
- */
 function cleanTitle(title) {
     const parts = title.split(/[.\-_]/);
 
@@ -171,10 +173,6 @@ function cleanTitle(title) {
     }
 }
 
-/**
- * Fetches the latest domain for Moviesdrive.
- * Replicates the `getDomains` function from the provider.
- */
 function fetchAndUpdateDomain() {
     const now = Date.now();
     if (now - domainCacheTimestamp < DOMAIN_CACHE_TTL) {
@@ -191,8 +189,7 @@ function fetchAndUpdateDomain() {
             return response.json().then(function (data) {
                 if (data && data.moviesdrive && data.moviesdrive !== MAIN_URL) {
                     const newDomain = data.moviesdrive;
-                    // The registry entry can be stale/unreachable - probe before switching so a bad
-                    // entry doesn't override a known-working MAIN_URL.
+                    // probe before switching, registry entry can be stale
                     return fetch(newDomain, { method: 'HEAD', headers: HEADERS }).then(function (probe) {
                         if (probe.ok || (probe.status >= 300 && probe.status < 500)) {
                             MAIN_URL = newDomain;
@@ -210,28 +207,15 @@ function fetchAndUpdateDomain() {
     });
 }
 
-/**
- * Gets the current domain, ensuring it's always up to date.
- * Should be called before any main site requests.
- */
 function getCurrentDomain() {
     return fetchAndUpdateDomain().then(function () {
         return MAIN_URL;
     });
 }
 
-// =================================================================================
-// EXTRACTORS (from Extractors.kt)
-// =================================================================================
-
-/**
- * Extract direct download link from Pixeldrain.
- * Pixeldrain direct link format: https://pixeldrain.com/api/file/{id}?download
- */
 function pixelDrainExtractor(link) {
     return Promise.resolve().then(() => {
         let fileId;
-        // link can be pixeldrain.com/u/{id} or pixeldrain.dev/... or pixeldrain.xyz/...
         const match = link.match(/(?:file|u)\/([A-Za-z0-9]+)/);
         if (match) {
             fileId = match[1];
@@ -242,7 +226,6 @@ function pixelDrainExtractor(link) {
             return [{ source: 'Pixeldrain', quality: 'Unknown', url: link }];
         }
 
-        // Fetch file info to get the name, size, and determine quality
         const infoUrl = `https://pixeldrain.com/api/file/${fileId}/info`;
         let fileInfo = { name: '', quality: 'Unknown', size: 0 };
 
@@ -253,7 +236,6 @@ function pixelDrainExtractor(link) {
                     fileInfo.name = info.name;
                     fileInfo.size = info.size || 0;
 
-                    // Infer quality from filename
                     const qualityMatch = info.name.match(/(\d{3,4})p/);
                     if (qualityMatch) {
                         fileInfo.quality = qualityMatch[0];
@@ -283,12 +265,7 @@ function pixelDrainExtractor(link) {
     });
 }
 
-/**
- * Extract streamable URL from StreamTape.
- * This function normalizes the URL to streamtape.com and tries to find the direct video link.
- */
 function streamTapeExtractor(link) {
-    // Streamtape has many domains, but .com is usually the most reliable for video pages.
     const url = new URL(link);
     url.hostname = 'streamtape.com';
     const normalizedLink = url.toString();
@@ -296,12 +273,10 @@ function streamTapeExtractor(link) {
     return fetch(normalizedLink, { headers: HEADERS })
         .then(res => res.text())
         .then(data => {
-            // Regex to find something like: document.getElementById('videolink').innerHTML = ...
             const match = data.match(/document\.getElementById\('videolink'\)\.innerHTML = (.*?);/);
 
             if (match && match[1]) {
                 const scriptContent = match[1];
-                // The script might contain a direct URL part or a function call to build it. We look for the direct part.
                 const urlPartMatch = scriptContent.match(/'(\/\/streamtape\.com\/get_video[^']+)'/);
 
                 if (urlPartMatch && urlPartMatch[1]) {
@@ -310,25 +285,22 @@ function streamTapeExtractor(link) {
                 }
             }
 
-            // A simpler, secondary regex if the above fails (e.g., the script is not complex).
             const simpleMatch = data.match(/'(\/\/streamtape\.com\/get_video[^']+)'/);
             if (simpleMatch && simpleMatch[0]) {
-                const videoSrc = 'https:' + simpleMatch[0].slice(1, -1); // remove quotes
+                const videoSrc = 'https:' + simpleMatch[0].slice(1, -1);
                 return [{ source: 'StreamTape', quality: 'Stream', url: videoSrc }];
             }
 
-            // If we reach here, the link is likely dead or protected. Return nothing.
             return [];
         })
         .catch(e => {
-            return []; // Return empty array on any failure
+            return [];
         });
 }
 
 function hubStreamExtractor(url, referer) {
     return fetch(url, { headers: { ...HEADERS, Referer: referer } })
         .then(response => {
-            // For now, return the URL as-is since VidStack extraction is complex
             return [{ source: 'Hubstream', quality: 'Unknown', url }];
         })
         .catch(e => {
@@ -388,9 +360,7 @@ function hubDriveExtractor(url, referer) {
 }
 
 
-// search-recover.php is a file-search shell, not a direct file page - the movie page's h5 links point
-// at it with from_ac/q params. Its real API is ?api=search&q=...&from_ac=...&page=1 (Accept: application/json),
-// returning {hits:[{url, file_name, size, ...}]}; the first hit's url is the actual hubcloud /drive/ page.
+// search-recover.php isn't the real file page, hit ?api=search to get the actual hubcloud /drive/ url
 function resolveHubcloudSearchRecover(url) {
     try {
         const u = new URL(url);
@@ -398,8 +368,7 @@ function resolveHubcloudSearchRecover(url) {
         const fromAc = u.searchParams.get("from_ac") || "";
         if (!rawQ || !fromAc) return Promise.resolve(null);
 
-        // The h5 link's q param is base64 (no padding) of the plain search text - the search-recover
-        // page's own client-side JS decodes it before calling ?api=search, so the API itself wants plain text.
+        // q param is base64 of the plain search text
         let q = rawQ;
         try {
             const padded = rawQ + "=".repeat((4 - (rawQ.length % 4)) % 4);
@@ -417,12 +386,24 @@ function resolveHubcloudSearchRecover(url) {
     }
 }
 
-function hubCloudExtractor(url, referer) {
+function hubCloudExtractor(url, referer, skipDomainSwap) {
     let currentUrl = url;
 
-    // Replicate domain change logic from HubCloud extractor
-    if (currentUrl.includes("hubcloud.ink")) {
-        currentUrl = currentUrl.replace("hubcloud.ink", "hubcloud.dad");
+    if (!skipDomainSwap) {
+        return getHubcloudDomain().then(liveDomain => {
+            try {
+                const u = new URL(currentUrl);
+                if (u.hostname.includes("hubcloud")) {
+                    const live = new URL(liveDomain);
+                    if (u.hostname !== live.hostname) {
+                        u.protocol = live.protocol;
+                        u.host = live.host;
+                        currentUrl = u.toString();
+                    }
+                }
+            } catch (e) {}
+            return hubCloudExtractor(currentUrl, referer, true);
+        });
     }
 
     if (currentUrl.includes("search-recover.php")) {
@@ -440,12 +421,10 @@ function hubCloudExtractor(url, referer) {
             .then(html => {
                 const $ = cheerio.load(html);
 
-                // Extract "Generate Direct Download Link"
                 const hubPhp = $('a[href*="hubcloud.php"]').attr('href');
                 if (!hubPhp) return [];
 
-                // Consume hubcloud.php internally
-                return hubCloudExtractor(hubPhp, currentUrl);
+                return hubCloudExtractor(hubPhp, currentUrl, true);
             })
             .catch(() => []);
     }
@@ -707,12 +686,13 @@ async function gdFlixExtractor(url, referer = null) {
 
             /* INDEX LINKS */
             else if (text.includes('index')) {
-                const indexPage = await fetch(`https://new6.gdflix.dad${href}`).then(r => r.text());
+                const gdflixBase = await getGdflixDomain();
+                const indexPage = await fetch(`${gdflixBase}${href}`).then(r => r.text());
                 const $$ = cheerio.load(indexPage);
 
                 const btns = $$('a.btn-outline-info').get();
                 for (const b of btns) {
-                    const serverUrl = 'https://new6.gdflix.dad' + $$(b).attr('href');
+                    const serverUrl = gdflixBase + $$(b).attr('href');
                     const serverPage = await fetch(serverUrl).then(r => r.text());
                     const $$$ = cheerio.load(serverPage);
 
@@ -734,7 +714,8 @@ async function gdFlixExtractor(url, referer = null) {
                 const doId = href.match(/do=([^=]+)/)?.[1];
                 if (!id || !doId) continue;
 
-                const bases = ['https://drivebot.sbs', 'https://drivebot.cfd'];
+                const drivebotBase = await getDrivebotDomain();
+                const bases = [...new Set([drivebotBase, 'https://drivebot.sbs', 'https://drivebot.cfd'])];
 
                 for (const base of bases) {
                     try {
@@ -916,23 +897,11 @@ function loadExtractor(url, referer = MAIN_URL) {
     }
 
 
-    // Default case for unknown extractors, use the hostname as the source.
     const sourceName = hostname.replace(/^www\./, '');
     return Promise.resolve([{ source: sourceName, quality: 'Unknown', url }]);
 }
 
-// =================================================================================
-// MAIN PROVIDER LOGIC (from MoviesdriveProvider.kt)
-// =================================================================================
-
-/**
- * Searches for media on Moviesdrive.
- * @param {string} query The search term (title text - the Typesense index is text-searched, not ID-keyed).
- * @param {number} page Result page number.
- * @param {string} [imdbId] When provided, results are narrowed to exact imdb_id matches; falls back to
- *        the unfiltered set if none match, so a missing/mismatched TMDB imdb_id doesn't zero out real hits.
- * @returns {Promise<Array<{title: string, url: string, poster: string}>>} A list of search results.
- */
+// imdbId narrows to exact matches, falls back to unfiltered set if none match
 function search(query, page = 1, imdbId = null) {
     return getCurrentDomain()
         .then(currentDomain => {
@@ -984,9 +953,7 @@ function getDownloadLinks(mediaUrl, season, episode) {
 
             const typeRaw = $('h1.post-title').text();
             const posterTitle = $('.poster-title').first().text().trim();
-            // typeRaw is a download-title string, not a reliable type label (e.g. "Fight Club (2023)
-            // Hindi ORG. Dubbed WEB-DL..." contains no literal "movie"/"season" token either way) -
-            // detect series by the presence of a Season marker in either title instead.
+            // typeRaw doesn't reliably say movie/season, detect series by Season marker instead
             const seasonMatch = (posterTitle || typeRaw).match(/\bSeason\s*(\d+)\b/i);
             const seasonNumber = seasonMatch ? parseInt(seasonMatch[1]) : null;
             const isMovie = !seasonMatch;
@@ -1001,8 +968,7 @@ function getDownloadLinks(mediaUrl, season, episode) {
 
                 const hosterRegex = /hubcloud|gdflix|gdlink/i;
 
-                // h5 links point straight at a hoster (hubcloud.foo/etc) on the current site theme -
-                // only fall back to fetching an intermediate page when the h5 link itself isn't a hoster URL.
+                // h5 links usually point straight at a hoster, only fetch intermediate page as fallback
                 const extractMdrive = (url) => {
                     if (hosterRegex.test(url)) {
                         return Promise.resolve([url]);
@@ -1062,10 +1028,6 @@ function getDownloadLinks(mediaUrl, season, episode) {
                     };
                 });
             } else {
-                // =========================
-                // TV SERIES FLOW
-                // =========================
-
                 const seasonPattern = new RegExp(`Season\\s*0?${season}\\b`, 'i');
                 const episodePattern = new RegExp(`Ep\\s*0?${episode}\\b`, 'i');
 
@@ -1141,7 +1103,6 @@ function getDownloadLinks(mediaUrl, season, episode) {
                     return Promise.all(extractorPromises).then(results => {
                         const flat = results.flat();
 
-                        // Deduplicate by URL (same as movies)
                         const seen = new Set();
                         const finalLinks = flat.filter(link => {
                             if (!link?.url || seen.has(link.url)) return false;
@@ -1162,12 +1123,6 @@ function getDownloadLinks(mediaUrl, season, episode) {
 }
 
 
-/**
- * Get movie/TV show details from TMDB
- * @param {string} tmdbId TMDB ID
- * @param {string} mediaType "movie" or "tv"
- * @returns {Promise<Object>} Media details
- */
 async function resolveImdbToTmdb(imdbId, mediaType) {
     try {
         const url = `${TMDB_BASE_URL}/find/${imdbId}?api_key=${TMDB_API_KEY}&external_source=imdb_id`;
@@ -1206,48 +1161,25 @@ function getTMDBDetails(tmdbId, mediaType) {
     });
 }
 
-/**
- * Improved title matching utilities
- */
-
-/**
- * Normalizes a title for better matching
- * @param {string} title The title to normalize
- * @returns {string} Normalized title
- */
 function normalizeTitle(title) {
     if (!title) return '';
 
     return title
-        // Convert to lowercase
         .toLowerCase()
-        // Remove common articles
         .replace(/\b(the|a|an)\b/g, '')
-        // Normalize punctuation and spaces
         .replace(/[:\-_]/g, ' ')
         .replace(/\s+/g, ' ')
-        // Remove special characters but keep alphanumeric and spaces
         .replace(/[^\w\s]/g, '')
         .trim();
 }
 
-/**
- * Calculates similarity score between two titles
- * @param {string} title1 First title
- * @param {string} title2 Second title
- * @returns {number} Similarity score (0-1)
- */
 function calculateTitleSimilarity(title1, title2) {
     const norm1 = normalizeTitle(title1);
     const norm2 = normalizeTitle(title2);
 
-    // Exact match after normalization
     if (norm1 === norm2) return 1.0;
-
-    // Substring matches
     if (norm1.includes(norm2) || norm2.includes(norm1)) return 0.9;
 
-    // Word-based similarity
     const words1 = new Set(norm1.split(/\s+/).filter(w => w.length > 2));
     const words2 = new Set(norm2.split(/\s+/).filter(w => w.length > 2));
 
@@ -1259,14 +1191,6 @@ function calculateTitleSimilarity(title1, title2) {
     return intersection.size / union.size;
 }
 
-/**
- * Finds the best title match from search results
- * @param {Object} mediaInfo TMDB media info
- * @param {Array} searchResults Search results array
- * @param {string} mediaType "movie" or "tv"
- * @param {number} season Season number for TV shows
- * @returns {Object|null} Best matching result
- */
 function findBestTitleMatch(mediaInfo, searchResults, mediaType, season) {
     if (!searchResults || searchResults.length === 0) return null;
 
@@ -1276,38 +1200,35 @@ function findBestTitleMatch(mediaInfo, searchResults, mediaType, season) {
     for (const result of searchResults) {
         let score = calculateTitleSimilarity(mediaInfo.title, result.title);
 
-        // Year matching bonus/penalty
         if (mediaInfo.year && result.year) {
             const yearDiff = Math.abs(mediaInfo.year - result.year);
             if (yearDiff === 0) {
-                score += 0.2; // Exact year match bonus
+                score += 0.2;
             } else if (yearDiff <= 1) {
-                score += 0.1; // Close year match bonus
+                score += 0.1;
             } else if (yearDiff > 5) {
-                score -= 0.3; // Large year difference penalty
+                score -= 0.3;
             }
         }
 
-        // TV show season matching
         if (mediaType === 'tv' && season) {
             const titleLower = result.title.toLowerCase();
             const hasSeason = titleLower.includes(`season ${season}`) ||
                 titleLower.includes(`s${season}`) ||
                 titleLower.includes(`season ${season.toString().padStart(2, '0')}`);
             if (hasSeason) {
-                score += 0.3; // Season match bonus
+                score += 0.3;
             } else {
-                score -= 0.2; // No season match penalty
+                score -= 0.2;
             }
         }
 
-        // Prefer results with higher quality indicators
         if (result.title.toLowerCase().includes('2160p') ||
             result.title.toLowerCase().includes('4k')) {
             score += 0.05;
         }
 
-        if (score > bestScore && score > 0.3) { // Minimum threshold
+        if (score > bestScore && score > 0.3) {
             bestScore = score;
             bestMatch = result;
         }
@@ -1316,14 +1237,6 @@ function findBestTitleMatch(mediaInfo, searchResults, mediaType, season) {
     return bestMatch;
 }
 
-/**
- * Main function for Nuvio integration
- * @param {string} tmdbId TMDB ID
- * @param {string} mediaType "movie" or "tv"
- * @param {number} season Season number (TV only)
- * @param {number} episode Episode number (TV only)
- * @returns {Promise<Array>} Array of stream objects
- */
 function getStreams(tmdbId, mediaType = 'movie', season = null, episode = null) {
     const resolveStep = (typeof tmdbId === 'string' && tmdbId.trim().toLowerCase().startsWith('tt'))
         ? resolveImdbToTmdb(tmdbId, mediaType).then(function (resolved) {
@@ -1336,15 +1249,12 @@ function getStreams(tmdbId, mediaType = 'movie', season = null, episode = null) 
     return resolveStep.then(function (resolvedOk) {
         if (!resolvedOk) return [];
 
-        // First, get movie/TV show details from TMDB
         return getTMDBDetails(tmdbId, mediaType).then(function (mediaInfo) {
         if (!mediaInfo.title) {
             throw new Error('Could not extract title from TMDB response');
         }
 
-        // Search by title text - the site's Typesense index is text-searched, not ID-keyed, so
-        // querying with the raw IMDb ID string returns unrelated fuzzy matches that all get filtered
-        // out by search()'s imdb_id check below, producing 0 results even for catalogued titles.
+        // search by title text, the Typesense index isn't ID-keyed
         const searchQuery = mediaInfo.title;
 
         return search(searchQuery, 1, mediaInfo.imdbId).then(function (searchResults) {
@@ -1352,12 +1262,10 @@ function getStreams(tmdbId, mediaType = 'movie', season = null, episode = null) 
                 return [];
             }
 
-            // Find best match using improved title matching
             const bestMatch = findBestTitleMatch(mediaInfo, searchResults, mediaType, season);
 
             const selectedMedia = bestMatch || searchResults[0];
 
-            // Get download links
             return getDownloadLinks(selectedMedia.url, season, episode).then(function (result) {
                 const { finalLinks, isMovie } = result;
 
@@ -1407,7 +1315,6 @@ function getStreams(tmdbId, mediaType = 'movie', season = null, episode = null) 
                         };
                     });
 
-                // Sort by quality (highest first)
                 const qualityOrder = {
                     '2160p': 5,
                     '1440p': 4,
@@ -1434,10 +1341,8 @@ function getStreams(tmdbId, mediaType = 'movie', season = null, episode = null) 
     });
 }
 
-// Export the main function
 if (typeof module !== 'undefined' && module.exports) {
     module.exports = { getStreams };
 } else {
-    // For React Native environment
     global.getStreams = { getStreams };
 }

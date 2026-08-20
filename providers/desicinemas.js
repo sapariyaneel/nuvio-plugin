@@ -1,6 +1,6 @@
 /**
  * desicinemas - Built from src/providers/desicinemas.js
- * Generated: 2026-08-18T11:46:28.290Z
+ * Generated: 2026-08-20T09:51:41.272Z
  */
 
 // src/providers/desicinemas.js

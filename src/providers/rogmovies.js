@@ -1,9 +1,4 @@
-// rogmovies.js
-// RogMovies (https://new1.rogmovies.click) - same backend/theme family as vegamovies.js (site brands
-// itself "Vegamovies Official" and shares nexdrive.fit/vcloud.zip/hubcloud infra), Typesense-backed search
-// Search: GET /search.php?q={title}&page=1 -> Typesense hits {document:{id, imdb_id, permalink, category}}
-// Content: GET /wp-json/wp/v2/posts/{id} (WP REST API - bypasses theme's client-side download-button gating)
-// Links: nexdrive.fit shortlink pages -> G-Direct(fastdl.zip)/V-Cloud(vcloud.zip->hubcloud.foo) buttons -> HubCloud chain
+// rogmovies.js - same backend/theme as vegamovies.js, search.php -> wp-json -> nexdrive -> hubcloud chain
 
 const DOMAINS_URL = "https://raw.githubusercontent.com/sapariyaneel/nuvio-plugin/refs/heads/main/domains.json";
 const FALLBACK_BASE_URL = "https://new1.rogmovies.click";
@@ -13,20 +8,12 @@ const HEADERS = {
   "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36"
 };
 
-// The app runs providers in a QuickJS sandbox that provides fetch, cheerio,
-// URL, crypto and base64 but no timer functions - there is no setTimeout to
-// build a timeout race on, and the host fetch is synchronous, so any such race
-// rejects every request with "setTimeout is not defined". The host already
-// applies its own request timeout, so call fetch directly.
+// no setTimeout in this sandbox, host already enforces its own timeout
 function fetchWithTimeout(url, options = {}) {
   return fetch(url, options);
 }
 
-// Several quality blocks link to the same nexdrive/vcloud page, so the same URL
-// gets walked repeatedly - on a season page that was 49 of 87 requests. The
-// desktop host runs fetch through runBlocking, so Promise.all buys no
-// parallelism there and every duplicate is paid for serially against the 60s
-// plugin timeout. Cache GET bodies for the lifetime of one getStreams() call.
+// same nexdrive/vcloud page gets hit by multiple quality blocks, cache per getStreams() call
 let pageCache = null;
 
 function fetchTextCached(url, options = {}) {
@@ -149,9 +136,7 @@ function pickCandidate(hits, imdbId, isTv, season) {
   return pool[0];
 }
 
-// wp-json sometimes serves a stale cached copy of the post missing the actual
-// download buttons (confirmed against community reference implementations of
-// this same WP theme) - detect that and fall back to the live post page HTML.
+// wp-json sometimes serves a stale copy missing the download buttons, fall back to live HTML
 function hasDownloadMarkers(html) {
   return /nexdrive|vcloud|hubcloud|fastdl|genxfm/i.test(html || "");
 }
@@ -186,9 +171,7 @@ async function getPostContent(id, permalink) {
   return getPostContentHtml(permalink);
 }
 
-// Pulls every anchor out of a raw HTML fragment, optionally keeping only the
-// hosts matching a pattern. Done on the raw markup because the app's cheerio
-// shim exposes no tagName and no is(), so sibling/tag walking is not portable.
+// regex over raw HTML instead of cheerio - the shim has no tagName/is(), can't walk siblings
 function anchorsIn(fragment, hostPattern) {
   const links = [];
   const anchorRe = /<a\b[^>]*href=["']([^"']+)["'][^>]*>([\s\S]*?)<\/a>/gi;
@@ -204,15 +187,12 @@ function anchorsIn(fragment, hostPattern) {
 const NEXDRIVE_HOST_RE = /nexdrive|vcloud\.(zip|fit)|fastdl\.zip|hubcloud|hubdrive/i;
 
 function isDownloadHeading(heading) {
-  // The comment section and the info box sit under the same heading levels as
-  // the download blocks; their links are not mirrors.
+  // comments/info-box headings sit at the same level as download blocks but aren't mirrors
   if (/^\d+\s+comments?$/i.test(heading)) return false;
   return !/(Movie|Series)\s+Info|SYNOPSIS|PLOT|Screenshots/i.test(heading);
 }
 
-// Slices the post body on its h3/h5 headings and keeps the links that follow
-// each one. Done on the raw HTML because the app's cheerio shim has no is() and
-// no tagName, so walking siblings to find the next heading is not portable.
+// slices post body on h3/h5 headings, keeps links under each
 function extractQualityBlocks(html) {
   const blocks = [];
   const headingRe = /<h[35]\b[^>]*>([\s\S]*?)<\/h[35]>/gi;
@@ -239,10 +219,7 @@ function extractQualityBlocks(html) {
 
 const MIRROR_HOST_RE = /vcloud\.(zip|fit)|fastdl\.zip|hubcloud|hubdrive/i;
 
-// Season pages list every episode on one nexdrive page under "-:Episodes: N:-"
-// headings (the number is written both padded and unpadded). Without honouring
-// them a single-episode request resolves every episode's mirrors, which returns
-// the wrong streams and multiplies the work by the episode count.
+// season pages list every episode under "-:Episodes: N:-" headings on one nexdrive page
 function nexdriveEpisodeOf(text) {
   const m = (text || "").match(/Episode[s]?\s*[:\-]?\s*(\d{1,3})/i);
   return m ? parseInt(m[1], 10) : null;
@@ -258,7 +235,6 @@ async function resolveNexdrive(nexdriveUrl, episode) {
     const wanted = episode ? parseInt(episode, 10) : null;
     if (!wanted) return mirrorLinksIn(html);
 
-    // Split on every heading so each section carries the episode it belongs to.
     const headingRe = /<h[1-6]\b[^>]*>([\s\S]*?)<\/h[1-6]>/gi;
     const sections = [];
     let last = null;
@@ -278,8 +254,7 @@ async function resolveNexdrive(nexdriveUrl, episode) {
     }
     if (matched.length) return matched;
 
-    // Movie-style pages carry no episode headings at all - fall back to every
-    // mirror rather than returning nothing.
+    // movie pages have no episode headings, fall back to every mirror
     return cursor === 0 ? mirrorLinksIn(html) : [];
   } catch (e) {
     return [];
@@ -294,9 +269,7 @@ async function fastdlExtractor(url) {
 
     const res = await fetchWithTimeout(url, { headers: HEADERS, redirect: "manual", skipSizeCheck: true });
 
-    // fastdl.zip serves the /embed page as a 200 with a JS-driven redirect
-    // (`var reurl = "https://fastdl.zip/dl.php?link=<direct url>"`) instead of a
-    // 3xx Location header, so the header is only a fallback for older responses.
+    // fastdl.zip mostly does a JS redirect (var reurl=...) instead of a Location header
     const loc = res.headers.get("location");
     if (loc) return [{ url: loc, quality: 0, title: "G-Direct" }];
 
@@ -335,8 +308,7 @@ function base64Decode(value) {
   return output;
 }
 
-// vcloud.zip gates its real link behind a `var url = atob(atob('...'))` timer-reveal button
-// rather than a real API call (confirmed directly in the site's own JS comments).
+// vcloud.zip's real link is double base64-encoded behind atob(atob('...'))
 async function resolveVcloudToken(vcloudUrl) {
   try {
     const html = await fetchTextCached(vcloudUrl, { headers: HEADERS, skipSizeCheck: true });
@@ -493,10 +465,7 @@ async function getStreams(tmdbId, mediaType, season, episode) {
       return [];
     }
 
-    // A season post often carries the other seasons' download blocks too (a
-    // "Season 1" post also listing Season 2). Walking those costs a nexdrive ->
-    // mirror -> hoster chain each and yields streams for the wrong season, so
-    // keep only the requested one when the headings say which season they are.
+    // a "Season 1" post often lists other seasons' blocks too, filter to the one we want
     if (isTv) {
       const wantedSeason = season ? parseInt(season, 10) : 1;
       const sameSeason = blocks.filter(b => {
@@ -506,16 +475,11 @@ async function getStreams(tmdbId, mediaType, season, episode) {
       if (sameSeason.length) blocks = sameSeason;
     }
 
-    // Each quality block is independent, so resolve them concurrently. Doing this
-    // serially walks the nexdrive -> mirror -> hoster chain one hop at a time and
-    // pushes the provider well past the 15s budget the app allows for a scrape,
-    // which makes it return nothing at all rather than a partial list.
+    // resolve blocks concurrently, serial would blow past the 15s scrape budget
     const perBlock = await Promise.all(blocks.map(async block => {
       const quality = indexQuality(block.heading);
       const mirrorLists = await Promise.all(block.links.map(link => resolveNexdrive(link.href, isTv ? episode : null)));
       const mirrors = mirrorLists.reduce((acc, list) => acc.concat(list), []);
-      // A block can list the same mirror twice (and the page-level cache only
-      // covers the fetch, not the extractor walk behind it).
       const seenMirrors = {};
       const uniqueMirrors = mirrors.filter(m => {
         if (!m || !m.href || seenMirrors[m.href]) return false;
@@ -531,14 +495,11 @@ async function getStreams(tmdbId, mediaType, season, episode) {
         name: s.title || "RogMovies",
         headers: { Referer: baseUrl, "User-Agent": HEADERS["User-Agent"] },
         subtitles: [],
-        // s.size is already a formatted string from the extractor above - re-running it
-        // through formatBytes() treats it as a raw byte count and produces NaN.
+        // s.size is already formatted, don't re-run through formatBytes
         size: s.size || ""
       }));
     }));
 
-    // The same file is often reachable from more than one quality block, so drop
-    // repeats rather than showing the user the same link several times.
     const seenUrls = {};
     return perBlock
       .reduce((acc, list) => acc.concat(list), [])

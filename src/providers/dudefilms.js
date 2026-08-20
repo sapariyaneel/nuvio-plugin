@@ -1,11 +1,7 @@
-// dudefilms.js
-// DudeFilms - Hindi/Bollywood/South Indian movie & series site (dudefilms.sarl)
-// Search: /page/1/?s={query}
-// Download links: a.maxbutton → redirect pages with more maxbutton links → final stream URLs
-// Uses Cinemeta for metadata enhancement
+// dudefilms.js - Hindi/Bollywood/South Indian movie & series site
 
 const DOMAINS_URL = "https://raw.githubusercontent.com/sapariyaneel/nuvio-plugin/refs/heads/main/domains.json";
-const FALLBACK_BASE_URL = "https://dudefilms.casa";
+const FALLBACK_BASE_URL = "https://dudefilms.garden";
 const TMDB_API_KEY = "1865f43a0549ca50d341dd9ab8b29f49";
 const CINEMETA_URL = "https://v3-cinemeta.strem.io/meta";
 const HEADERS = {
@@ -40,8 +36,7 @@ function extractQuality(url) {
   return "Unknown";
 }
 
-// Quality headings on this theme look like "Download X (2023) {Hindi-English} 480p [650MB]" -
-// the bracketed size is the only place file size appears on the site.
+// size only ever shows up in brackets on the quality heading, e.g. "480p [650MB]"
 function extractSize(text) {
   const m = (text || "").match(/\[([\d.]+\s*(?:GB|MB|KB))\]/i);
   return m ? m[1] : "";
@@ -73,13 +68,11 @@ async function getStreams(tmdbId, mediaType, season, episode) {
     }
     const baseUrl = await getBaseUrl();
 
-    // 1. Get title from TMDB
     const tmdbUrl = `https://api.themoviedb.org/3/${mediaType}/${tmdbId}?api_key=${TMDB_API_KEY}`;
     const mediaInfo = await (await fetch(tmdbUrl, { skipSizeCheck: true })).json();
     const title = mediaInfo.title || mediaInfo.name;
     if (!title) return [];
 
-    // 2. Search
     const searchUrl = `${baseUrl}/page/1/?s=${encodeURIComponent(title)}`;
     const searchHtml = await (await fetch(searchUrl, { headers: HEADERS, skipSizeCheck: true })).text();
     const $ = cheerio.load(searchHtml);
@@ -100,14 +93,12 @@ async function getStreams(tmdbId, mediaType, season, episode) {
 
     const pageUrl = match.url.startsWith("http") ? match.url : `${baseUrl}${match.url}`;
 
-    // 3. Load show page
     const pageHtml = await (await fetch(pageUrl, { headers: HEADERS, skipSizeCheck: true })).text();
     const $page = cheerio.load(pageHtml);
 
     const streams = [];
 
     if (isTV) {
-      // Find season headers (h4 with "Season N") then follow links to episode pages
       let found = false;
       const h4s = $page("h4").toArray();
 
@@ -138,8 +129,6 @@ async function getStreams(tmdbId, mediaType, season, episode) {
                 const epUrl = $seasonPage(epBtn).attr("href");
                 if (!epUrl) continue;
 
-                // This URL is a final stream link. The button label (e.g. "Episode 3 [720p]")
-                // sometimes carries quality info that the URL itself doesn't - check both.
                 const quality = extractQuality(epText) !== "Unknown" ? extractQuality(epText) : extractQuality(epUrl);
                 streams.push({
                   url: epUrl,
@@ -156,8 +145,6 @@ async function getStreams(tmdbId, mediaType, season, episode) {
         }
       }
     } else {
-      // Movie: each quality heading ("... 480p [650MB]") is followed by a <p> with one
-      // a.maxbutton link - group by heading so the size can travel through the redirect hop.
       const headings = $page("h4").toArray();
       for (const h4 of headings) {
         const headingText = $page(h4).text().trim();

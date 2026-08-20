@@ -1,11 +1,5 @@
-// desicinemas.js
-// Desicinemas - Hindi/Punjabi/Bollywood movie site (desicinemas.to)
-// Uses a Cloudflare Worker proxy for requests
-// Stream links: found from .MovieList .OptionBx items → iframe extraction
+// desicinemas.js - Hindi/Punjabi/Bollywood movie site, routed through a CF worker proxy
 
-// No registry key currently exists for this site (checked against our shared domains.json registry) -
-// still wired to the shared registry so it picks up a live domain automatically if one is added later,
-// falling back to the hardcoded domain in the meantime.
 const DOMAINS_URL = "https://raw.githubusercontent.com/sapariyaneel/nuvio-plugin/refs/heads/main/domains.json";
 const FALLBACK_BASE_URL = "https://desicinemas.to";
 const PROXY = "https://desicinemas.phisherdesicinema.workers.dev/";
@@ -65,13 +59,11 @@ async function getStreams(tmdbId, mediaType, season, episode) {
     }
     const baseUrl = await getBaseUrl();
 
-    // 1. Get title from TMDB
     const tmdbUrl = `https://api.themoviedb.org/3/${mediaType}/${tmdbId}?api_key=${TMDB_API_KEY}`;
     const mediaInfo = await (await fetch(tmdbUrl, { skipSizeCheck: true })).json();
     const title = mediaInfo.title || mediaInfo.name;
     if (!title) return [];
 
-    // 2. Search via proxy
     const searchUrl = `${PROXY}?url=${encodeURIComponent(`${baseUrl}/?s=${encodeURIComponent(title)}`)}`;
     const searchHtml = await (await fetch(searchUrl, { headers: HEADERS, skipSizeCheck: true })).text();
     const $ = cheerio.load(searchHtml);
@@ -92,7 +84,6 @@ async function getStreams(tmdbId, mediaType, season, episode) {
     const pageUrl = match.url.startsWith("http") ? match.url : `${baseUrl}${match.url}`;
     const proxyPageUrl = `${PROXY}?url=${encodeURIComponent(pageUrl)}`;
 
-    // 3. Load page via proxy to get option boxes
     const pageHtml = await (await fetch(proxyPageUrl, { headers: HEADERS, skipSizeCheck: true })).text();
     const $page = cheerio.load(pageHtml);
 
@@ -105,8 +96,7 @@ async function getStreams(tmdbId, mediaType, season, episode) {
         const link = linkEl.attr("href");
         if (!link || link === "#") continue;
 
-        // Fetch the embed page without our own Referer - groundbanks.net treats desicinemas.to as a
-        // hotlink-protection trigger and serves a meta-refresh to a dead domain instead of the real page.
+        // no Referer here - groundbanks.net hotlink-blocks it and redirects to a dead domain otherwise
         const embedHtml = await (await fetch(link, { headers: { "User-Agent": HEADERS["User-Agent"] }, skipSizeCheck: true })).text();
         const $embed = cheerio.load(embedHtml);
         const iframeSrc = $embed("iframe").attr("src");

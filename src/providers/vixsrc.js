@@ -1,36 +1,6 @@
-// vixsrc.js
-// VixSrc (https://vixsrc.to) - TMDB-id-based movie & TV streaming via its own embed player.
-// Flow: GET {base}/api/movie/{tmdbId}            (or /api/tv/{tmdbId}/{season}/{episode})
-//       -> {"src":"/embed/{internalId}?token=..&t=..&expires=..&lang=en&skin=vixsrc&canPlayFHD=1"}
-//       The site's own page chunk (app/movie/[id]/page-*.js) does exactly this and drops the
-//       returned `src` straight into an <iframe>, so the embed path is the only supported entry
-//       point - the TMDB id alone is not enough, the internal content id only exists in that
-//       response. A 404 here simply means VixSrc has no copy of that title/episode.
-//       GET {base}{src} -> HTML embed page carrying `window.masterPlaylist`:
-//         { params: { 'token': '<32 hex>', 'expires': '<unix>' }, url: 'https://vixsrc.to/playlist/{id}' }
-//       Note this token is a FRESH playlist token, unrelated to the token in the `src` query
-//       string, and it is bound to the exact query shape below.
-//       GET {playlistUrl}[?|&]token=..&expires=..&h=1&lang=en -> HLS master playlist.
-//
-// The `h=1&lang=en` suffix is mandatory: requesting the same playlist url with only
-// token+expires returns 403 Forbidden. For TV the `url` field already ends in `?b=1`, so the
-// parameters must be appended with `&` rather than `?` (a `?` there also 403s) - both branches
-// were confirmed live against Fight Club (movie) and Game of Thrones S1E1 (tv).
-//
-// The master playlist is a real one with genuine EXT-X-STREAM-INF BANDWIDTH/RESOLUTION tags, and
-// audio is a separate EXT-X-MEDIA group referenced by the video variants rather than muxed into
-// them (same shape as goated.js). Pointing a player at a single video variant therefore plays
-// picture with no sound, so the master url itself is returned as one adaptive entry and the
-// player's own ABR logic picks the variant plus its matching audio group.
-//
-// Size is measured, not guessed. The advertised BANDWIDTH values here are flat rounded ceilings
-// (a 1080p variant declares exactly 4500000), and BANDWIDTH x runtime / 8 overstates the real
-// file by more than 2x, so that shortcut is deliberately not used. The per-segment filename
-// suffix (`0000-0750.ts`) looks like a per-segment bitrate but is a coarsely quantized bucket
-// that runs ~50% below the real byte count, so it is not used either. Instead a fixed set of
-// real segment URLs is sampled for their true byte length via Content-Range and scaled by the
-// real segment count. Validated against ground truth: every one of Fight Club's 2087 1080p
-// segments was measured individually (2.015 GB actual); this sampler returns 2.14 GB (+6%).
+// vixsrc.js - /api/movie|tv/{tmdbId} -> embed page's window.masterPlaylist -> HLS master playlist
+// playlist url needs &h=1&lang=en appended or it 403s; TV url already ends in ?b=1 so use & not ?
+// master url returned as-is (not a single variant) since audio is a separate EXT-X-MEDIA group
 
 const TMDB_API_KEY = "1865f43a0549ca50d341dd9ab8b29f49";
 const DOMAINS_URL = "https://raw.githubusercontent.com/sapariyaneel/nuvio-plugin/refs/heads/main/domains.json";
@@ -89,10 +59,7 @@ function resolveUrl(urlLine, baseUrl) {
   }
 }
 
-// Pulls the `window.masterPlaylist = { params: { 'token': .., 'expires': .. }, url: '..' }` block
-// out of the embed page. Scoped to that block rather than the whole document because the page
-// carries several other unrelated token/expires pairs (window.streams, thumbnails, analytics)
-// that would otherwise win the match and produce a 403 playlist url.
+// scoped to the masterPlaylist block, page has other unrelated token/expires pairs that'd match first
 function extractMasterPlaylist(html) {
   const start = html.indexOf("window.masterPlaylist");
   if (start === -1) return null;
@@ -144,8 +111,7 @@ function parseMasterPlaylist(text, baseUrl) {
   return { variants, topVariant, subtitles };
 }
 
-// Subtitle entries in the master are themselves tiny HLS playlists wrapping a single .vtt file.
-// Players expect a real subtitle url, so unwrap one level to the actual .vtt.
+// subtitle entries are HLS playlists wrapping a single .vtt, unwrap to the actual file
 async function resolveSubtitleUrl(playlistUrl) {
   try {
     const resp = await fetch(playlistUrl, { headers: HEADERS, skipSizeCheck: true });
@@ -158,9 +124,7 @@ async function resolveSubtitleUrl(playlistUrl) {
   }
 }
 
-// The CDN answers a ranged GET with `Content-Range: bytes 0-1/TOTAL`, which is the real full
-// byte length of the segment without downloading it. Retried briefly because the edge rate-limits
-// bursts and drops requests rather than queueing them.
+// ranged GET's Content-Range gives real byte length without downloading it, retry since edge rate-limits bursts
 async function getRealSegmentSize(url) {
   for (let attempt = 0; attempt < 3; attempt++) {
     try {
@@ -177,9 +141,7 @@ async function getRealSegmentSize(url) {
   return null;
 }
 
-// Runs `limit` workers over the queue instead of firing every request at once. The edge starts
-// dropping ranged requests above roughly a dozen in flight (a concurrency-40 sweep lost ~89% of
-// them), which would silently skew the average toward whichever segments happened to survive.
+// edge drops most ranged requests above ~12 in flight, so cap concurrency instead of firing all at once
 async function mapWithConcurrency(items, worker, limit) {
   const results = new Array(items.length);
   let cursor = 0;
@@ -199,15 +161,10 @@ async function mapWithConcurrency(items, worker, limit) {
 
 const SEGMENT_SAMPLE_SIZE = 32;
 const SEGMENT_SAMPLE_CONCURRENCY = 8;
-// Some episodes advertise 30+ subtitle languages; unwrapping them all at once hits the same edge
-// rate limiting that drops ranged segment requests, so these are throttled too.
-const SUBTITLE_CONCURRENCY = 8;
+const SUBTITLE_CONCURRENCY = 8; // same edge rate-limiting applies to subtitle unwrapping
 
-// Samples segments at the midpoint of 32 equal strata rather than at evenly spaced indices.
-// The final segment of these playlists is a sub-second runt (~30 KB against a ~1 MB norm), and
-// an evenly spaced sampler always lands on it, dragging the average down. Simulated against the
-// fully measured Fight Club playlist, this stratified layout holds mean error near 0% with a
-// worst case of ~13%, versus swings past 45% for naive spacing.
+// samples at midpoints of 32 equal strata, not evenly-spaced indices - the last segment is a
+// sub-second runt that evenly-spaced sampling always lands on, dragging the average down
 async function measureHlsSize(variantUrl) {
   try {
     const resp = await fetch(variantUrl, { headers: HEADERS, skipSizeCheck: true });
@@ -269,7 +226,7 @@ async function getStreams(tmdbId, mediaType, season, episode) {
       ? `/api/tv/${numericTmdbId}/${season || 1}/${episode || 1}`
       : `/api/movie/${numericTmdbId}`;
 
-    // 404 here is the normal "VixSrc doesn't carry this title" answer, not an error worth logging.
+    // 404 just means VixSrc doesn't have this title
     const embedResp = await fetch(`${baseUrl}${apiPath}`, { headers: HEADERS, skipSizeCheck: true });
     if (!embedResp.ok) return [];
     const embedData = await embedResp.json().catch(() => null);

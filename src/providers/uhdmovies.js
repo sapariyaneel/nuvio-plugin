@@ -1,11 +1,4 @@
-// uhdmovies.js
-// UHDmoviesProvider - Hindi/English 4K movie site (domain from a remote config file)
-// Search: GET /?s={query} -> article.gridlove-post (uses h1.sanket / div.entry-image)
-// Movie: div.entry-content > p matching /\[.*]/ (quality label) -> next sibling a.maxbutton-1 href
-// TV: div.entry-content "pre, p, a:contains(Episode)" grouped by season/episode -> per-episode hrefs
-// Links: Driveseed/Driveleech(.org/.net/.pro) family - intermediate r?key= redirect page with <script>
-//        replace("...") token, then Instant Download / Resume Worker Bot / Direct Links / Resume Cloud /
-//        Cloud Download buttons; UHDMovies (video-seed.xyz) token-based POST /api extractor
+// uhdmovies.js - search -> driveseed/driveleech chain -> download buttons
 
 const DOMAINS_URL = "https://raw.githubusercontent.com/sapariyaneel/nuvio-plugin/refs/heads/main/domains.json";
 const FALLBACK_BASE_URL = "https://uhdmovies.autos";
@@ -91,7 +84,6 @@ function meetsMinSize(sizeStr) {
   return parseFloat(m[1]) * (mult[m[2].toUpperCase()] || 0) >= 150;
 }
 
-// ExtractorsKt.cleanTitle: normalize codec/audio tokens, strip extension, extract quality/codec/audio tags
 function cleanTitle(title) {
   const name = (title || "").replace(/\.[a-zA-Z0-9]{2,4}$/, "");
   const normalized = name
@@ -129,12 +121,11 @@ function cleanTitle(title) {
   return [cleanTitleStr, cleanTags].filter(Boolean).join(" ");
 }
 
-// removeLeadingIndex: strip leading "1) " / "[2] " style index prefixes
 function removeLeadingIndex(title) {
   return (title || "").replace(/^[[(]?\s*\d+\s*[\])\-_.]*\s*/, "");
 }
 
-// UHDMovies (video-seed.xyz): POST token from ?url= to /api, parse url":"..." from response
+// video-seed.xyz: POST token from ?url= to /api, parse url":"..." from response
 async function uhdMoviesGetUrl(finallink, quality) {
   try {
     const token = finallink.split("https://video-seed.xyz/?url=")[1] || "";
@@ -161,7 +152,6 @@ async function uhdMoviesGetUrl(finallink, quality) {
   }
 }
 
-// Driveseed/Driveleech family extractors
 async function driveseedCFType1(url) {
   try {
     const html = await (await fetch(`${url}?type=1`, { headers: HEADERS, skipSizeCheck: true, redirect: "follow" })).text();
@@ -214,7 +204,6 @@ async function driveseedResumeBot(url) {
     });
     const json = JSON.parse(await dl.text());
     const finalUrl = json.url;
-    // Note: only absolute (http) URLs are usable download links here.
     return finalUrl && finalUrl.startsWith("http") ? finalUrl : null;
   } catch (e) {
     return null;
@@ -225,9 +214,7 @@ async function driveseedInstantLink(finalLink) {
   try {
     const resp = await fetch(finalLink, { headers: HEADERS, skipSizeCheck: true, redirect: "follow" });
     const resolvedUrl = resp.url || finalLink;
-    // Only trust this when the redirect chain actually left the request URL (e.g. landed on
-    // video-seed.dev/?url=<real link>) - hosts like cdn.video-plex.xyz don't redirect at all and
-    // just echo their own "?url=<token>" query back as resp.url, which isn't a playable link.
+    // some hosts echo the same "?url=<token>" back instead of redirecting, not a real link
     if (resolvedUrl === finalLink) return null;
     const extracted = resolvedUrl.split("url=")[1];
     if (!extracted) return null;
@@ -244,7 +231,7 @@ async function driveseedGetUrl(url, referer, siteName) {
     let currentUrl = url;
     const baseDomain = getOrigin(currentUrl);
 
-    // Intermediate `r?key=` redirect page: extract replace("...") path from inline <script>, follow it
+    // r?key= is an intermediate page, extract the replace("...") path from its inline script
     if (currentUrl.includes("r?key=")) {
       const html = await (await fetch(currentUrl, { headers: HEADERS, skipSizeCheck: true, redirect: "follow" })).text();
       const $ = cheerio.load(html);
@@ -299,10 +286,7 @@ async function driveseedGetUrl(url, referer, siteName) {
   }
 }
 
-// bypassHrefli: WordPress-style anti-adblock bypass chain for unblockedgames-hosted shortlinks
-// Form POSTs require Content-Type + Referer or the WAF serves an unrelated decoy page instead of the next hop.
-// The final ?go= step is now gated by a client-set cookie (from the inline s_343(name, value, minutes) call)
-// rather than a custom header - the old [skToken]: wpHttp2 header trick no longer works.
+// ad-gate bypass chain for unblockedgames-hosted shortlinks, form POSTs need Content-Type + Referer
 async function bypassHrefli(url) {
   try {
     const host = getOrigin(url);
@@ -330,10 +314,7 @@ async function bypassHrefli(url) {
     res = await fetch(form.action, { method: "POST", headers: { ...formHeaders, Referer: url }, body: form.data.toString(), skipSizeCheck: true, redirect: "follow" });
     const html4 = await res.text();
 
-    // The decoy article's page template (and its ad/analytics scripts) is randomized per request,
-    // so picking "the <script> tag containing '?go='" via a cheerio selector could grab the wrong
-    // tag on some article variants if another script also happens to mention "?go=". Regex the raw
-    // HTML directly for the literal s_343(...) call instead - it's the only thing we actually need.
+    // regex the raw HTML for the s_343(...) call rather than a cheerio selector, page template varies per request
     const cookieMatch = html4.match(/s_343\('([^']+)',\s*'([^']+)',\s*\d+\)/);
     if (!cookieMatch) return null;
     const [, cookieName, cookieValue] = cookieMatch;
@@ -373,8 +354,6 @@ async function loadExtractor(link) {
   }
 }
 
-// Resolves a single search-page source link (following unblockedgames.world's ad-gate bypass
-// first when present) into whatever direct/host-specific streams it points to.
 async function resolveSourceLink(link) {
   try {
     let finalLink = link;
@@ -388,16 +367,9 @@ async function resolveSourceLink(link) {
   }
 }
 
-// Finds every "Episode N" anchor for the requested season, working on the raw HTML string
-// instead of walking the cheerio DOM. The app's bundled cheerio shim does not implement
-// .prop()/.tagName/.is() consistently (confirmed: the same class of bug already worked around
-// in vegamovies.js's extractQualityBlocks), and every attempt to fix cross-season leakage by
-// tracking "current season" during a stateful $(...).each() walk has broken the provider
-// completely once deployed - three separate times, each verified correct locally beforehand.
-// Slicing the raw HTML on season markers first sidesteps that whole class of DOM-shim gap.
+// finds "Episode N" anchors for a season, on raw HTML rather than cheerio's .each() -
+// the shim's .prop()/.tagName/.is() gaps broke season-tracking here three times before
 function extractSeasonEpisodeLinks(html, wantedSeason, wantedEpisode) {
-  // Every place in the raw HTML that names a season: a "Season N ..." divider between quality
-  // blocks, or "S0N" embedded in a quality heading's release-name text (e.g. "...S01.1080p...").
   const seasonMarkerRe = /Season\s*0?(\d{1,3})\b|\bS0?(\d{1,3})(?=[.\s]|$)/gi;
   const markers = [];
   let m;
@@ -406,9 +378,7 @@ function extractSeasonEpisodeLinks(html, wantedSeason, wantedEpisode) {
     if (num) markers.push({ index: m.index, season: num });
   }
 
-  // Slice the page into per-season regions using consecutive markers as boundaries. Text before
-  // the first marker belongs to season 1 (uhdmovies pages open directly with season 1's content,
-  // no leading "Season 1" divider).
+  // pages with no leading "Season 1" divider open directly with season 1's content
   const regions = [];
   let regionStart = 0;
   let regionSeason = 1;
@@ -465,9 +435,7 @@ async function getStreams(tmdbId, mediaType, season, episode) {
     const title = mediaInfo.title || mediaInfo.name;
     if (!title) return [];
 
-    // uhdmovies.autos 302-redirects "/?s=query" to "/search/query" - without an explicit
-    // redirect mode, a fetch that doesn't auto-follow returns the empty redirect stub instead
-    // of the results page, so every search here would silently find 0 results.
+    // /?s=query 302-redirects to /search/query, needs explicit redirect:"follow"
     const searchUrl = `${baseUrl}/?s=${encodeURIComponent(title)}`;
     const searchHtml = await (await fetch(searchUrl, { headers: HEADERS, skipSizeCheck: true, redirect: "follow" })).text();
     const $ = cheerio.load(searchHtml);
@@ -486,13 +454,8 @@ async function getStreams(tmdbId, mediaType, season, episode) {
     const titleMatches = results.filter(r => r.title.toLowerCase().includes(lcTitle));
     let match;
     if (mediaType === "tv" && season) {
-      // uhdmovies posts spinoffs/specials as separate search hits with the same base title
-      // ("Stranger Things: Tales from '85" also matches "Stranger Things", AND both posts can
-      // independently satisfy a "Season 1" regex - the spinoff has its own Season 1, so season-
-      // matching alone doesn't disambiguate). Multi-season shows can also be split across several
-      // posts. Among every hit whose title names the requested season, prefer the one closest to
-      // an exact title match (fewest extra characters after the searched title) - the real show's
-      // post continues straight into season/year info, while spinoffs insert a ": Subtitle" first.
+      // spinoffs/specials can match the same base title and their own "Season 1" too,
+      // prefer the hit closest to an exact title match to avoid picking the spinoff
       const seasonRegex = new RegExp(`Season\\s*0?${season}\\b|\\bS0?${season}\\b`, "i");
       const seasonMatches = (titleMatches.length ? titleMatches : results).filter(r => seasonRegex.test(r.title));
       if (seasonMatches.length) {
@@ -509,8 +472,6 @@ async function getStreams(tmdbId, mediaType, season, episode) {
     const sourceLinks = [];
 
     if (mediaType === "tv") {
-      // Raw-HTML extraction (see extractSeasonEpisodeLinks) instead of a stateful cheerio
-      // .each() walk - see the function's own comment for why.
       const found = extractSeasonEpisodeLinks(pageHtml, parseInt(season, 10), parseInt(episode, 10));
       for (const href of found) sourceLinks.push(href);
     } else {
@@ -526,10 +487,7 @@ async function getStreams(tmdbId, mediaType, season, episode) {
     const uniqueLinks = [...new Set(sourceLinks.filter(Boolean))];
     if (!uniqueLinks.length) return [];
 
-    // Each link's resolveSourceLink chain (bypassHrefli's ~4-5 sequential hops) can take several
-    // seconds; resolving uniqueLinks one at a time made total wall-clock time exceed 15-20s for a
-    // handful of links, tripping the host app's execution timeout before the loop ever finished.
-    // Running them in parallel bounds total time to the slowest single link instead of their sum.
+    // resolve concurrently, sequential hops per link were blowing past the app's timeout
     const resolvedGroups = await Promise.all(uniqueLinks.map(link => resolveSourceLink(link)));
     const streams = [];
     for (const group of resolvedGroups) streams.push(...group);
@@ -543,8 +501,7 @@ async function getStreams(tmdbId, mediaType, season, episode) {
         name: s.title || "UHDmovies",
         headers: s.headers || { Referer: baseUrl, "User-Agent": HEADERS["User-Agent"] },
         subtitles: [],
-        // s.size is already a formatted string from the extractor above - re-running it through
-        // formatBytes() treats it as a raw byte count and produces NaN.
+        // s.size is already formatted, don't re-run through formatBytes
         size: s.size || ""
       }))
       .filter(s => meetsMinSize(s.size));

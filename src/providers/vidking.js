@@ -23,9 +23,7 @@ async function getDomains() {
 
 async function getApiHost() {
   const d = await getDomains();
-  // Same backend host as cineby.js (the `speedracelight` key) - vidking.net is just another
-  // frontend over the same API, confirmed by live network capture. Checked before the fallback
-  // constant so a future domain rotation picked up by cineby.js's registry entry also covers this.
+  // same backend as cineby.js, vidking is just another frontend on speedracelight
   return (d["speedracelight"] || d["api.speedracelight.com"] || FALLBACK_API_HOST).replace(/\/+$/, "");
 }
 
@@ -56,9 +54,7 @@ function rotl32(x, n) {
   return (x << n | x >>> (32 - n)) >>> 0;
 }
 
-// Pure-JS base64 decode, used only if the runtime somehow lacks atob. Buffer is deliberately not
-// referenced here - it does not exist in React Native/Hermes, so a Buffer fallback would throw
-// rather than fall back.
+// atob fallback, no Buffer in Hermes
 const BASE64_CHARS = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
 function pureBase64Decode(b64) {
   let clean = "";
@@ -138,8 +134,7 @@ function generateKeystream(seedStr, mediaId, length) {
   return out;
 }
 
-// Manual UTF-8 decode - avoids relying on TextDecoder, which isn't guaranteed to exist in every
-// React Native/Hermes runtime this provider runs under.
+// no TextDecoder in Hermes
 function utf8BytesToString(bytes) {
   let result = "";
   let i = 0;
@@ -214,8 +209,7 @@ function meetsMinSize(sizeStr) {
 
 const SEGMENT_SAMPLE_SIZE = 5;
 
-// Some CDN edges omit Content-Length on HEAD/plain GET for these segments (chunked response) but
-// still honor Range requests and report the real full size in Content-Range: bytes x-y/TOTAL.
+// some CDN edges omit Content-Length, fall back to a ranged GET for Content-Range
 async function getRealSegmentSize(url) {
   try {
     const head = await fetch(url, { method: "HEAD", headers: HEADERS, skipSizeCheck: true });
@@ -235,9 +229,7 @@ async function getRealSegmentSize(url) {
   return null;
 }
 
-// HLS media playlists here carry no BANDWIDTH/size metadata, so the only way to get a real number
-// is to measure real segments: fetch the playlist, sample a handful of its actual segment URLs for
-// their real total byte size, then scale the average by the real total segment count in that playlist.
+// no BANDWIDTH tag in these playlists, sample a few segments and scale by count instead
 async function estimateHlsSize(playlistUrl) {
   try {
     const resp = await fetch(playlistUrl, { headers: HEADERS, skipSizeCheck: true });
