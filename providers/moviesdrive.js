@@ -1,6 +1,6 @@
 /**
  * moviesdrive - Built from src/providers/moviesdrive.js
- * Generated: 2026-08-20T10:52:51.022Z
+ * Generated: 2026-08-20T11:15:55.133Z
  */
 
 // src/providers/moviesdrive.js
@@ -841,7 +841,10 @@ function getDownloadLinks(mediaUrl, season, episode) {
     const $ = cheerio.load(data);
     const typeRaw = $("h1.post-title").text();
     const posterTitle = $(".poster-title").first().text().trim();
-    const seasonMatch = (posterTitle || typeRaw).match(/\bSeason\s*(\d+)\b/i);
+    const rawTitleMatch = data.match(/<h1[^>]*class=["'][^"']*post-title[^"']*["'][^>]*>([\s\S]*?)<\/h1>/i);
+    const rawTitleText = rawTitleMatch ? rawTitleMatch[1].replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").trim() : "";
+    const seasonSource = posterTitle || typeRaw || rawTitleText;
+    const seasonMatch = seasonSource.match(/\bSeason\s*(\d+)\b/i);
     const seasonNumber = seasonMatch ? parseInt(seasonMatch[1]) : null;
     const isMovie = !seasonMatch;
     const title = posterTitle;

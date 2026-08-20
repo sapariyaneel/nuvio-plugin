@@ -1022,8 +1022,14 @@ function getDownloadLinks(mediaUrl, season, episode) {
 
             const typeRaw = $('h1.post-title').text();
             const posterTitle = $('.poster-title').first().text().trim();
-            // typeRaw doesn't reliably say movie/season, detect series by Season marker instead
-            const seasonMatch = (posterTitle || typeRaw).match(/\bSeason\s*(\d+)\b/i);
+
+            // Season detection done on the raw HTML too, not just cheerio's .text() - a page
+            // title/poster-title selector mismatch here silently routes a TV page down the
+            // movie branch, which is a much harder failure to notice than an empty result.
+            const rawTitleMatch = data.match(/<h1[^>]*class=["'][^"']*post-title[^"']*["'][^>]*>([\s\S]*?)<\/h1>/i);
+            const rawTitleText = rawTitleMatch ? rawTitleMatch[1].replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim() : '';
+            const seasonSource = posterTitle || typeRaw || rawTitleText;
+            const seasonMatch = seasonSource.match(/\bSeason\s*(\d+)\b/i);
             const seasonNumber = seasonMatch ? parseInt(seasonMatch[1]) : null;
             const isMovie = !seasonMatch;
 
