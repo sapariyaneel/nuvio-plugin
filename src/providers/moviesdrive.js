@@ -935,6 +935,75 @@ function search(query, page = 1, imdbId = null) {
 
 
 
+// Splits the raw page HTML into <h5>...</h5> blocks in document order (regex, not cheerio -
+// the app's cheerio shim doesn't reliably support the nextAll()/prop('tagName') sibling walk
+// this used to rely on). Returns {text, html} per block so callers can both test the plain text
+// against a season/episode pattern and pull hrefs out of the block's own markup.
+function splitH5Blocks(rawHtml) {
+    const blocks = [];
+    const re = /<h5\b[^>]*>([\s\S]*?)<\/h5>/gi;
+    let m;
+    while ((m = re.exec(rawHtml)) !== null) {
+        const inner = m[1];
+        const text = inner.replace(/<[^>]+>/g, ' ').replace(/&nbsp;/gi, ' ').replace(/&ndash;|&mdash;/gi, '-').replace(/\s+/g, ' ').trim();
+        blocks.push({ text, html: inner, index: m.index });
+    }
+    return blocks;
+}
+
+function extractHrefs(blockHtml) {
+    const hrefs = [];
+    const re = /<a\b[^>]*href=["']([^"']+)["']/gi;
+    let m;
+    while ((m = re.exec(blockHtml)) !== null) hrefs.push(m[1]);
+    return hrefs;
+}
+
+// Season header blocks repeat per quality (e.g. 480p/720p/1080p all say "Season 1"), with no <hr>
+// between them - only a different season's header (or the trailing <hr> before the next season)
+// marks the end of this season's run. Walk every h5 block in order and stay "inside" the target
+// season until a different Season N header shows up.
+function extractSeasonPageUrls(rawHtml, seasonPattern) {
+    const blocks = splitH5Blocks(rawHtml);
+    const anySeasonPattern = /\bSeason\s*0?\d+\b/i;
+    const urls = [];
+    let inSeason = false;
+
+    for (const block of blocks) {
+        if (anySeasonPattern.test(block.text)) {
+            inSeason = seasonPattern.test(block.text);
+            continue;
+        }
+        if (!inSeason) continue;
+        if (!/single\s*episode/i.test(block.text) || /zip/i.test(block.text)) continue;
+        for (const href of extractHrefs(block.html)) {
+            if (!urls.includes(href)) urls.push(href);
+        }
+    }
+    return urls;
+}
+
+// Episode header blocks (e.g. "EP01 - 480p [210MB]") are followed by one or more h5 blocks
+// holding the hoster link(s), until the next "EpN" header. Same raw-HTML approach as above.
+function extractEpisodeLinks(rawHtml, episodePattern) {
+    const blocks = splitH5Blocks(rawHtml);
+    const anyEpisodePattern = /\bEp\s*0?\d+\b/i;
+    const links = [];
+    let inEpisode = false;
+
+    for (const block of blocks) {
+        if (anyEpisodePattern.test(block.text)) {
+            inEpisode = episodePattern.test(block.text);
+            continue;
+        }
+        if (!inEpisode) continue;
+        for (const href of extractHrefs(block.html)) {
+            if (/hubcloud|gdflix/i.test(href)) links.push(href);
+        }
+    }
+    return links;
+}
+
 /**
  * Fetches the media page and extracts all hoster links.
  * This combines the logic of `load()` and `loadLinks()` from the Kotlin provider.
@@ -1031,27 +1100,10 @@ function getDownloadLinks(mediaUrl, season, episode) {
                 const seasonPattern = new RegExp(`Season\\s*0?${season}\\b`, 'i');
                 const episodePattern = new RegExp(`Ep\\s*0?${episode}\\b`, 'i');
 
-                const seasonPageUrls = [];
-
-                $('h5').each((_, el) => {
-                    const text = $(el).text();
-
-                    if (seasonPattern.test(text)) {
-                        $(el).nextAll('h5').each((_, h5) => {
-                            const a = $(h5).find('a[href]');
-                            if (
-                                a.length &&
-                                /single\s*episode/i.test(a.text()) &&
-                                !/zip/i.test(a.text())
-                            ) {
-                                const href = a.attr('href');
-                                if (href && !seasonPageUrls.includes(href)) {
-                                    seasonPageUrls.push(href);
-                                }
-                            }
-                        });
-                    }
-                });
+                // Done on the raw HTML instead of walking cheerio siblings - the app's cheerio shim
+                // doesn't reliably support nextAll()/prop('tagName') for this kind of stateful walk
+                // (same issue documented for uhdmovies.js/vegamovies.js).
+                const seasonPageUrls = extractSeasonPageUrls(data, seasonPattern);
 
                 if (seasonPageUrls.length === 0) {
                     return Promise.resolve({ finalLinks: [], isMovie: false });
@@ -1060,29 +1112,7 @@ function getDownloadLinks(mediaUrl, season, episode) {
                 const mdrivePromises = seasonPageUrls.map(seasonPageUrl =>
                     fetch(seasonPageUrl, { headers: HEADERS })
                         .then(r => r.text())
-                        .then(html => {
-                            const $$ = cheerio.load(html);
-                            const episodeLinks = [];
-
-                            $$('h5').each((_, h) => {
-                                if (episodePattern.test($$(h).text())) {
-                                    let next = $$(h).next();
-
-                                    while (next.length && next.prop('tagName') !== 'HR') {
-                                        const a = next.find('a[href]').addBack('a[href]');
-                                        if (a.length) {
-                                            const href = a.attr('href');
-                                            if (/hubcloud|gdflix/i.test(href)) {
-                                                episodeLinks.push(href);
-                                            }
-                                        }
-                                        next = next.next();
-                                    }
-                                }
-                            });
-
-                            return episodeLinks;
-                        })
+                        .then(episodeHtml => extractEpisodeLinks(episodeHtml, episodePattern))
                         .catch(() => [])
                 );
 
