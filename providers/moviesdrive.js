@@ -1,6 +1,6 @@
 /**
  * moviesdrive - Built from src/providers/moviesdrive.js
- * Generated: 2026-08-20T11:15:55.133Z
+ * Generated: 2026-08-20T11:42:26.785Z
  */
 
 // src/providers/moviesdrive.js
@@ -1085,7 +1085,6 @@ function getStreams(tmdbId, mediaType = "movie", season = null, episode = null) 
               url: link2.url,
               quality: qualityStr,
               size: formattedSize,
-              headers: HEADERS,
               provider: "Moviesdrive"
             };
           });

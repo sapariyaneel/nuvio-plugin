@@ -1340,13 +1340,17 @@ function getStreams(tmdbId, mediaType = 'movie', season = null, episode = null) 
                         else if (link.quality >= 360) qualityStr = '360p';
                         else qualityStr = '240p';
 
+                        // The final CDN/hoster URL (Google, a Cloudflare Worker, etc.) is a different
+                        // origin than moviesdrive.christmas - sending this site's Referer along with
+                        // playback requests gets rejected with 403 by hosts that validate it. No
+                        // provider in this repo attaches a Referer to this kind of direct file link
+                        // (see hdhub4u.js's "download file" branch), so don't invent one here either.
                         return {
                             name: `Moviesdrive ${serverName}`,
                             title: mediaTitle,
                             url: link.url,
                             quality: qualityStr,
                             size: formattedSize,
-                            headers: HEADERS,
                             provider: 'Moviesdrive'
                         };
                     });
