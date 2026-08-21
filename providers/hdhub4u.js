@@ -1,6 +1,6 @@
 /**
  * hdhub4u - Built from src/providers/hdhub4u.js
- * Generated: 2026-08-21T06:49:59.300Z
+ * Generated: 2026-08-21T09:07:19.735Z
  */
 
 // src/providers/hdhub4u.js
@@ -23,7 +23,7 @@ async function getDomains() {
   if (cachedDomains)
     return cachedDomains;
   try {
-    const resp = await fetch(DOMAINS_URL, { skipSizeCheck: true });
+    const resp = await fetch(DOMAINS_URL, { skipSizeCheck: true, redirect: "follow" });
     cachedDomains = await resp.json();
   } catch (e) {
     cachedDomains = {};
@@ -128,7 +128,7 @@ function rot13(value) {
 }
 async function getRedirectLinks(url) {
   try {
-    const html = await (await fetch(url, { headers: HEADERS, skipSizeCheck: true })).text();
+    const html = await (await fetch(url, { headers: HEADERS, skipSizeCheck: true, redirect: "follow" })).text();
     const regex = /s\('o','([A-Za-z0-9+/=]+)'|ck\('_wp_http_\d+','([^']+)'/g;
     let combined = "";
     let m;
@@ -139,9 +139,12 @@ async function getRedirectLinks(url) {
     const jsonObject = JSON.parse(decodedString);
     const encodedurl = base64Decode(jsonObject.o || "").trim();
     const data = (jsonObject.data || "").trim();
-    const wphttp1 = (jsonObject.blog_url || "").trim();
+    const wphttp1 = (jsonObject.blog_url || jsonObject.l || "").trim();
+    if (!wphttp1 || !data) {
+      return encodedurl || url;
+    }
     try {
-      const resp = await fetch(`${wphttp1}?re=${data}`, { skipSizeCheck: true });
+      const resp = await fetch(`${wphttp1}?re=${data}`, { skipSizeCheck: true, redirect: "follow" });
       const html2 = await resp.text();
       const $ = cheerio.load(html2);
       const directlink = $("body").text().trim();
@@ -164,7 +167,7 @@ async function pixelDrainExtractor(link, quality, label) {
 }
 async function hubCdnExtractor(url) {
   try {
-    const html = await (await fetch(url, { headers: HEADERS, skipSizeCheck: true })).text();
+    const html = await (await fetch(url, { headers: HEADERS, skipSizeCheck: true, redirect: "follow" })).text();
     const $ = cheerio.load(html);
     const scriptText = $("script:contains(var reurl)").first().html() || html;
     const m = scriptText.match(/reurl\s*=\s*"([^"]+)"/);
@@ -187,7 +190,7 @@ async function hubCdnExtractor(url) {
 }
 async function hubcdnnExtractor(url) {
   try {
-    const html = await (await fetch(url, { headers: HEADERS, skipSizeCheck: true })).text();
+    const html = await (await fetch(url, { headers: HEADERS, skipSizeCheck: true, redirect: "follow" })).text();
     const m = html.match(/r=([A-Za-z0-9+/=]+)/);
     if (!m)
       return [];
@@ -205,7 +208,7 @@ async function hubcdnnExtractor(url) {
 }
 async function hubDriveExtractor(url) {
   try {
-    const html = await (await fetch(url, { headers: HEADERS, skipSizeCheck: true })).text();
+    const html = await (await fetch(url, { headers: HEADERS, skipSizeCheck: true, redirect: "follow" })).text();
     const $ = cheerio.load(html);
     const href = $(".btn.btn-primary.btn-user.btn-success1.m-1").attr("href");
     if (!href)
@@ -230,7 +233,7 @@ async function hubCloudExtractor(url, referer) {
     if (currentUrl.includes("hubcloud.php")) {
       href = currentUrl;
     } else {
-      const html = await (await fetch(currentUrl, { headers: HEADERS, skipSizeCheck: true })).text();
+      const html = await (await fetch(currentUrl, { headers: HEADERS, skipSizeCheck: true, redirect: "follow" })).text();
       const $first = cheerio.load(html);
       const raw = $first("#download").attr("href") || "";
       if (!raw)
@@ -239,7 +242,7 @@ async function hubCloudExtractor(url, referer) {
     }
     if (!href.trim())
       return [];
-    const pageHtml = await (await fetch(href, { headers: HEADERS, skipSizeCheck: true })).text();
+    const pageHtml = await (await fetch(href, { headers: HEADERS, skipSizeCheck: true, redirect: "follow" })).text();
     const $ = cheerio.load(pageHtml);
     const size = $("i#size").first().text() || "";
     const header = $("div.card-header").first().text() || "";
@@ -299,7 +302,7 @@ async function hubCloudExtractor(url, referer) {
 }
 async function hblinksExtractor(url, referer) {
   try {
-    const html = await (await fetch(url, { headers: HEADERS, skipSizeCheck: true })).text();
+    const html = await (await fetch(url, { headers: HEADERS, skipSizeCheck: true, redirect: "follow" })).text();
     const $ = cheerio.load(html);
     const anchors = $("h3 a, h5 a, div.entry-content p a").toArray();
     const streams = [];
@@ -334,7 +337,8 @@ async function vidStackExtractor(url) {
       return [];
     const encoded = (await (await fetch(`${baseUrl}/api/v1/video?id=${hash}`, {
       headers: { "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:134.0) Gecko/20100101 Firefox/134.0" },
-      skipSizeCheck: true
+      skipSizeCheck: true,
+      redirect: "follow"
     })).text()).trim();
     const key = CryptoJS.enc.Utf8.parse("kiemtienmua911ca");
     const ivList = ["1234567890oiuytr", "0123456789abcdef"];
@@ -428,7 +432,7 @@ async function resolveAndExtract(link) {
 async function resolveImdbToTmdb(imdbId, mediaType) {
   try {
     const url = `https://api.themoviedb.org/3/find/${imdbId}?api_key=${TMDB_API_KEY}&external_source=imdb_id`;
-    const data = await (await fetch(url, { skipSizeCheck: true })).json();
+    const data = await (await fetch(url, { skipSizeCheck: true, redirect: "follow" })).json();
     const results = mediaType === "tv" ? data.tv_results : data.movie_results;
     return results && results.length ? results[0].id : null;
   } catch (e) {
@@ -444,13 +448,13 @@ async function getStreams(tmdbId, mediaType, season, episode) {
     }
     const baseUrl = await getBaseUrl();
     const tmdbUrl = `https://api.themoviedb.org/3/${mediaType}/${tmdbId}?api_key=${TMDB_API_KEY}`;
-    const mediaInfo = await (await fetch(tmdbUrl, { skipSizeCheck: true })).json();
+    const mediaInfo = await (await fetch(tmdbUrl, { skipSizeCheck: true, redirect: "follow" })).json();
     const title = mediaInfo.title || mediaInfo.name;
     if (!title)
       return [];
     const searchBase = await getSearchUrl();
     const searchUrl = `${searchBase}/collections/post/documents/search?q=${encodeURIComponent(title)}&query_by=post_title,category&query_by_weights=4,2&sort_by=sort_by_date:desc&limit=15&highlight_fields=none&use_cache=true&page=1`;
-    const searchJson = await (await fetch(searchUrl, { headers: SEARCH_HEADERS, skipSizeCheck: true })).json();
+    const searchJson = await (await fetch(searchUrl, { headers: SEARCH_HEADERS, skipSizeCheck: true, redirect: "follow" })).json();
     const hits = searchJson && searchJson.hits ? searchJson.hits : [];
     if (!hits.length)
       return [];
@@ -470,7 +474,7 @@ async function getStreams(tmdbId, mediaType, season, episode) {
       match = titleMatches[0] || results[0];
     const matchPath = match.url.startsWith("http") ? match.url.replace(/^https?:\/\/[^/]+/, "") : match.url;
     const pageUrl = `${baseUrl}${matchPath.startsWith("/") ? "" : "/"}${matchPath}`;
-    const pageHtml = await (await fetch(pageUrl, { headers: HEADERS, skipSizeCheck: true })).text();
+    const pageHtml = await (await fetch(pageUrl, { headers: HEADERS, skipSizeCheck: true, redirect: "follow" })).text();
     const $ = cheerio.load(pageHtml);
     const rawLinks = [];
     if (mediaType === "tv") {

@@ -1,6 +1,6 @@
 /**
  * moviesdrive - Built from src/providers/moviesdrive.js
- * Generated: 2026-08-21T06:49:59.320Z
+ * Generated: 2026-08-21T09:07:19.748Z
  */
 
 // src/providers/moviesdrive.js
@@ -15,7 +15,7 @@ var cachedRegistry = null;
 function getRegistry() {
   if (cachedRegistry)
     return Promise.resolve(cachedRegistry);
-  return fetch(DOMAINS_URL, { headers: { "User-Agent": "Mozilla/5.0" } }).then((r) => r.json()).then((d) => {
+  return fetch(DOMAINS_URL, { headers: { "User-Agent": "Mozilla/5.0" }, redirect: "follow" }).then((r) => r.json()).then((d) => {
     cachedRegistry = d || {};
     return cachedRegistry;
   }).catch(() => {
@@ -167,7 +167,8 @@ function fetchAndUpdateDomain() {
     method: "GET",
     headers: {
       "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"
-    }
+    },
+    redirect: "follow"
   }).then(function(response) {
     if (response.ok) {
       return response.json().then(function(data) {
@@ -208,7 +209,7 @@ function pixelDrainExtractor(link2) {
     }
     const infoUrl = `https://pixeldrain.com/api/file/${fileId}/info`;
     let fileInfo = { name: "", quality: "Unknown", size: 0 };
-    return fetch(infoUrl, { headers: HEADERS }).then((response) => response.json()).then((info) => {
+    return fetch(infoUrl, { headers: HEADERS, redirect: "follow" }).then((response) => response.json()).then((info) => {
       if (info && info.name) {
         fileInfo.name = info.name;
         fileInfo.size = info.size || 0;
@@ -243,7 +244,7 @@ function streamTapeExtractor(link2) {
   const url = new URL(link2);
   url.hostname = "streamtape.com";
   const normalizedLink = url.toString();
-  return fetch(normalizedLink, { headers: HEADERS }).then((res) => res.text()).then((data) => {
+  return fetch(normalizedLink, { headers: HEADERS, redirect: "follow" }).then((res) => res.text()).then((data) => {
     const match = data.match(/document\.getElementById\('videolink'\)\.innerHTML = (.*?);/);
     if (match && match[1]) {
       const scriptContent = match[1];
@@ -264,14 +265,14 @@ function streamTapeExtractor(link2) {
   });
 }
 function hubStreamExtractor(url, referer) {
-  return fetch(url, { headers: { ...HEADERS, Referer: referer } }).then((response) => {
+  return fetch(url, { headers: { ...HEADERS, Referer: referer }, redirect: "follow" }).then((response) => {
     return [{ source: "Hubstream", quality: "Unknown", url }];
   }).catch((e) => {
     return [];
   });
 }
 function hbLinksExtractor(url, referer) {
-  return fetch(url, { headers: { ...HEADERS, Referer: referer } }).then((response) => response.text()).then((data) => {
+  return fetch(url, { headers: { ...HEADERS, Referer: referer }, redirect: "follow" }).then((response) => response.text()).then((data) => {
     const $ = cheerio.load(data);
     const links = $("h3 a, div.entry-content p a").map((i, el) => $(el).attr("href")).get();
     const finalLinks = [];
@@ -283,7 +284,7 @@ function hbLinksExtractor(url, referer) {
   });
 }
 function hubCdnExtractor(url, referer) {
-  return fetch(url, { headers: { ...HEADERS, Referer: referer } }).then((response) => response.text()).then((data) => {
+  return fetch(url, { headers: { ...HEADERS, Referer: referer }, redirect: "follow" }).then((response) => response.text()).then((data) => {
     const encodedMatch = data.match(/r=([A-Za-z0-9+/=]+)/);
     if (encodedMatch && encodedMatch[1]) {
       const m3u8Data = atob(encodedMatch[1]);
@@ -298,7 +299,7 @@ function hubCdnExtractor(url, referer) {
   }).catch(() => []);
 }
 function hubDriveExtractor(url, referer) {
-  return fetch(url, { headers: { ...HEADERS, Referer: referer } }).then((response) => response.text()).then((data) => {
+  return fetch(url, { headers: { ...HEADERS, Referer: referer }, redirect: "follow" }).then((response) => response.text()).then((data) => {
     const $ = cheerio.load(data);
     const href = $(".btn.btn-primary.btn-user.btn-success1.m-1").attr("href");
     if (href) {
@@ -323,7 +324,7 @@ function resolveHubcloudSearchRecover(url) {
     } catch (e) {
     }
     const apiUrl = `${u.origin}${u.pathname}?api=search&q=${encodeURIComponent(q)}&page=1&from_ac=${encodeURIComponent(fromAc)}`;
-    return fetch(apiUrl, { headers: { ...HEADERS, Accept: "application/json" } }).then((r) => r.json()).then((data) => data && Array.isArray(data.hits) && data.hits[0] && data.hits[0].url || null).catch(() => null);
+    return fetch(apiUrl, { headers: { ...HEADERS, Accept: "application/json" }, redirect: "follow" }).then((r) => r.json()).then((data) => data && Array.isArray(data.hits) && data.hits[0] && data.hits[0].url || null).catch(() => null);
   } catch (e) {
     return Promise.resolve(null);
   }
@@ -356,7 +357,8 @@ function hubCloudExtractor(url, referer, skipDomainSwap) {
   }
   if (/\/(video|drive)\//i.test(currentUrl)) {
     return fetch(currentUrl, {
-      headers: { ...HEADERS, Referer: referer }
+      headers: { ...HEADERS, Referer: referer },
+      redirect: "follow"
     }).then((r) => r.text()).then((html) => {
       const $ = cheerio.load(html);
       const hubPhp = $('a[href*="hubcloud.php"]').attr("href");
@@ -374,14 +376,16 @@ function hubCloudExtractor(url, referer, skipDomainSwap) {
       finalUrl: response.url || currentUrl
     }))
   ) : fetch(currentUrl, {
-    headers: { ...HEADERS, Referer: referer }
+    headers: { ...HEADERS, Referer: referer },
+    redirect: "follow"
   }).then((r) => r.text()).then((pageData) => {
     let finalUrl = currentUrl;
     const scriptUrlMatch = pageData.match(/var url = '([^']*)'/);
     if (scriptUrlMatch && scriptUrlMatch[1]) {
       finalUrl = scriptUrlMatch[1];
       return fetch(finalUrl, {
-        headers: { ...HEADERS, Referer: currentUrl }
+        headers: { ...HEADERS, Referer: currentUrl },
+        redirect: "follow"
       }).then((r) => r.text()).then((secondData) => ({
         pageData: secondData,
         finalUrl
@@ -528,11 +532,11 @@ async function gdFlixExtractor(url, referer = null) {
     return m[2].toUpperCase() === "GB" ? v * 1024 ** 3 : m[2].toUpperCase() === "MB" ? v * 1024 ** 2 : v * 1024;
   };
   try {
-    let res = await fetch(url, { headers: HEADERS });
+    let res = await fetch(url, { headers: HEADERS, redirect: "follow" });
     let html = await res.text();
     let refresh = html.match(/url=([^"]+)/i);
     let finalUrl = refresh ? refresh[1] : url;
-    const page = await fetch(finalUrl, { headers: HEADERS }).then((r) => r.text());
+    const page = await fetch(finalUrl, { headers: HEADERS, redirect: "follow" }).then((r) => r.text());
     const $ = cheerio.load(page);
     const fileName = $('li:contains("Name")').text().replace("Name :", "").trim();
     const fileSizeText = $('li:contains("Size")').text().replace("Size :", "").trim();
@@ -553,12 +557,12 @@ async function gdFlixExtractor(url, referer = null) {
         });
       } else if (text.includes("index")) {
         const gdflixBase = await getGdflixDomain();
-        const indexPage = await fetch(`${gdflixBase}${href}`).then((r) => r.text());
+        const indexPage = await fetch(`${gdflixBase}${href}`, { redirect: "follow" }).then((r) => r.text());
         const $$ = cheerio.load(indexPage);
         const btns = $$("a.btn-outline-info").get();
         for (const b of btns) {
           const serverUrl = gdflixBase + $$(b).attr("href");
-          const serverPage = await fetch(serverUrl).then((r) => r.text());
+          const serverPage = await fetch(serverUrl, { redirect: "follow" }).then((r) => r.text());
           const $$$ = cheerio.load(serverPage);
           $$$("div.mb-4 > a[href]").each((_, x) => {
             links.push({
@@ -579,7 +583,7 @@ async function gdFlixExtractor(url, referer = null) {
         const bases = [.../* @__PURE__ */ new Set([drivebotBase, "https://drivebot.sbs", "https://drivebot.cfd"])];
         for (const base of bases) {
           try {
-            const bot = await fetch(`${base}/download?id=${id}&do=${doId}`);
+            const bot = await fetch(`${base}/download?id=${id}&do=${doId}`, { redirect: "follow" });
             const cookie = bot.headers.get("set-cookie") || "";
             const html2 = await bot.text();
             const token = html2.match(/token', '([a-f0-9]+)/)?.[1];
@@ -593,7 +597,8 @@ async function gdFlixExtractor(url, referer = null) {
                 "Referer": `${base}/download?id=${id}&do=${doId}`,
                 "Cookie": cookie
               },
-              body: `token=${token}`
+              body: `token=${token}`,
+              redirect: "follow"
             }).then((r) => r.text());
             const final = dl.match(/url":"(.*?)"/)?.[1]?.replace(/\\/g, "");
             if (final) {
@@ -650,16 +655,17 @@ async function goFileExtractor(url) {
     const id = url.match(/(?:\?c=|\/d\/)([a-zA-Z0-9-]+)/)?.[1];
     if (!id)
       return [];
-    const acc = await fetch("https://api.gofile.io/accounts", { method: "POST" }).then((r) => r.json());
+    const acc = await fetch("https://api.gofile.io/accounts", { method: "POST", redirect: "follow" }).then((r) => r.json());
     const token = acc?.data?.token;
     if (!token)
       return [];
-    const js = await fetch("https://gofile.io/dist/js/global.js").then((r) => r.text());
+    const js = await fetch("https://gofile.io/dist/js/global.js", { redirect: "follow" }).then((r) => r.text());
     const wt = js.match(/appdata\.wt\s*=\s*["']([^"']+)/)?.[1];
     if (!wt)
       return [];
     const data = await fetch(`https://api.gofile.io/contents/${id}?wt=${wt}`, {
-      headers: { Authorization: `Bearer ${token}` }
+      headers: { Authorization: `Bearer ${token}` },
+      redirect: "follow"
     }).then((r) => r.json());
     const files = Object.values(data.data.children);
     const file = files[0];
@@ -724,7 +730,7 @@ function loadExtractor(url, referer = MAIN_URL) {
 function search(query, page = 1, imdbId = null) {
   return getCurrentDomain().then((currentDomain) => {
     const apiUrl = `${currentDomain}/search.php?q=${encodeURIComponent(query)}&page=${page}`;
-    return fetch(apiUrl, { headers: HEADERS });
+    return fetch(apiUrl, { headers: HEADERS, redirect: "follow" });
   }).then((res) => res.json()).then((json) => {
     if (!json?.hits?.length) {
       return [];
@@ -807,7 +813,7 @@ function extractEpisodeLinks(rawHtml, episodePattern) {
 function getDownloadLinks(mediaUrl, season, episode) {
   return getCurrentDomain().then((currentDomain) => {
     HEADERS.Referer = `${currentDomain}/`;
-    return fetch(mediaUrl, { headers: HEADERS });
+    return fetch(mediaUrl, { headers: HEADERS, redirect: "follow" });
   }).then((response) => response.text()).then((data) => {
     const $ = cheerio.load(data);
     const typeRaw = $("h1.post-title").text();
@@ -829,7 +835,8 @@ function getDownloadLinks(mediaUrl, season, episode) {
         return fetch(url, {
           headers: {
             "User-Agent": "Mozilla/5.0"
-          }
+          },
+          redirect: "follow"
         }).then((res) => res.text()).then((html) => {
           const $$ = cheerio.load(html);
           return $$("a[href]").map((_, el) => {
@@ -875,7 +882,7 @@ function getDownloadLinks(mediaUrl, season, episode) {
         return Promise.resolve({ finalLinks: [], isMovie: false });
       }
       const mdrivePromises = seasonPageUrls.map(
-        (seasonPageUrl) => fetch(seasonPageUrl, { headers: HEADERS }).then((r) => r.text()).then((episodeHtml) => extractEpisodeLinks(episodeHtml, episodePattern)).catch(() => [])
+        (seasonPageUrl) => fetch(seasonPageUrl, { headers: HEADERS, redirect: "follow" }).then((r) => r.text()).then((episodeHtml) => extractEpisodeLinks(episodeHtml, episodePattern)).catch(() => [])
       );
       return Promise.all(mdrivePromises).then((allEpisodeLinks) => {
         const flatLinks = allEpisodeLinks.flat();
@@ -908,7 +915,7 @@ function getDownloadLinks(mediaUrl, season, episode) {
 async function resolveImdbToTmdb(imdbId, mediaType) {
   try {
     const url = `${TMDB_BASE_URL}/find/${imdbId}?api_key=${TMDB_API_KEY}&external_source=imdb_id`;
-    const data = await (await fetch(url, { skipSizeCheck: true })).json();
+    const data = await (await fetch(url, { skipSizeCheck: true, redirect: "follow" })).json();
     const results = mediaType === "tv" ? data.tv_results : data.movie_results;
     return results && results.length ? results[0].id : null;
   } catch (e) {
@@ -923,7 +930,8 @@ function getTMDBDetails(tmdbId, mediaType) {
     headers: {
       "Accept": "application/json",
       "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"
-    }
+    },
+    redirect: "follow"
   }).then(function(response) {
     if (!response.ok) {
       throw new Error(`TMDB API error: ${response.status}`);
