@@ -1,6 +1,6 @@
 /**
  * hdhub4u - Built from src/providers/hdhub4u.js
- * Generated: 2026-08-20T09:51:41.990Z
+ * Generated: 2026-08-21T06:49:59.300Z
  */
 
 // src/providers/hdhub4u.js
@@ -285,23 +285,6 @@ async function hubCloudExtractor(url, referer) {
         } else if (label.includes("mega server")) {
           streams.push({ url: link, quality, title: `${ref} [Mega Server] ${labelExtras}`.trim(), size: formatBytes(sizeInBytes) });
         } else if (label.includes("10gbps")) {
-          let redirectUrl = link;
-          let finalLink = null;
-          for (let i = 0; i < 5; i++) {
-            const r = await fetch(redirectUrl, { redirect: "manual", skipSizeCheck: true });
-            if (r.status >= 300 && r.status < 400) {
-              const loc = r.headers.get("location");
-              if (loc && loc.includes("link=")) {
-                finalLink = loc.split("link=")[1];
-                break;
-              }
-              if (loc)
-                redirectUrl = new URL(loc, redirectUrl).toString();
-            } else
-              break;
-          }
-          if (finalLink)
-            streams.push({ url: finalLink, quality, title: `${ref} [10Gbps] ${labelExtras}`.trim(), size: formatBytes(sizeInBytes) });
         } else {
           const nested = await loadExtractor(link, "");
           streams.push(...nested.map((s) => ({ ...s, size: s.size || formatBytes(sizeInBytes) })));

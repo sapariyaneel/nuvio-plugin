@@ -575,6 +575,11 @@ function hubCloudExtractor(url, referer, skipDomainSwap) {
                         .catch(() => { });
                 }
 
+                // 10Gbps resolves through a redirect chain to a Google-hosted download link, skip
+                if (text.includes("10Gbps")) {
+                    return Promise.resolve();
+                }
+
                 if (link.includes("pixeldra")) {
                     return pixelDrainExtractor(link)
                         .then(extracted => {
@@ -586,41 +591,6 @@ function hubCloudExtractor(url, referer, skipDomainSwap) {
                             })));
                         })
                         .catch(() => { });
-                }
-
-                if (text.includes("10Gbps")) {
-                    let redirectUrl = link;
-                    let finalLink = null;
-
-                    const walk = (i) => {
-                        if (i >= 5) return Promise.resolve(finalLink);
-                        return fetch(redirectUrl, { redirect: 'manual' })
-                            .then(r => {
-                                if (r.status >= 300 && r.status < 400) {
-                                    const loc = r.headers.get('location');
-                                    if (loc?.includes("link=")) {
-                                        finalLink = loc.split("link=")[1];
-                                        return finalLink;
-                                    }
-                                    if (loc) redirectUrl = new URL(loc, redirectUrl).toString();
-                                    return walk(i + 1);
-                                }
-                                return finalLink;
-                            })
-                            .catch(() => finalLink);
-                    };
-
-                    return walk(0).then(dlink => {
-                        if (dlink) {
-                            links.push({
-                                source: `HubCloud - 10Gbps ${labelExtras}`,
-                                quality,
-                                url: dlink,
-                                size: sizeInBytes,
-                                fileName
-                            });
-                        }
-                    });
                 }
 
                 return loadExtractor(link, finalUrl).then(r => links.push(...r));
@@ -1340,11 +1310,6 @@ function getStreams(tmdbId, mediaType = 'movie', season = null, episode = null) 
                         else if (link.quality >= 360) qualityStr = '360p';
                         else qualityStr = '240p';
 
-                        // The final CDN/hoster URL (Google, a Cloudflare Worker, etc.) is a different
-                        // origin than moviesdrive.christmas - sending this site's Referer along with
-                        // playback requests gets rejected with 403 by hosts that validate it. No
-                        // provider in this repo attaches a Referer to this kind of direct file link
-                        // (see hdhub4u.js's "download file" branch), so don't invent one here either.
                         return {
                             name: `Moviesdrive ${serverName}`,
                             title: mediaTitle,

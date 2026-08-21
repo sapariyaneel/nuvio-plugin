@@ -1,6 +1,6 @@
 /**
  * moviesdrive - Built from src/providers/moviesdrive.js
- * Generated: 2026-08-20T11:42:26.785Z
+ * Generated: 2026-08-21T06:49:59.320Z
  */
 
 // src/providers/moviesdrive.js
@@ -493,6 +493,9 @@ function hubCloudExtractor(url, referer, skipDomainSwap) {
         }).catch(() => {
         });
       }
+      if (text.includes("10Gbps")) {
+        return Promise.resolve();
+      }
       if (link2.includes("pixeldra")) {
         return pixelDrainExtractor(link2).then((extracted) => {
           links.push(...extracted.map((l) => ({
@@ -502,38 +505,6 @@ function hubCloudExtractor(url, referer, skipDomainSwap) {
             fileName
           })));
         }).catch(() => {
-        });
-      }
-      if (text.includes("10Gbps")) {
-        let redirectUrl = link2;
-        let finalLink = null;
-        const walk = (i) => {
-          if (i >= 5)
-            return Promise.resolve(finalLink);
-          return fetch(redirectUrl, { redirect: "manual" }).then((r) => {
-            if (r.status >= 300 && r.status < 400) {
-              const loc = r.headers.get("location");
-              if (loc?.includes("link=")) {
-                finalLink = loc.split("link=")[1];
-                return finalLink;
-              }
-              if (loc)
-                redirectUrl = new URL(loc, redirectUrl).toString();
-              return walk(i + 1);
-            }
-            return finalLink;
-          }).catch(() => finalLink);
-        };
-        return walk(0).then((dlink) => {
-          if (dlink) {
-            links.push({
-              source: `HubCloud - 10Gbps ${labelExtras}`,
-              quality,
-              url: dlink,
-              size: sizeInBytes2,
-              fileName
-            });
-          }
         });
       }
       return loadExtractor(link2, finalUrl).then((r) => links.push(...r));
