@@ -1,6 +1,6 @@
 /**
  * hindmoviez - Built from src/providers/hindmoviez.js
- * Generated: 2026-08-20T09:51:42.126Z
+ * Generated: 2026-08-21T09:28:32.260Z
  */
 
 // src/providers/hindmoviez.js
@@ -238,29 +238,31 @@ async function getStreams(tmdbId, mediaType, season, episode) {
       }
     } else {
       const maxButtons = $page("a.maxbutton").toArray();
-      for (const btn of maxButtons.slice(0, 3)) {
+      const perMaxButton = await Promise.all(maxButtons.slice(0, 3).map(async (btn) => {
+        const btnStreams = [];
         try {
           const btnUrl = $page(btn).attr("href");
           if (!btnUrl)
-            continue;
+            return btnStreams;
           const btnPageHtml = await (await fetch(btnUrl, { headers: HEADERS, skipSizeCheck: true, redirect: "follow" })).text();
           const $btnPage = cheerio.load(btnPageHtml);
           const getLinksAnchors = $btnPage("div.entry-content a:contains('Get Links')").toArray();
-          for (const linkA of getLinksAnchors) {
+          const perLinkAnchor = await Promise.all(getLinksAnchors.map(async (linkA) => {
             try {
               const linkUrl = $btnPage(linkA).attr("href");
               if (!linkUrl)
-                continue;
+                return [];
               const resolvedLinkUrl = await resolveHshareUrl(linkUrl);
               const linkPageHtml = await (await fetch(resolvedLinkUrl, { headers: HEADERS, skipSizeCheck: true, redirect: "follow" })).text();
               const $linkPage = cheerio.load(linkPageHtml);
               const name = ($linkPage("div.container p").filter((i, p) => $linkPage(p).text().includes("Name:")).first().text() || "").replace("Name:", "").trim();
               const sizeText = ($linkPage("div.container p").filter((i, p) => $linkPage(p).text().includes("Size:")).first().text() || "").replace("Size:", "").trim();
               const sizeBytes = toBytes(sizeText);
+              const linkStreams = [];
               $linkPage("a.btn").each((i, dlBtn) => {
                 const dlHref = $linkPage(dlBtn).attr("href") || "";
                 if (dlHref && dlHref.startsWith("http")) {
-                  streams.push({
+                  linkStreams.push({
                     url: dlHref,
                     quality: extractQuality(name || dlHref),
                     title: `Hindmoviez [${name || "Download"}]`,
@@ -269,12 +271,17 @@ async function getStreams(tmdbId, mediaType, season, episode) {
                   });
                 }
               });
+              return linkStreams;
             } catch (e) {
+              return [];
             }
-          }
+          }));
+          return perLinkAnchor.flat();
         } catch (e) {
+          return btnStreams;
         }
-      }
+      }));
+      streams.push(...perMaxButton.flat());
     }
     return streams.filter((s) => meetsMinSize(s.size));
   } catch (e) {

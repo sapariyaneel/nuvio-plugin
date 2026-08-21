@@ -642,129 +642,140 @@ async function gdFlixExtractor(url, referer = null) {
 
         const anchors = $('div.text-center a[href]').get();
 
-        for (const a of anchors) {
+        // each anchor's chain (direct/index/drivebot/instant/gofile/pixel) is independent of the
+        // others, only the final links.push() is shared, so resolve every anchor concurrently
+        const perAnchor = await Promise.all(anchors.map(async (a) => {
             const el = $(a);
             const text = el.text().toLowerCase();
             const href = el.attr('href');
+            const anchorLinks = [];
 
-            /* DIRECT */
-            if (text.includes('direct')) {
-                links.push({
-                    source: 'GDFlix [Direct]',
-                    quality,
-                    url: href,
-                    size: sizeBytes,
-                    fileName
-                });
-            }
-
-            /* INDEX LINKS */
-            else if (text.includes('index')) {
-                const gdflixBase = await getGdflixDomain();
-                const indexPage = await fetch(`${gdflixBase}${href}`, { redirect: 'follow' }).then(r => r.text());
-                const $$ = cheerio.load(indexPage);
-
-                const btns = $$('a.btn-outline-info').get();
-                for (const b of btns) {
-                    const serverUrl = gdflixBase + $$(b).attr('href');
-                    const serverPage = await fetch(serverUrl, { redirect: 'follow' }).then(r => r.text());
-                    const $$$ = cheerio.load(serverPage);
-
-                    $$$('div.mb-4 > a[href]').each((_, x) => {
-                        links.push({
-                            source: 'GDFlix [Index]',
-                            quality,
-                            url: $$(x).attr('href'),
-                            size: sizeBytes,
-                            fileName
-                        });
-                    });
-                }
-            }
-
-            /* DRIVEBOT */
-            else if (text.includes('drivebot')) {
-                const id = href.match(/id=([^&]+)/)?.[1];
-                const doId = href.match(/do=([^=]+)/)?.[1];
-                if (!id || !doId) continue;
-
-                const drivebotBase = await getDrivebotDomain();
-                const bases = [...new Set([drivebotBase, 'https://drivebot.sbs', 'https://drivebot.cfd'])];
-
-                for (const base of bases) {
-                    try {
-                        const bot = await fetch(`${base}/download?id=${id}&do=${doId}`, { redirect: 'follow' });
-                        const cookie = bot.headers.get('set-cookie') || '';
-                        const html = await bot.text();
-
-                        const token = html.match(/token', '([a-f0-9]+)/)?.[1];
-                        const postId = html.match(/download\?id=([^']+)/)?.[1];
-                        if (!token || !postId) continue;
-
-                        const dl = await fetch(`${base}/download?id=${postId}`, {
-                            method: 'POST',
-                            headers: {
-                                'Content-Type': 'application/x-www-form-urlencoded',
-                                'Referer': `${base}/download?id=${id}&do=${doId}`,
-                                'Cookie': cookie
-                            },
-                            body: `token=${token}`,
-                            redirect: 'follow'
-                        }).then(r => r.text());
-
-                        const final = dl.match(/url":"(.*?)"/)?.[1]?.replace(/\\/g, '');
-                        if (final) {
-                            links.push({
-                                source: 'GDFlix [DriveBot]',
-                                quality,
-                                url: final,
-                                size: sizeBytes,
-                                fileName
-                            });
-                        }
-                    } catch { }
-                }
-            }
-
-            /* INSTANT DL */
-            else if (text.includes('instant')) {
-                const r = await fetch(href, { redirect: 'manual' });
-                const loc = r.headers.get('location');
-                if (loc) {
-                    links.push({
-                        source: 'GDFlix [Instant]',
+            try {
+                /* DIRECT */
+                if (text.includes('direct')) {
+                    anchorLinks.push({
+                        source: 'GDFlix [Direct]',
                         quality,
-                        url: loc.replace('url=', ''),
+                        url: href,
                         size: sizeBytes,
                         fileName
                     });
                 }
-            }
 
-            /* GOFILE */
-            else if (text.includes('gofile')) {
-                const extracted = await goFileExtractor(href);
-                extracted.forEach(l => links.push({
-                    ...l,
-                    quality,
-                    size: l.size || sizeBytes,
-                    fileName
-                }));
-            }
+                /* INDEX LINKS */
+                else if (text.includes('index')) {
+                    const gdflixBase = await getGdflixDomain();
+                    const indexPage = await fetch(`${gdflixBase}${href}`, { redirect: 'follow' }).then(r => r.text());
+                    const $$ = cheerio.load(indexPage);
 
-            /* PIXELDRAIN */
-            else if (text.includes('pixel')) {
-                return pixelDrainExtractor(link)
-                    .then(extracted => {
-                        links.push(...extracted.map(l => ({
-                            ...l,
-                            quality: typeof l.quality === 'number' ? l.quality : quality,
-                            size: l.size || sizeInBytes,
+                    const btns = $$('a.btn-outline-info').get();
+                    const perBtn = await Promise.all(btns.map(async (b) => {
+                        const serverUrl = gdflixBase + $$(b).attr('href');
+                        const serverPage = await fetch(serverUrl, { redirect: 'follow' }).then(r => r.text());
+                        const $$$ = cheerio.load(serverPage);
+
+                        const btnLinks = [];
+                        $$$('div.mb-4 > a[href]').each((_, x) => {
+                            btnLinks.push({
+                                source: 'GDFlix [Index]',
+                                quality,
+                                url: $$$(x).attr('href'),
+                                size: sizeBytes,
+                                fileName
+                            });
+                        });
+                        return btnLinks;
+                    }));
+                    anchorLinks.push(...perBtn.flat());
+                }
+
+                /* DRIVEBOT */
+                else if (text.includes('drivebot')) {
+                    const id = href.match(/id=([^&]+)/)?.[1];
+                    const doId = href.match(/do=([^=]+)/)?.[1];
+                    if (id && doId) {
+                        const drivebotBase = await getDrivebotDomain();
+                        const bases = [...new Set([drivebotBase, 'https://drivebot.sbs', 'https://drivebot.cfd'])];
+
+                        // tries each mirror until one works, so this stays a sequential fallback chain
+                        for (const base of bases) {
+                            try {
+                                const bot = await fetch(`${base}/download?id=${id}&do=${doId}`, { redirect: 'follow' });
+                                const cookie = bot.headers.get('set-cookie') || '';
+                                const html = await bot.text();
+
+                                const token = html.match(/token', '([a-f0-9]+)/)?.[1];
+                                const postId = html.match(/download\?id=([^']+)/)?.[1];
+                                if (!token || !postId) continue;
+
+                                const dl = await fetch(`${base}/download?id=${postId}`, {
+                                    method: 'POST',
+                                    headers: {
+                                        'Content-Type': 'application/x-www-form-urlencoded',
+                                        'Referer': `${base}/download?id=${id}&do=${doId}`,
+                                        'Cookie': cookie
+                                    },
+                                    body: `token=${token}`,
+                                    redirect: 'follow'
+                                }).then(r => r.text());
+
+                                const final = dl.match(/url":"(.*?)"/)?.[1]?.replace(/\\/g, '');
+                                if (final) {
+                                    anchorLinks.push({
+                                        source: 'GDFlix [DriveBot]',
+                                        quality,
+                                        url: final,
+                                        size: sizeBytes,
+                                        fileName
+                                    });
+                                }
+                            } catch { }
+                        }
+                    }
+                }
+
+                /* INSTANT DL */
+                else if (text.includes('instant')) {
+                    const r = await fetch(href, { redirect: 'manual' });
+                    const loc = r.headers.get('location');
+                    if (loc) {
+                        anchorLinks.push({
+                            source: 'GDFlix [Instant]',
+                            quality,
+                            url: loc.replace('url=', ''),
+                            size: sizeBytes,
                             fileName
-                        })));
-                    }).catch(() => { });
-            }
-        }
+                        });
+                    }
+                }
+
+                /* GOFILE */
+                else if (text.includes('gofile')) {
+                    const extracted = await goFileExtractor(href);
+                    extracted.forEach(l => anchorLinks.push({
+                        ...l,
+                        quality,
+                        size: l.size || sizeBytes,
+                        fileName
+                    }));
+                }
+
+                /* PIXELDRAIN */
+                else if (text.includes('pixel')) {
+                    const extracted = await pixelDrainExtractor(href).catch(() => []);
+                    extracted.forEach(l => anchorLinks.push({
+                        ...l,
+                        quality: typeof l.quality === 'number' ? l.quality : quality,
+                        size: l.size || sizeBytes,
+                        fileName
+                    }));
+                }
+            } catch { }
+
+            return anchorLinks;
+        }));
+
+        links.push(...perAnchor.flat());
     } catch { }
 
     return links;
@@ -821,7 +832,19 @@ async function goFileExtractor(url) {
  * @param {string} referer The referer URL.
  * @returns {Promise<Array<{quality: string, url: string, source: string}>>} A list of final links.
  */
+const EXTRACTOR_TIMEOUT_MS = 6000;
+
+// nothing in this file times out its own fetches, so a single stuck hoster chain (hubcloud/gdflix
+// are each 2-4 sequential fetches deep) can stall the whole Promise.all() batch that called this.
+// Bound it here, at the one choke point every extractor call passes through.
 function loadExtractor(url, referer = MAIN_URL) {
+    return Promise.race([
+        loadExtractorInner(url, referer),
+        new Promise(resolve => setTimeout(() => resolve([]), EXTRACTOR_TIMEOUT_MS))
+    ]).catch(() => []);
+}
+
+function loadExtractorInner(url, referer = MAIN_URL) {
     const hostname = new URL(url).hostname;
 
     if (hostname.includes('gdflix')) {

@@ -1,6 +1,6 @@
 /**
  * vidking - Built from src/providers/vidking.js
- * Generated: 2026-08-20T09:51:42.462Z
+ * Generated: 2026-08-21T09:34:38.291Z
  */
 
 // src/providers/vidking.js
@@ -220,7 +220,7 @@ function meetsMinSize(sizeStr) {
   const mult = { BYTES: 1 / 1048576, KB: 1 / 1024, MB: 1, GB: 1024, TB: 1048576 };
   return parseFloat(m[1]) * (mult[m[2].toUpperCase()] || 0) >= 150;
 }
-var SEGMENT_SAMPLE_SIZE = 5;
+var SEGMENT_SAMPLE_SIZE = 2;
 async function getRealSegmentSize(url) {
   try {
     const head = await fetch(url, { method: "HEAD", headers: HEADERS, skipSizeCheck: true });

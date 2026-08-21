@@ -1,6 +1,6 @@
 /**
  * vixsrc - Built from src/providers/vixsrc.js
- * Generated: 2026-08-20T09:51:42.489Z
+ * Generated: 2026-08-21T09:34:38.305Z
  */
 
 // src/providers/vixsrc.js
@@ -149,7 +149,7 @@ async function mapWithConcurrency(items, worker, limit) {
   await Promise.all(runners);
   return results;
 }
-var SEGMENT_SAMPLE_SIZE = 32;
+var SEGMENT_SAMPLE_SIZE = 8;
 var SEGMENT_SAMPLE_CONCURRENCY = 8;
 var SUBTITLE_CONCURRENCY = 8;
 async function measureHlsSize(variantUrl) {
@@ -209,6 +209,7 @@ async function getStreams(tmdbId, mediaType, season, episode) {
     const baseUrl = await getBaseUrl();
     const isTv = mediaType === "tv";
     const apiPath = isTv ? `/api/tv/${numericTmdbId}/${season || 1}/${episode || 1}` : `/api/movie/${numericTmdbId}`;
+    const metaPromise = getTmdbTitle(numericTmdbId, mediaType);
     const embedResp = await fetch(`${baseUrl}${apiPath}`, { headers: HEADERS, skipSizeCheck: true });
     if (!embedResp.ok)
       return [];
@@ -230,8 +231,8 @@ async function getStreams(tmdbId, mediaType, season, episode) {
     const { topVariant, subtitles } = parseMasterPlaylist(masterText, masterUrl);
     if (!topVariant)
       return [];
-    const meta = await getTmdbTitle(numericTmdbId, mediaType);
-    const [size, resolvedSubtitles] = await Promise.all([
+    const [meta, size, resolvedSubtitles] = await Promise.all([
+      metaPromise,
       measureHlsSize(topVariant.url),
       mapWithConcurrency(subtitles, async (s) => {
         const url = await resolveSubtitleUrl(s.url);

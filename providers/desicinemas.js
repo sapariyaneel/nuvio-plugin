@@ -1,6 +1,6 @@
 /**
  * desicinemas - Built from src/providers/desicinemas.js
- * Generated: 2026-08-20T09:51:41.272Z
+ * Generated: 2026-08-21T09:28:32.283Z
  */
 
 // src/providers/desicinemas.js
@@ -87,31 +87,32 @@ async function getStreams(tmdbId, mediaType, season, episode) {
     const proxyPageUrl = `${PROXY}?url=${encodeURIComponent(pageUrl)}`;
     const pageHtml = await (await fetch(proxyPageUrl, { headers: HEADERS, skipSizeCheck: true })).text();
     const $page = cheerio.load(pageHtml);
-    const streams = [];
     const optionBoxes = $page(".MovieList .OptionBx, .OptionBx").toArray();
-    for (const box of optionBoxes) {
+    const perBox = await Promise.all(optionBoxes.map(async (box) => {
       try {
         const linkEl = $page("a", box);
         const link = linkEl.attr("href");
         if (!link || link === "#")
-          continue;
+          return null;
         const embedHtml = await (await fetch(link, { headers: { "User-Agent": HEADERS["User-Agent"] }, skipSizeCheck: true })).text();
         const $embed = cheerio.load(embedHtml);
         const iframeSrc = $embed("iframe").attr("src");
         if (!iframeSrc)
-          continue;
+          return null;
         const name = $page("p.AAIco-dns", box).text().trim() || "Desicinemas";
         const linkText = linkEl.text().trim();
         const quality = extractQuality(linkText) !== "Unknown" ? extractQuality(linkText) : extractQuality(iframeSrc);
-        streams.push({
+        return {
           url: iframeSrc,
           quality,
           title: `Desicinemas [${name}]`,
           subtitles: []
-        });
+        };
       } catch (e) {
+        return null;
       }
-    }
+    }));
+    const streams = perBox.filter(Boolean);
     return streams;
   } catch (e) {
     return [];

@@ -1,6 +1,6 @@
 /**
  * moviesdrive - Built from src/providers/moviesdrive.js
- * Generated: 2026-08-21T09:07:19.748Z
+ * Generated: 2026-08-21T10:01:11.330Z
  */
 
 // src/providers/moviesdrive.js
@@ -195,17 +195,17 @@ function getCurrentDomain() {
     return MAIN_URL;
   });
 }
-function pixelDrainExtractor(link2) {
+function pixelDrainExtractor(link) {
   return Promise.resolve().then(() => {
     let fileId;
-    const match = link2.match(/(?:file|u)\/([A-Za-z0-9]+)/);
+    const match = link.match(/(?:file|u)\/([A-Za-z0-9]+)/);
     if (match) {
       fileId = match[1];
     } else {
-      fileId = link2.split("/").pop();
+      fileId = link.split("/").pop();
     }
     if (!fileId) {
-      return [{ source: "Pixeldrain", quality: "Unknown", url: link2 }];
+      return [{ source: "Pixeldrain", quality: "Unknown", url: link }];
     }
     const infoUrl = `https://pixeldrain.com/api/file/${fileId}/info`;
     let fileInfo = { name: "", quality: "Unknown", size: 0 };
@@ -237,11 +237,11 @@ function pixelDrainExtractor(link2) {
       }];
     });
   }).catch((e) => {
-    return [{ source: "Pixeldrain", quality: "Unknown", url: link2 }];
+    return [{ source: "Pixeldrain", quality: "Unknown", url: link }];
   });
 }
-function streamTapeExtractor(link2) {
-  const url = new URL(link2);
+function streamTapeExtractor(link) {
+  const url = new URL(link);
   url.hostname = "streamtape.com";
   const normalizedLink = url.toString();
   return fetch(normalizedLink, { headers: HEADERS, redirect: "follow" }).then((res) => res.text()).then((data) => {
@@ -276,7 +276,7 @@ function hbLinksExtractor(url, referer) {
     const $ = cheerio.load(data);
     const links = $("h3 a, div.entry-content p a").map((i, el) => $(el).attr("href")).get();
     const finalLinks = [];
-    const promises = links.map((link2) => loadExtractor(link2, url));
+    const promises = links.map((link) => loadExtractor(link, url));
     return Promise.all(promises).then((results) => {
       results.forEach((extracted) => finalLinks.push(...extracted));
       return finalLinks;
@@ -411,7 +411,7 @@ function hubCloudExtractor(url, referer, skipDomainSwap) {
         extras += `[${size}]`;
       return extras;
     })();
-    const sizeInBytes2 = (() => {
+    const sizeInBytes = (() => {
       if (!size)
         return 0;
       const m = size.match(/([\d.]+)\s*(GB|MB|KB)/i);
@@ -429,9 +429,9 @@ function hubCloudExtractor(url, referer, skipDomainSwap) {
     const links = [];
     const elements = $("a.btn[href]").get();
     const processElements = elements.map((el) => {
-      const link2 = $(el).attr("href");
+      const link = $(el).attr("href");
       const text = $(el).text();
-      if (/telegram/i.test(text) || /telegram/i.test(link2)) {
+      if (/telegram/i.test(text) || /telegram/i.test(link)) {
         return Promise.resolve();
       }
       const fileName = header || headerDetails || "Unknown";
@@ -439,8 +439,8 @@ function hubCloudExtractor(url, referer, skipDomainSwap) {
         links.push({
           source: `HubCloud ${labelExtras}`,
           quality,
-          url: link2,
-          size: sizeInBytes2,
+          url: link,
+          size: sizeInBytes,
           fileName
         });
         return Promise.resolve();
@@ -449,8 +449,8 @@ function hubCloudExtractor(url, referer, skipDomainSwap) {
         links.push({
           source: `HubCloud - FSL V2 Server ${labelExtras}`,
           quality,
-          url: link2,
-          size: sizeInBytes2,
+          url: link,
+          size: sizeInBytes,
           fileName
         });
         return Promise.resolve();
@@ -459,8 +459,8 @@ function hubCloudExtractor(url, referer, skipDomainSwap) {
         links.push({
           source: `HubCloud - FSL Server ${labelExtras}`,
           quality,
-          url: link2,
-          size: sizeInBytes2,
+          url: link,
+          size: sizeInBytes,
           fileName
         });
         return Promise.resolve();
@@ -469,16 +469,16 @@ function hubCloudExtractor(url, referer, skipDomainSwap) {
         links.push({
           source: `HubCloud - S3 Server ${labelExtras}`,
           quality,
-          url: link2,
-          size: sizeInBytes2,
+          url: link,
+          size: sizeInBytes,
           fileName
         });
         return Promise.resolve();
       }
       if (text.includes("BuzzServer")) {
-        return fetch(`${link2}/download`, {
+        return fetch(`${link}/download`, {
           method: "GET",
-          headers: { ...HEADERS, Referer: link2 },
+          headers: { ...HEADERS, Referer: link },
           redirect: "manual"
         }).then((resp) => {
           if (resp.status >= 300 && resp.status < 400) {
@@ -489,7 +489,7 @@ function hubCloudExtractor(url, referer, skipDomainSwap) {
                 source: `HubCloud - BuzzServer ${labelExtras}`,
                 quality,
                 url: decodeURIComponent(m[1]),
-                size: sizeInBytes2,
+                size: sizeInBytes,
                 fileName
               });
             }
@@ -500,18 +500,18 @@ function hubCloudExtractor(url, referer, skipDomainSwap) {
       if (text.includes("10Gbps")) {
         return Promise.resolve();
       }
-      if (link2.includes("pixeldra")) {
-        return pixelDrainExtractor(link2).then((extracted) => {
+      if (link.includes("pixeldra")) {
+        return pixelDrainExtractor(link).then((extracted) => {
           links.push(...extracted.map((l) => ({
             ...l,
             quality: typeof l.quality === "number" ? l.quality : quality,
-            size: l.size || sizeInBytes2,
+            size: l.size || sizeInBytes,
             fileName
           })));
         }).catch(() => {
         });
       }
-      return loadExtractor(link2, finalUrl).then((r) => links.push(...r));
+      return loadExtractor(link, finalUrl).then((r) => links.push(...r));
     });
     return Promise.all(processElements).then(() => links);
   }).catch(() => []);
@@ -543,108 +543,115 @@ async function gdFlixExtractor(url, referer = null) {
     const quality = getIndexQuality2(fileName);
     const sizeBytes = toBytes(fileSizeText);
     const anchors = $("div.text-center a[href]").get();
-    for (const a of anchors) {
+    const perAnchor = await Promise.all(anchors.map(async (a) => {
       const el = $(a);
       const text = el.text().toLowerCase();
       const href = el.attr("href");
-      if (text.includes("direct")) {
-        links.push({
-          source: "GDFlix [Direct]",
-          quality,
-          url: href,
-          size: sizeBytes,
-          fileName
-        });
-      } else if (text.includes("index")) {
-        const gdflixBase = await getGdflixDomain();
-        const indexPage = await fetch(`${gdflixBase}${href}`, { redirect: "follow" }).then((r) => r.text());
-        const $$ = cheerio.load(indexPage);
-        const btns = $$("a.btn-outline-info").get();
-        for (const b of btns) {
-          const serverUrl = gdflixBase + $$(b).attr("href");
-          const serverPage = await fetch(serverUrl, { redirect: "follow" }).then((r) => r.text());
-          const $$$ = cheerio.load(serverPage);
-          $$$("div.mb-4 > a[href]").each((_, x) => {
-            links.push({
-              source: "GDFlix [Index]",
-              quality,
-              url: $$(x).attr("href"),
-              size: sizeBytes,
-              fileName
-            });
-          });
-        }
-      } else if (text.includes("drivebot")) {
-        const id = href.match(/id=([^&]+)/)?.[1];
-        const doId = href.match(/do=([^=]+)/)?.[1];
-        if (!id || !doId)
-          continue;
-        const drivebotBase = await getDrivebotDomain();
-        const bases = [.../* @__PURE__ */ new Set([drivebotBase, "https://drivebot.sbs", "https://drivebot.cfd"])];
-        for (const base of bases) {
-          try {
-            const bot = await fetch(`${base}/download?id=${id}&do=${doId}`, { redirect: "follow" });
-            const cookie = bot.headers.get("set-cookie") || "";
-            const html2 = await bot.text();
-            const token = html2.match(/token', '([a-f0-9]+)/)?.[1];
-            const postId = html2.match(/download\?id=([^']+)/)?.[1];
-            if (!token || !postId)
-              continue;
-            const dl = await fetch(`${base}/download?id=${postId}`, {
-              method: "POST",
-              headers: {
-                "Content-Type": "application/x-www-form-urlencoded",
-                "Referer": `${base}/download?id=${id}&do=${doId}`,
-                "Cookie": cookie
-              },
-              body: `token=${token}`,
-              redirect: "follow"
-            }).then((r) => r.text());
-            const final = dl.match(/url":"(.*?)"/)?.[1]?.replace(/\\/g, "");
-            if (final) {
-              links.push({
-                source: "GDFlix [DriveBot]",
-                quality,
-                url: final,
-                size: sizeBytes,
-                fileName
-              });
-            }
-          } catch {
-          }
-        }
-      } else if (text.includes("instant")) {
-        const r = await fetch(href, { redirect: "manual" });
-        const loc = r.headers.get("location");
-        if (loc) {
-          links.push({
-            source: "GDFlix [Instant]",
+      const anchorLinks = [];
+      try {
+        if (text.includes("direct")) {
+          anchorLinks.push({
+            source: "GDFlix [Direct]",
             quality,
-            url: loc.replace("url=", ""),
+            url: href,
             size: sizeBytes,
             fileName
           });
-        }
-      } else if (text.includes("gofile")) {
-        const extracted = await goFileExtractor(href);
-        extracted.forEach((l) => links.push({
-          ...l,
-          quality,
-          size: l.size || sizeBytes,
-          fileName
-        }));
-      } else if (text.includes("pixel")) {
-        return pixelDrainExtractor(link).then((extracted) => {
-          links.push(...extracted.map((l) => ({
+        } else if (text.includes("index")) {
+          const gdflixBase = await getGdflixDomain();
+          const indexPage = await fetch(`${gdflixBase}${href}`, { redirect: "follow" }).then((r) => r.text());
+          const $$ = cheerio.load(indexPage);
+          const btns = $$("a.btn-outline-info").get();
+          const perBtn = await Promise.all(btns.map(async (b) => {
+            const serverUrl = gdflixBase + $$(b).attr("href");
+            const serverPage = await fetch(serverUrl, { redirect: "follow" }).then((r) => r.text());
+            const $$$ = cheerio.load(serverPage);
+            const btnLinks = [];
+            $$$("div.mb-4 > a[href]").each((_, x) => {
+              btnLinks.push({
+                source: "GDFlix [Index]",
+                quality,
+                url: $$$(x).attr("href"),
+                size: sizeBytes,
+                fileName
+              });
+            });
+            return btnLinks;
+          }));
+          anchorLinks.push(...perBtn.flat());
+        } else if (text.includes("drivebot")) {
+          const id = href.match(/id=([^&]+)/)?.[1];
+          const doId = href.match(/do=([^=]+)/)?.[1];
+          if (id && doId) {
+            const drivebotBase = await getDrivebotDomain();
+            const bases = [.../* @__PURE__ */ new Set([drivebotBase, "https://drivebot.sbs", "https://drivebot.cfd"])];
+            for (const base of bases) {
+              try {
+                const bot = await fetch(`${base}/download?id=${id}&do=${doId}`, { redirect: "follow" });
+                const cookie = bot.headers.get("set-cookie") || "";
+                const html2 = await bot.text();
+                const token = html2.match(/token', '([a-f0-9]+)/)?.[1];
+                const postId = html2.match(/download\?id=([^']+)/)?.[1];
+                if (!token || !postId)
+                  continue;
+                const dl = await fetch(`${base}/download?id=${postId}`, {
+                  method: "POST",
+                  headers: {
+                    "Content-Type": "application/x-www-form-urlencoded",
+                    "Referer": `${base}/download?id=${id}&do=${doId}`,
+                    "Cookie": cookie
+                  },
+                  body: `token=${token}`,
+                  redirect: "follow"
+                }).then((r) => r.text());
+                const final = dl.match(/url":"(.*?)"/)?.[1]?.replace(/\\/g, "");
+                if (final) {
+                  anchorLinks.push({
+                    source: "GDFlix [DriveBot]",
+                    quality,
+                    url: final,
+                    size: sizeBytes,
+                    fileName
+                  });
+                }
+              } catch {
+              }
+            }
+          }
+        } else if (text.includes("instant")) {
+          const r = await fetch(href, { redirect: "manual" });
+          const loc = r.headers.get("location");
+          if (loc) {
+            anchorLinks.push({
+              source: "GDFlix [Instant]",
+              quality,
+              url: loc.replace("url=", ""),
+              size: sizeBytes,
+              fileName
+            });
+          }
+        } else if (text.includes("gofile")) {
+          const extracted = await goFileExtractor(href);
+          extracted.forEach((l) => anchorLinks.push({
+            ...l,
+            quality,
+            size: l.size || sizeBytes,
+            fileName
+          }));
+        } else if (text.includes("pixel")) {
+          const extracted = await pixelDrainExtractor(href).catch(() => []);
+          extracted.forEach((l) => anchorLinks.push({
             ...l,
             quality: typeof l.quality === "number" ? l.quality : quality,
-            size: l.size || sizeInBytes,
+            size: l.size || sizeBytes,
             fileName
-          })));
-        }).catch(() => {
-        });
+          }));
+        }
+      } catch {
       }
-    }
+      return anchorLinks;
+    }));
+    links.push(...perAnchor.flat());
   } catch {
   }
   return links;
@@ -686,7 +693,14 @@ async function goFileExtractor(url) {
   }
   return links;
 }
+var EXTRACTOR_TIMEOUT_MS = 6e3;
 function loadExtractor(url, referer = MAIN_URL) {
+  return Promise.race([
+    loadExtractorInner(url, referer),
+    new Promise((resolve) => setTimeout(() => resolve([]), EXTRACTOR_TIMEOUT_MS))
+  ]).catch(() => []);
+}
+function loadExtractorInner(url, referer = MAIN_URL) {
   const hostname = new URL(url).hostname;
   if (hostname.includes("gdflix")) {
     return gdFlixExtractor(url, referer);
@@ -863,10 +877,10 @@ function getDownloadLinks(mediaUrl, season, episode) {
       return Promise.all(promises).then((results) => {
         const flat = results.flat(2);
         const seen = /* @__PURE__ */ new Set();
-        const finalLinks = flat.filter((link2) => {
-          if (!link2?.url || seen.has(link2.url))
+        const finalLinks = flat.filter((link) => {
+          if (!link?.url || seen.has(link.url))
             return false;
-          seen.add(link2.url);
+          seen.add(link.url);
           return true;
         });
         return {
@@ -897,10 +911,10 @@ function getDownloadLinks(mediaUrl, season, episode) {
         return Promise.all(extractorPromises).then((results) => {
           const flat = results.flat();
           const seen = /* @__PURE__ */ new Set();
-          const finalLinks = flat.filter((link2) => {
-            if (!link2?.url || seen.has(link2.url))
+          const finalLinks = flat.filter((link) => {
+            if (!link?.url || seen.has(link.url))
               return false;
-            seen.add(link2.url);
+            seen.add(link.url);
             return true;
           });
           return {
@@ -1028,12 +1042,12 @@ function getStreams(tmdbId, mediaType = "movie", season = null, episode = null) 
         return getDownloadLinks(selectedMedia.url, season, episode).then(function(result) {
           const { finalLinks, isMovie } = result;
           let filteredLinks = finalLinks;
-          const streams = filteredLinks.filter(function(link2) {
-            return link2 && link2.url;
-          }).map(function(link2) {
+          const streams = filteredLinks.filter(function(link) {
+            return link && link.url;
+          }).map(function(link) {
             let mediaTitle;
-            if (link2.fileName && link2.fileName !== "Unknown") {
-              mediaTitle = link2.fileName;
+            if (link.fileName && link.fileName !== "Unknown") {
+              mediaTitle = link.fileName;
             } else if (mediaType === "tv" && season && episode) {
               mediaTitle = `${mediaInfo.title} S${String(season).padStart(2, "0")}E${String(episode).padStart(2, "0")}`;
             } else if (mediaInfo.year) {
@@ -1041,27 +1055,27 @@ function getStreams(tmdbId, mediaType = "movie", season = null, episode = null) 
             } else {
               mediaTitle = mediaInfo.title;
             }
-            const formattedSize = formatBytes(link2.size);
-            const serverName = extractServerName(link2.source);
+            const formattedSize = formatBytes(link.size);
+            const serverName = extractServerName(link.source);
             let qualityStr = "Unknown";
-            if (link2.quality >= 2160)
+            if (link.quality >= 2160)
               qualityStr = "2160p";
-            else if (link2.quality >= 1440)
+            else if (link.quality >= 1440)
               qualityStr = "1440p";
-            else if (link2.quality >= 1080)
+            else if (link.quality >= 1080)
               qualityStr = "1080p";
-            else if (link2.quality >= 720)
+            else if (link.quality >= 720)
               qualityStr = "720p";
-            else if (link2.quality >= 480)
+            else if (link.quality >= 480)
               qualityStr = "480p";
-            else if (link2.quality >= 360)
+            else if (link.quality >= 360)
               qualityStr = "360p";
             else
               qualityStr = "240p";
             return {
               name: `Moviesdrive ${serverName}`,
               title: mediaTitle,
-              url: link2.url,
+              url: link.url,
               quality: qualityStr,
               size: formattedSize,
               provider: "Moviesdrive"

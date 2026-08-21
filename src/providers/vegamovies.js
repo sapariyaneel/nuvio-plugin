@@ -15,9 +15,20 @@ const HEADERS = {
   "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36"
 };
 
-// no setTimeout in this sandbox, host already enforces its own timeout
+const FETCH_TIMEOUT_MS = 10000;
+// dead mirrors observed hanging ~10-15s on TLS before failing; probing candidate origins needs a much
+// shorter leash so one bad mirror can't dominate Promise.all([...candidates].map(probeOrigin))
+const PROBE_TIMEOUT_MS = 6000;
+
+function fetchWithTimeoutMs(url, options, ms) {
+  return Promise.race([
+    fetch(url, options),
+    new Promise((_, reject) => setTimeout(() => reject(new Error(`Timed out after ${ms}ms: ${url}`)), ms))
+  ]);
+}
+
 function fetchWithTimeout(url, options = {}) {
-  return fetch(url, options);
+  return fetchWithTimeoutMs(url, options, FETCH_TIMEOUT_MS);
 }
 
 // blocked origin -> status 0 on some hosts, rejected promise on others
@@ -60,10 +71,10 @@ let resolvedBaseUrl = null;
 // some mirrors just 301 back to the blocked primary, so check they actually serve the search API
 async function probeOrigin(base) {
   try {
-    const res = await fetchWithTimeout(`${base}/search.php?q=test&page=1`, {
+    const res = await fetchWithTimeoutMs(`${base}/search.php?q=test&page=1`, {
       headers: HEADERS,
       skipSizeCheck: true
-    });
+    }, PROBE_TIMEOUT_MS);
     if (isOriginUnreachable(res) || !res.ok) return false;
     const body = await res.text();
     const data = JSON.parse(body);
@@ -84,11 +95,12 @@ async function getBaseUrl() {
     if (candidates.indexOf(m) === -1) candidates.push(m);
   }
 
-  for (const base of candidates) {
-    if (await probeOrigin(base)) {
-      resolvedBaseUrl = base;
-      return base;
-    }
+  // probe every candidate concurrently instead of one-at-a-time, then pick by priority order
+  const results = await Promise.all(candidates.map(base => probeOrigin(base)));
+  const okIndex = results.findIndex(Boolean);
+  if (okIndex !== -1) {
+    resolvedBaseUrl = candidates[okIndex];
+    return resolvedBaseUrl;
   }
 
   // nothing worked, fall back to primary so caller gets empty result instead of throwing
@@ -418,12 +430,11 @@ async function hubCloudExtractor(url, referer) {
       label: ($(el).text() || "").toLowerCase()
     }));
 
-    const streams = [];
-    for (const { link, label } of buttons) {
-      if (!link) continue;
+    const perButton = await Promise.all(buttons.map(async ({ link, label }) => {
+      if (!link) return [];
       try {
         if (label.includes("fsl server") || label.includes("download file") || label.includes("s3 server") || label.includes("fslv2") || label.includes("mega server")) {
-          streams.push({ url: link, quality, title: `${ref} ${labelExtras}`.trim(), size: formatBytes(sizeInBytes )});
+          return [{ url: link, quality, title: `${ref} ${labelExtras}`.trim(), size: formatBytes(sizeInBytes )}];
         } else if (label.includes("buzzserver")) {
           const resp = await fetchWithTimeout(`${link}/download`, {
             headers: { ...HEADERS, Referer: link },
@@ -431,11 +442,11 @@ async function hubCloudExtractor(url, referer) {
             skipSizeCheck: true
           });
           const dlink = resp.headers.get("hx-redirect") || resp.headers.get("HX-Redirect") || "";
-          if (dlink.trim()) streams.push({ url: dlink, quality, title: `${ref} [BuzzServer] ${labelExtras}`.trim(), size: formatBytes(sizeInBytes )});
+          return dlink.trim() ? [{ url: dlink, quality, title: `${ref} [BuzzServer] ${labelExtras}`.trim(), size: formatBytes(sizeInBytes )}] : [];
         } else if (label.includes("pixeldra") || label.includes("pixelserver") || label.includes("pixel server")) {
           const base = originOf(link);
           const finalUrl = link.includes("download") ? link : `${base}/api/file/${link.split("/").pop()}?download`;
-          streams.push({ url: finalUrl, quality, title: `${ref} Pixeldrain ${labelExtras}`.trim(), size: formatBytes(sizeInBytes )});
+          return [{ url: finalUrl, quality, title: `${ref} Pixeldrain ${labelExtras}`.trim(), size: formatBytes(sizeInBytes )}];
         } else if (label.includes("10gbps")) {
           let redirectUrl = link;
           let finalLink = null;
@@ -447,10 +458,14 @@ async function hubCloudExtractor(url, referer) {
               if (loc) redirectUrl = new URL(loc, redirectUrl).toString();
             } else break;
           }
-          if (finalLink) streams.push({ url: finalLink, quality, title: `${ref} [10Gbps] ${labelExtras}`.trim(), size: formatBytes(sizeInBytes )});
+          return finalLink ? [{ url: finalLink, quality, title: `${ref} [10Gbps] ${labelExtras}`.trim(), size: formatBytes(sizeInBytes )}] : [];
         }
-      } catch (e) {}
-    }
+        return [];
+      } catch (e) {
+        return [];
+      }
+    }));
+    const streams = perButton.flat();
     return streams;
   } catch (e) {
     return [];

@@ -87,32 +87,33 @@ async function getStreams(tmdbId, mediaType, season, episode) {
     const pageHtml = await (await fetch(proxyPageUrl, { headers: HEADERS, skipSizeCheck: true })).text();
     const $page = cheerio.load(pageHtml);
 
-    const streams = [];
-
     const optionBoxes = $page(".MovieList .OptionBx, .OptionBx").toArray();
-    for (const box of optionBoxes) {
+    const perBox = await Promise.all(optionBoxes.map(async box => {
       try {
         const linkEl = $page("a", box);
         const link = linkEl.attr("href");
-        if (!link || link === "#") continue;
+        if (!link || link === "#") return null;
 
         // no Referer here - groundbanks.net hotlink-blocks it and redirects to a dead domain otherwise
         const embedHtml = await (await fetch(link, { headers: { "User-Agent": HEADERS["User-Agent"] }, skipSizeCheck: true })).text();
         const $embed = cheerio.load(embedHtml);
         const iframeSrc = $embed("iframe").attr("src");
-        if (!iframeSrc) continue;
+        if (!iframeSrc) return null;
 
         const name = $page("p.AAIco-dns", box).text().trim() || "Desicinemas";
         const linkText = linkEl.text().trim();
         const quality = extractQuality(linkText) !== "Unknown" ? extractQuality(linkText) : extractQuality(iframeSrc);
-        streams.push({
+        return {
           url: iframeSrc,
           quality,
           title: `Desicinemas [${name}]`,
           subtitles: []
-        });
-      } catch (e) {}
-    }
+        };
+      } catch (e) {
+        return null;
+      }
+    }));
+    const streams = perBox.filter(Boolean);
 
     return streams;
   } catch (e) {

@@ -159,7 +159,7 @@ async function mapWithConcurrency(items, worker, limit) {
   return results;
 }
 
-const SEGMENT_SAMPLE_SIZE = 32;
+const SEGMENT_SAMPLE_SIZE = 8;
 const SEGMENT_SAMPLE_CONCURRENCY = 8;
 const SUBTITLE_CONCURRENCY = 8; // same edge rate-limiting applies to subtitle unwrapping
 
@@ -226,6 +226,9 @@ async function getStreams(tmdbId, mediaType, season, episode) {
       ? `/api/tv/${numericTmdbId}/${season || 1}/${episode || 1}`
       : `/api/movie/${numericTmdbId}`;
 
+    // fires alongside the embed/master chain below, only used for a cosmetic title suffix
+    const metaPromise = getTmdbTitle(numericTmdbId, mediaType);
+
     // 404 just means VixSrc doesn't have this title
     const embedResp = await fetch(`${baseUrl}${apiPath}`, { headers: HEADERS, skipSizeCheck: true });
     if (!embedResp.ok) return [];
@@ -247,9 +250,8 @@ async function getStreams(tmdbId, mediaType, season, episode) {
     const { topVariant, subtitles } = parseMasterPlaylist(masterText, masterUrl);
     if (!topVariant) return [];
 
-    const meta = await getTmdbTitle(numericTmdbId, mediaType);
-
-    const [size, resolvedSubtitles] = await Promise.all([
+    const [meta, size, resolvedSubtitles] = await Promise.all([
+      metaPromise,
       measureHlsSize(topVariant.url),
       mapWithConcurrency(subtitles, async (s) => {
         const url = await resolveSubtitleUrl(s.url);

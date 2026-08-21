@@ -1,6 +1,6 @@
 /**
  * vidrock - Built from src/providers/vidrock.js
- * Generated: 2026-08-20T09:51:42.480Z
+ * Generated: 2026-08-21T09:34:38.299Z
  */
 
 // src/providers/vidrock.js
@@ -330,7 +330,10 @@ async function getStreams(tmdbId, mediaType, season, episode) {
     const baseUrl = await getBaseUrl();
     const isTv = mediaType === "tv";
     const path = isTv ? `tv/${numericTmdbId}/${season || 1}/${episode || 1}` : `movie/${numericTmdbId}`;
-    const resp = await fetch(`${baseUrl}/api/${path}`, { headers: HEADERS, skipSizeCheck: true });
+    const [resp, runtimeSeconds] = await Promise.all([
+      fetch(`${baseUrl}/api/${path}`, { headers: HEADERS, skipSizeCheck: true }),
+      getTmdbRuntimeSeconds(numericTmdbId, mediaType, season, episode)
+    ]);
     if (!resp.ok)
       return [];
     const data = await resp.json().catch(() => null);
@@ -339,7 +342,6 @@ async function getStreams(tmdbId, mediaType, season, episode) {
     const entries = Object.keys(data).map((name) => ({ name, entry: data[name] })).filter((e) => e.entry && typeof e.entry === "object" && e.entry.url);
     if (!entries.length)
       return [];
-    const runtimeSeconds = await getTmdbRuntimeSeconds(numericTmdbId, mediaType, season, episode);
     const resolved = await Promise.all(entries.map((e) => buildStream(e.name, e.entry, runtimeSeconds)));
     const seenUrls = {};
     const streams = [];

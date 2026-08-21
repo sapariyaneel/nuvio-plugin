@@ -244,19 +244,20 @@ async function getStreams(tmdbId, mediaType, season, episode) {
       }
     } else {
       const maxButtons = $page("a.maxbutton").toArray();
-      for (const btn of maxButtons.slice(0, 3)) {
+      const perMaxButton = await Promise.all(maxButtons.slice(0, 3).map(async btn => {
+        const btnStreams = [];
         try {
           const btnUrl = $page(btn).attr("href");
-          if (!btnUrl) continue;
+          if (!btnUrl) return btnStreams;
 
           const btnPageHtml = await (await fetch(btnUrl, { headers: HEADERS, skipSizeCheck: true, redirect: "follow" })).text();
           const $btnPage = cheerio.load(btnPageHtml);
 
           const getLinksAnchors = $btnPage("div.entry-content a:contains('Get Links')").toArray();
-          for (const linkA of getLinksAnchors) {
+          const perLinkAnchor = await Promise.all(getLinksAnchors.map(async linkA => {
             try {
               const linkUrl = $btnPage(linkA).attr("href");
-              if (!linkUrl) continue;
+              if (!linkUrl) return [];
 
               const resolvedLinkUrl = await resolveHshareUrl(linkUrl);
               const linkPageHtml = await (await fetch(resolvedLinkUrl, { headers: HEADERS, skipSizeCheck: true, redirect: "follow" })).text();
@@ -266,10 +267,11 @@ async function getStreams(tmdbId, mediaType, season, episode) {
               const sizeText = ($linkPage("div.container p").filter((i, p) => $linkPage(p).text().includes("Size:")).first().text() || "").replace("Size:", "").trim();
               const sizeBytes = toBytes(sizeText);
 
+              const linkStreams = [];
               $linkPage("a.btn").each((i, dlBtn) => {
                 const dlHref = $linkPage(dlBtn).attr("href") || "";
                 if (dlHref && dlHref.startsWith("http")) {
-                  streams.push({
+                  linkStreams.push({
                     url: dlHref,
                     quality: extractQuality(name || dlHref),
                     title: `Hindmoviez [${name || "Download"}]`,
@@ -278,10 +280,17 @@ async function getStreams(tmdbId, mediaType, season, episode) {
                   });
                 }
               });
-            } catch (e) {}
-          }
-        } catch (e) {}
-      }
+              return linkStreams;
+            } catch (e) {
+              return [];
+            }
+          }));
+          return perLinkAnchor.flat();
+        } catch (e) {
+          return btnStreams;
+        }
+      }));
+      streams.push(...perMaxButton.flat());
     }
 
     return streams.filter(s => meetsMinSize(s.size));

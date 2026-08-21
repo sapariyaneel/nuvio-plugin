@@ -1,6 +1,6 @@
 /**
  * dudefilms - Built from src/providers/dudefilms.js
- * Generated: 2026-08-20T09:51:41.304Z
+ * Generated: 2026-08-21T09:28:32.267Z
  */
 
 // src/providers/dudefilms.js
@@ -143,7 +143,7 @@ async function getStreams(tmdbId, mediaType, season, episode) {
       }
     } else {
       const headings = $page("h4").toArray();
-      for (const h4 of headings) {
+      const perHeading = await Promise.all(headings.map(async (h4) => {
         const headingText = $page(h4).text().trim();
         const size = extractSize(headingText);
         const headingQuality = extractQuality(headingText);
@@ -162,16 +162,17 @@ async function getStreams(tmdbId, mediaType, season, episode) {
           hops++;
         }
         if (!btnUrl)
-          continue;
+          return [];
         try {
           const btnHtml = await (await fetch(btnUrl, { headers: HEADERS, skipSizeCheck: true })).text();
           const $btn = cheerio.load(btnHtml);
+          const headingStreams = [];
           $btn("a.maxbutton").each((i, a) => {
             const href = $btn(a).attr("href");
             if (href && href.startsWith("http")) {
               const linkText = $btn(a).text() || "";
               const quality = extractQuality(linkText) !== "Unknown" ? extractQuality(linkText) : headingQuality !== "Unknown" ? headingQuality : extractQuality(href);
-              streams.push({
+              headingStreams.push({
                 url: href,
                 quality,
                 title: linkText.trim() ? `DudeFilms [${linkText.trim()}]` : "DudeFilms",
@@ -180,9 +181,12 @@ async function getStreams(tmdbId, mediaType, season, episode) {
               });
             }
           });
+          return headingStreams;
         } catch (e) {
+          return [];
         }
-      }
+      }));
+      streams.push(...perHeading.flat());
     }
     return streams.filter((s) => meetsMinSize(s.size));
   } catch (e) {

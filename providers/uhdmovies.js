@@ -1,6 +1,6 @@
 /**
  * uhdmovies - Built from src/providers/uhdmovies.js
- * Generated: 2026-08-20T09:51:42.439Z
+ * Generated: 2026-08-21T09:28:32.229Z
  */
 
 // src/providers/uhdmovies.js
@@ -243,37 +243,34 @@ async function driveseedGetUrl(url, referer, siteName) {
       labelExtras += `[${fileName}]`;
     if (size.length > 0)
       labelExtras += `[${size}]`;
-    const streams = [];
     const buttons = $("div.text-center > a").toArray();
-    for (const el of buttons) {
+    const perButton = await Promise.all(buttons.map(async (el) => {
       const href = $(el).attr("href");
       const text = $(el).text();
       if (!href)
-        continue;
+        return [];
       try {
         if (text.toLowerCase().includes("instant download")) {
           const link = await driveseedInstantLink(href);
-          if (link)
-            streams.push({ url: link, quality: qualityLabel(quality), title: `${name} Instant(Download) (Use VLC) ${labelExtras}`.trim(), size: formatBytes(sizeInBytes) });
+          return link ? [{ url: link, quality: qualityLabel(quality), title: `${name} Instant(Download) (Use VLC) ${labelExtras}`.trim(), size: formatBytes(sizeInBytes) }] : [];
         } else if (text.toLowerCase().includes("resume worker bot")) {
           const link = await driveseedResumeBot(href);
-          if (link)
-            streams.push({ url: link, quality: qualityLabel(quality), title: `${name} ResumeBot(VLC) ${labelExtras}`.trim(), size: formatBytes(sizeInBytes) });
+          return link ? [{ url: link, quality: qualityLabel(quality), title: `${name} ResumeBot(VLC) ${labelExtras}`.trim(), size: formatBytes(sizeInBytes) }] : [];
         } else if (text.toLowerCase().includes("direct links")) {
           const links = await driveseedCFType1(baseDomain + href);
-          for (const l of links)
-            streams.push({ url: l, quality: qualityLabel(quality), title: `${name} DirectLink ${labelExtras}`.trim(), size: formatBytes(sizeInBytes) });
+          return links.map((l) => ({ url: l, quality: qualityLabel(quality), title: `${name} DirectLink ${labelExtras}`.trim(), size: formatBytes(sizeInBytes) }));
         } else if (text.toLowerCase().includes("resume cloud")) {
           const link = await driveseedResumeCloudLink(baseDomain, href);
-          if (link)
-            streams.push({ url: link, quality: qualityLabel(quality), title: `${name} ResumeCloud ${labelExtras}`.trim(), size: formatBytes(sizeInBytes) });
+          return link ? [{ url: link, quality: qualityLabel(quality), title: `${name} ResumeCloud ${labelExtras}`.trim(), size: formatBytes(sizeInBytes) }] : [];
         } else if (text.toLowerCase().includes("cloud download")) {
-          streams.push({ url: href, quality: qualityLabel(quality), title: `${name} Cloud Download ${labelExtras}`.trim(), size: formatBytes(sizeInBytes) });
+          return [{ url: href, quality: qualityLabel(quality), title: `${name} Cloud Download ${labelExtras}`.trim(), size: formatBytes(sizeInBytes) }];
         }
+        return [];
       } catch (e) {
+        return [];
       }
-    }
-    return streams;
+    }));
+    return perButton.flat();
   } catch (e) {
     return [];
   }

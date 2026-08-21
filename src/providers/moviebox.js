@@ -339,9 +339,12 @@ async function getStreams(tmdbId, mediaType, season, episode) {
     const se = isTv ? season || 1 : 0;
     const ep = isTv ? episode || 1 : 0;
 
+    const perCandidate = await Promise.all(
+      candidates.slice(0, 8).map((candidate) => getStreamsForSubject(session, candidate.subjectId, se, ep).catch(() => []))
+    );
+
     const seenQuality = new Map();
-    for (const candidate of candidates.slice(0, 8)) {
-      const streams = await getStreamsForSubject(session, candidate.subjectId, se, ep);
+    for (const streams of perCandidate) {
       for (const stream of streams) {
         const existing = seenQuality.get(stream.quality);
         if (!existing) {

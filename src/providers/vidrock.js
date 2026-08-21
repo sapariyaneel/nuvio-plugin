@@ -337,7 +337,10 @@ async function getStreams(tmdbId, mediaType, season, episode) {
       ? `tv/${numericTmdbId}/${season || 1}/${episode || 1}`
       : `movie/${numericTmdbId}`;
 
-    const resp = await fetch(`${baseUrl}/api/${path}`, { headers: HEADERS, skipSizeCheck: true });
+    const [resp, runtimeSeconds] = await Promise.all([
+      fetch(`${baseUrl}/api/${path}`, { headers: HEADERS, skipSizeCheck: true }),
+      getTmdbRuntimeSeconds(numericTmdbId, mediaType, season, episode)
+    ]);
     if (!resp.ok) return [];
     const data = await resp.json().catch(() => null);
     if (!data || typeof data !== "object" || data.error) return [];
@@ -346,8 +349,6 @@ async function getStreams(tmdbId, mediaType, season, episode) {
       .map(name => ({ name, entry: data[name] }))
       .filter(e => e.entry && typeof e.entry === "object" && e.entry.url);
     if (!entries.length) return [];
-
-    const runtimeSeconds = await getTmdbRuntimeSeconds(numericTmdbId, mediaType, season, episode);
 
     const resolved = await Promise.all(entries.map(e => buildStream(e.name, e.entry, runtimeSeconds)));
 

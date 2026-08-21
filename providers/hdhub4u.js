@@ -1,6 +1,6 @@
 /**
  * hdhub4u - Built from src/providers/hdhub4u.js
- * Generated: 2026-08-21T09:07:19.735Z
+ * Generated: 2026-08-21T09:28:32.153Z
  */
 
 // src/providers/hdhub4u.js
@@ -258,15 +258,14 @@ async function hubCloudExtractor(url, referer) {
       link: $(el).attr("href") || "",
       label: ($(el).text() || "").toLowerCase()
     }));
-    const streams = [];
-    for (const { link, label } of buttons) {
+    const perButton = await Promise.all(buttons.map(async ({ link, label }) => {
       if (!link)
-        continue;
+        return [];
       try {
         if (label.includes("fsl server")) {
-          streams.push({ url: link, quality, title: `${ref} [FSL Server] ${labelExtras}`.trim(), size: formatBytes(sizeInBytes) });
+          return [{ url: link, quality, title: `${ref} [FSL Server] ${labelExtras}`.trim(), size: formatBytes(sizeInBytes) }];
         } else if (label.includes("download file")) {
-          streams.push({ url: link, quality, title: `${ref} ${labelExtras}`.trim(), size: formatBytes(sizeInBytes) });
+          return [{ url: link, quality, title: `${ref} ${labelExtras}`.trim(), size: formatBytes(sizeInBytes) }];
         } else if (label.includes("buzzserver")) {
           const resp = await fetch(`${link}/download`, {
             headers: { ...HEADERS, Referer: link },
@@ -274,27 +273,28 @@ async function hubCloudExtractor(url, referer) {
             skipSizeCheck: true
           });
           const dlink = resp.headers.get("hx-redirect") || resp.headers.get("HX-Redirect") || "";
-          if (dlink.trim()) {
-            streams.push({ url: dlink, quality, title: `${ref} [BuzzServer] ${labelExtras}`.trim(), size: formatBytes(sizeInBytes) });
-          }
+          return dlink.trim() ? [{ url: dlink, quality, title: `${ref} [BuzzServer] ${labelExtras}`.trim(), size: formatBytes(sizeInBytes) }] : [];
         } else if (label.includes("pixeldra") || label.includes("pixelserver") || label.includes("pixel server") || label.includes("pixeldrain")) {
           const base = originOf(link);
           const finalUrl = link.includes("download") ? link : `${base}/api/file/${link.split("/").pop()}?download`;
-          streams.push({ url: finalUrl, quality, title: `${ref} Pixeldrain ${labelExtras}`.trim(), size: formatBytes(sizeInBytes) });
+          return [{ url: finalUrl, quality, title: `${ref} Pixeldrain ${labelExtras}`.trim(), size: formatBytes(sizeInBytes) }];
         } else if (label.includes("s3 server")) {
-          streams.push({ url: link, quality, title: `${ref} [S3 Server] ${labelExtras}`.trim(), size: formatBytes(sizeInBytes) });
+          return [{ url: link, quality, title: `${ref} [S3 Server] ${labelExtras}`.trim(), size: formatBytes(sizeInBytes) }];
         } else if (label.includes("fslv2")) {
-          streams.push({ url: link, quality, title: `${ref} [FSLv2] ${labelExtras}`.trim(), size: formatBytes(sizeInBytes) });
+          return [{ url: link, quality, title: `${ref} [FSLv2] ${labelExtras}`.trim(), size: formatBytes(sizeInBytes) }];
         } else if (label.includes("mega server")) {
-          streams.push({ url: link, quality, title: `${ref} [Mega Server] ${labelExtras}`.trim(), size: formatBytes(sizeInBytes) });
+          return [{ url: link, quality, title: `${ref} [Mega Server] ${labelExtras}`.trim(), size: formatBytes(sizeInBytes) }];
         } else if (label.includes("10gbps")) {
+          return [];
         } else {
           const nested = await loadExtractor(link, "");
-          streams.push(...nested.map((s) => ({ ...s, size: s.size || formatBytes(sizeInBytes) })));
+          return nested.map((s) => ({ ...s, size: s.size || formatBytes(sizeInBytes) }));
         }
       } catch (e) {
+        return [];
       }
-    }
+    }));
+    const streams = perButton.flat();
     return streams;
   } catch (e) {
     return [];
@@ -305,26 +305,26 @@ async function hblinksExtractor(url, referer) {
     const html = await (await fetch(url, { headers: HEADERS, skipSizeCheck: true, redirect: "follow" })).text();
     const $ = cheerio.load(html);
     const anchors = $("h3 a, h5 a, div.entry-content p a").toArray();
-    const streams = [];
-    for (const el of anchors) {
+    const perAnchor = await Promise.all(anchors.map(async (el) => {
       let href = $(el).attr("href") || "";
       if (!href)
-        continue;
+        return [];
       const lower = href.toLowerCase();
       try {
         if (lower.includes("hubdrive")) {
-          streams.push(...await hubDriveExtractor(href));
+          return await hubDriveExtractor(href);
         } else if (lower.includes("hubcloud")) {
-          streams.push(...await hubCloudExtractor(href, "Hblinks"));
+          return await hubCloudExtractor(href, "Hblinks");
         } else if (lower.includes("hubcdn")) {
-          streams.push(...await hubCdnExtractor(href));
+          return await hubCdnExtractor(href);
         } else {
-          streams.push(...await loadExtractor(href, "Hblinks"));
+          return await loadExtractor(href, "Hblinks");
         }
       } catch (e) {
+        return [];
       }
-    }
-    return streams;
+    }));
+    return perAnchor.flat();
   } catch (e) {
     return [];
   }
@@ -530,11 +530,8 @@ async function getStreams(tmdbId, mediaType, season, episode) {
     const uniqueLinks = [...new Set(rawLinks.filter(Boolean))];
     if (!uniqueLinks.length)
       return [];
-    const streams = [];
-    for (const link of uniqueLinks) {
-      const extracted = await resolveAndExtract(link);
-      streams.push(...extracted);
-    }
+    const perLink = await Promise.all(uniqueLinks.map((link) => resolveAndExtract(link)));
+    const streams = perLink.flat();
     return streams.filter((s) => s && s.url).map((s) => ({
       url: s.url,
       quality: typeof s.quality === "number" ? qualityLabel(s.quality) : s.quality || "Unknown",

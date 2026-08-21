@@ -1,6 +1,6 @@
 /**
  * moviebox - Built from src/providers/moviebox.js
- * Generated: 2026-08-20T09:51:42.325Z
+ * Generated: 2026-08-21T09:34:38.315Z
  */
 
 // src/providers/moviebox.js
@@ -322,9 +322,11 @@ async function getStreams(tmdbId, mediaType, season, episode) {
     const isTv = mediaType === "tv";
     const se = isTv ? season || 1 : 0;
     const ep = isTv ? episode || 1 : 0;
+    const perCandidate = await Promise.all(
+      candidates.slice(0, 8).map((candidate) => getStreamsForSubject(session, candidate.subjectId, se, ep).catch(() => []))
+    );
     const seenQuality = /* @__PURE__ */ new Map();
-    for (const candidate of candidates.slice(0, 8)) {
-      const streams = await getStreamsForSubject(session, candidate.subjectId, se, ep);
+    for (const streams of perCandidate) {
       for (const stream of streams) {
         const existing = seenQuality.get(stream.quality);
         if (!existing) {

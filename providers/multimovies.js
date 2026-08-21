@@ -1,6 +1,6 @@
 /**
  * multimovies - Built from src/providers/multimovies.js
- * Generated: 2026-08-20T09:51:42.384Z
+ * Generated: 2026-08-21T09:28:32.248Z
  */
 
 // src/providers/multimovies.js
@@ -123,26 +123,27 @@ async function getStreams(tmdbId, mediaType, season, episode) {
           type: $ep(el).attr("data-type")
         });
       });
-      for (const item of epItems.slice(0, 5)) {
+      const perEpItem = await Promise.all(epItems.slice(0, 5).map(async (item) => {
         if (!item.post || !item.nume || (item.nume || "").includes("trailer"))
-          continue;
+          return null;
         const embedUrl = await fetchEmbedUrl(BASE_URL, item.post, item.nume, item.type, match.href);
-        if (embedUrl && !embedUrl.includes("youtube")) {
-          const resolvedUrl = await resolveEmbed(embedUrl, BASE_URL);
-          if (resolvedUrl) {
-            const streamReferer = new URL(embedUrl).origin + "/";
-            const streamHeaders = resolvedUrl.includes(".m3u8") || resolvedUrl.includes(".mp4") ? { Referer: streamReferer, "User-Agent": HEADERS["User-Agent"] } : void 0;
-            const quality = resolvedUrl.includes(".m3u8") ? await getMasterPlaylistQuality(resolvedUrl, streamReferer) : "Unknown";
-            streams.push({
-              url: resolvedUrl,
-              quality,
-              title: "MultiMovies",
-              headers: streamHeaders,
-              subtitles: []
-            });
-          }
-        }
-      }
+        if (!embedUrl || embedUrl.includes("youtube"))
+          return null;
+        const resolvedUrl = await resolveEmbed(embedUrl, BASE_URL);
+        if (!resolvedUrl)
+          return null;
+        const streamReferer = new URL(embedUrl).origin + "/";
+        const streamHeaders = resolvedUrl.includes(".m3u8") || resolvedUrl.includes(".mp4") ? { Referer: streamReferer, "User-Agent": HEADERS["User-Agent"] } : void 0;
+        const quality = resolvedUrl.includes(".m3u8") ? await getMasterPlaylistQuality(resolvedUrl, streamReferer) : "Unknown";
+        return {
+          url: resolvedUrl,
+          quality,
+          title: "MultiMovies",
+          headers: streamHeaders,
+          subtitles: []
+        };
+      }));
+      streams.push(...perEpItem.filter(Boolean));
       return streams;
     }
     const playerItems = [];
@@ -153,26 +154,27 @@ async function getStreams(tmdbId, mediaType, season, episode) {
         type: $p(el).attr("data-type")
       });
     });
-    for (const item of playerItems.slice(0, 5)) {
+    const perPlayerItem = await Promise.all(playerItems.slice(0, 5).map(async (item) => {
       if (!item.post || !item.nume || (item.nume || "").includes("trailer"))
-        continue;
+        return null;
       const embedUrl = await fetchEmbedUrl(BASE_URL, item.post, item.nume, item.type, match.href);
-      if (embedUrl && !embedUrl.includes("youtube")) {
-        const resolvedUrl = await resolveEmbed(embedUrl, BASE_URL);
-        if (resolvedUrl) {
-          const streamReferer = new URL(embedUrl).origin + "/";
-          const streamHeaders = resolvedUrl.includes(".m3u8") || resolvedUrl.includes(".mp4") ? { Referer: streamReferer, "User-Agent": HEADERS["User-Agent"] } : void 0;
-          const quality = resolvedUrl.includes(".m3u8") ? await getMasterPlaylistQuality(resolvedUrl, streamReferer) : "Unknown";
-          streams.push({
-            url: resolvedUrl,
-            quality,
-            title: "MultiMovies",
-            headers: streamHeaders,
-            subtitles: []
-          });
-        }
-      }
-    }
+      if (!embedUrl || embedUrl.includes("youtube"))
+        return null;
+      const resolvedUrl = await resolveEmbed(embedUrl, BASE_URL);
+      if (!resolvedUrl)
+        return null;
+      const streamReferer = new URL(embedUrl).origin + "/";
+      const streamHeaders = resolvedUrl.includes(".m3u8") || resolvedUrl.includes(".mp4") ? { Referer: streamReferer, "User-Agent": HEADERS["User-Agent"] } : void 0;
+      const quality = resolvedUrl.includes(".m3u8") ? await getMasterPlaylistQuality(resolvedUrl, streamReferer) : "Unknown";
+      return {
+        url: resolvedUrl,
+        quality,
+        title: "MultiMovies",
+        headers: streamHeaders,
+        subtitles: []
+      };
+    }));
+    streams.push(...perPlayerItem.filter(Boolean));
     return streams;
   } catch (e) {
     return [];

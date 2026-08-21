@@ -1,6 +1,6 @@
 /**
  * fourkHDhub - Built from src/providers/fourkHDhub.js
- * Generated: 2026-08-20T09:51:41.912Z
+ * Generated: 2026-08-21T09:28:32.208Z
  */
 
 // src/providers/fourkHDhub.js
@@ -91,13 +91,12 @@ async function resolveHubCloud(url) {
       link: $2(a).attr("href") || "",
       label: ($2(a).text() || "").toLowerCase().trim()
     }));
-    const streams = [];
-    for (const { link, label } of buttons) {
+    const perButton = await Promise.all(buttons.map(async ({ link, label }) => {
       if (!link)
-        continue;
+        return [];
       try {
         if (label.includes("fsl server") || label.includes("download file") || label.includes("s3 server") || label.includes("fslv2") || label.includes("mega server")) {
-          streams.push({ url: link, quality, title: `4KHDHUB [${label}]`, size: formatBytes(sizeInBytes) });
+          return [{ url: link, quality, title: `4KHDHUB [${label}]`, size: formatBytes(sizeInBytes) }];
         } else if (label.includes("buzzserver")) {
           const resp = await fetch(`${link}/download`, {
             headers: { ...HEADERS, Referer: link },
@@ -105,12 +104,11 @@ async function resolveHubCloud(url) {
             skipSizeCheck: true
           });
           const dlink = resp.headers.get("hx-redirect") || resp.headers.get("HX-Redirect") || "";
-          if (dlink.trim())
-            streams.push({ url: dlink, quality, title: `4KHDHUB [BuzzServer]`, size: formatBytes(sizeInBytes) });
+          return dlink.trim() ? [{ url: dlink, quality, title: `4KHDHUB [BuzzServer]`, size: formatBytes(sizeInBytes) }] : [];
         } else if (label.includes("pixeldra") || label.includes("pixelserver") || label.includes("pixel server") || label.includes("pixeldrain")) {
           const base = originOf(link);
           const finalUrl = link.includes("download") ? link : `${base}/api/file/${link.split("/").pop()}?download`;
-          streams.push({ url: finalUrl, quality, title: `4KHDHUB [Pixeldrain]`, size: formatBytes(sizeInBytes) });
+          return [{ url: finalUrl, quality, title: `4KHDHUB [Pixeldrain]`, size: formatBytes(sizeInBytes) }];
         } else if (label.includes("10gbps")) {
           let redirectUrl = link;
           let finalLink = null;
@@ -127,14 +125,16 @@ async function resolveHubCloud(url) {
             } else
               break;
           }
-          if (finalLink)
-            streams.push({ url: finalLink, quality, title: `4KHDHUB [10Gbps]`, size: formatBytes(sizeInBytes) });
+          return finalLink ? [{ url: finalLink, quality, title: `4KHDHUB [10Gbps]`, size: formatBytes(sizeInBytes) }] : [];
         } else if (link.match(/\.(mp4|mkv|m3u8)/i)) {
-          streams.push({ url: link, quality, title: `4KHDHUB [${label}]`, size: formatBytes(sizeInBytes) });
+          return [{ url: link, quality, title: `4KHDHUB [${label}]`, size: formatBytes(sizeInBytes) }];
         }
+        return [];
       } catch (e) {
+        return [];
       }
-    }
+    }));
+    const streams = perButton.flat();
     return streams.length ? streams : null;
   } catch (e) {
     return null;
@@ -229,28 +229,26 @@ async function getStreams(tmdbId, mediaType, season, episode) {
           });
         });
       });
-      for (const { href, epText } of episodeHrefs.slice(0, 5)) {
+      const perEpisode = await Promise.all(episodeHrefs.slice(0, 5).map(async ({ href, epText }) => {
         try {
           const resolved = await resolveRedirect(href);
           if (resolved.toLowerCase().includes("hubcloud")) {
             const hubStreams = await resolveHubCloud(resolved);
-            if (hubStreams) {
-              for (const s of hubStreams) {
-                streams.push({ ...s, title: `4KHDHUB [S${season}E${episode}] ${s.title || ""}`.trim(), subtitles: [] });
-              }
-            }
+            return hubStreams ? hubStreams.map((s) => ({ ...s, title: `4KHDHUB [S${season}E${episode}] ${s.title || ""}`.trim(), subtitles: [] })) : [];
           } else {
-            streams.push({
+            return [{
               url: resolved,
               quality: extractQuality(epText),
               title: `4KHDHUB [S${season}E${episode}]`,
               size: await probeSize(resolved),
               subtitles: []
-            });
+            }];
           }
         } catch (e) {
+          return [];
         }
-      }
+      }));
+      streams.push(...perEpisode.flat());
     } else {
       const hrefs = [];
       $page("div.download-item a").each((i, a) => {
@@ -258,28 +256,26 @@ async function getStreams(tmdbId, mediaType, season, episode) {
         if (href && href.startsWith("http"))
           hrefs.push(href);
       });
-      for (const href of hrefs.slice(0, 5)) {
+      const perHref = await Promise.all(hrefs.slice(0, 5).map(async (href) => {
         try {
           const resolved = await resolveRedirect(href);
           if (resolved.toLowerCase().includes("hubcloud")) {
             const hubStreams = await resolveHubCloud(resolved);
-            if (hubStreams) {
-              for (const s of hubStreams) {
-                streams.push({ ...s, subtitles: [] });
-              }
-            }
+            return hubStreams ? hubStreams.map((s) => ({ ...s, subtitles: [] })) : [];
           } else {
-            streams.push({
+            return [{
               url: resolved,
               quality: extractQuality(resolved),
               title: `4KHDHUB`,
               size: await probeSize(resolved),
               subtitles: []
-            });
+            }];
           }
         } catch (e) {
+          return [];
         }
-      }
+      }));
+      streams.push(...perHref.flat());
     }
     return streams.filter((s) => meetsMinSize(s.size));
   } catch (e) {

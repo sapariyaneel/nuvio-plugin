@@ -217,7 +217,7 @@ function meetsMinSize(sizeStr) {
   return parseFloat(m[1]) * (mult[m[2].toUpperCase()] || 0) >= 150;
 }
 
-const SEGMENT_SAMPLE_SIZE = 5;
+const SEGMENT_SAMPLE_SIZE = 2;
 
 // some edges omit Content-Length on HEAD, fall back to a ranged GET for Content-Range
 async function getRealSegmentSize(url) {

@@ -1,6 +1,6 @@
 /**
  * vidcore - Built from src/providers/vidcore.js
- * Generated: 2026-08-20T09:51:42.451Z
+ * Generated: 2026-08-21T10:01:11.398Z
  */
 
 // src/providers/vidcore.js
@@ -40,8 +40,12 @@ async function getBases() {
   const embedBase = (d.vidcore || FALLBACK_EMBED_BASE).replace(/\/+$/, "");
   return { apiBase, embedBase };
 }
+var FETCH_TIMEOUT_MS = 1e4;
 function fetchWithTimeout(url, options) {
-  return fetch(url, { redirect: "follow", ...options });
+  return Promise.race([
+    fetch(url, { redirect: "follow", ...options }),
+    new Promise((_, reject) => setTimeout(() => reject(new Error(`Timed out after ${FETCH_TIMEOUT_MS}ms: ${url}`)), FETCH_TIMEOUT_MS))
+  ]);
 }
 function formatBytes(bytes) {
   if (!bytes)
@@ -224,8 +228,10 @@ async function getStreams(tmdbId, mediaType, season, episode) {
     const { apiBase, embedBase } = await getBases();
     const isTv = mediaType === "tv";
     const referer = isTv ? `${embedBase}/embed/tv/${numericTmdbId}/${season || 1}/${episode || 1}` : `${embedBase}/embed/movie/${numericTmdbId}`;
-    const title = await getTmdbTitle(numericTmdbId, mediaType);
-    const runtimeSeconds = await getTmdbRuntimeSeconds(numericTmdbId, mediaType, season, episode);
+    const [title, runtimeSeconds] = await Promise.all([
+      getTmdbTitle(numericTmdbId, mediaType),
+      getTmdbRuntimeSeconds(numericTmdbId, mediaType, season, episode)
+    ]);
     const mirrorResults = await Promise.all(
       MIRROR_IDS.map((id) => scrapeMirror(apiBase, referer, id, numericTmdbId, mediaType, title))
     );
