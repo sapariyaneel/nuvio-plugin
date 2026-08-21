@@ -16,9 +16,7 @@ const HEADERS = {
 };
 
 const FETCH_TIMEOUT_MS = 10000;
-// dead mirrors observed hanging ~10-15s on TLS before failing; probing candidate origins needs a much
-// shorter leash so one bad mirror can't dominate Promise.all([...candidates].map(probeOrigin))
-const PROBE_TIMEOUT_MS = 6000;
+const PROBE_TIMEOUT_MS = 6000; // dead mirrors hang ~10-15s, keep probes on a shorter leash
 
 function fetchWithTimeoutMs(url, options, ms) {
   return Promise.race([
@@ -448,8 +446,7 @@ async function hubCloudExtractor(url, referer) {
           const finalUrl = link.includes("download") ? link : `${base}/api/file/${link.split("/").pop()}?download`;
           return [{ url: finalUrl, quality, title: `${ref} Pixeldrain ${labelExtras}`.trim(), size: formatBytes(sizeInBytes )}];
         } else if (label.includes("10gbps")) {
-          // resolves through a 5-hop manual redirect chain to a link that expires before
-          // playback anyway (same finding already applied in moviesdrive.js/hdhub4u.js) - skip
+          // expires before playback, skip (5-hop redirect chain not worth it)
           return [];
         }
         return [];

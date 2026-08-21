@@ -1,6 +1,6 @@
 /**
  * vidcore - Built from src/providers/vidcore.js
- * Generated: 2026-08-21T10:01:11.398Z
+ * Generated: 2026-08-21T12:23:40.003Z
  */
 
 // src/providers/vidcore.js
@@ -40,7 +40,7 @@ async function getBases() {
   const embedBase = (d.vidcore || FALLBACK_EMBED_BASE).replace(/\/+$/, "");
   return { apiBase, embedBase };
 }
-var FETCH_TIMEOUT_MS = 1e4;
+var FETCH_TIMEOUT_MS = 6e3;
 function fetchWithTimeout(url, options) {
   return Promise.race([
     fetch(url, { redirect: "follow", ...options }),

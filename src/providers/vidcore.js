@@ -28,7 +28,7 @@ async function getBases() {
   return { apiBase, embedBase };
 }
 
-const FETCH_TIMEOUT_MS = 10000;
+const FETCH_TIMEOUT_MS = 6000; // 12 mirrors scraped, don't wait long on stragglers
 
 // a single dead/slow mirror shouldn't drag the whole Promise.all(MIRROR_IDS...) fan-out down with it
 function fetchWithTimeout(url, options) {

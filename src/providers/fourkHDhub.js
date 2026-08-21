@@ -111,8 +111,7 @@ async function resolveHubCloud(url) {
           const finalUrl = link.includes("download") ? link : `${base}/api/file/${link.split("/").pop()}?download`;
           return [{ url: finalUrl, quality, title: `4KHDHUB [Pixeldrain]`, size: formatBytes(sizeInBytes )}];
         } else if (label.includes("10gbps")) {
-          // resolves through a 5-hop manual redirect chain to a link that expires before
-          // playback anyway (same finding already applied in moviesdrive.js/hdhub4u.js) - skip
+          // expires before playback, skip (5-hop redirect chain not worth it)
           return [];
         } else if (link.match(/\.(mp4|mkv|m3u8)/i)) {
           return [{ url: link, quality, title: `4KHDHUB [${label}]`, size: formatBytes(sizeInBytes )}];

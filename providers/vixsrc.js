@@ -1,6 +1,6 @@
 /**
  * vixsrc - Built from src/providers/vixsrc.js
- * Generated: 2026-08-21T09:34:38.305Z
+ * Generated: 2026-08-21T12:23:39.955Z
  */
 
 // src/providers/vixsrc.js
@@ -117,7 +117,7 @@ async function resolveSubtitleUrl(playlistUrl) {
   }
 }
 async function getRealSegmentSize(url) {
-  for (let attempt = 0; attempt < 3; attempt++) {
+  for (let attempt = 0; attempt < 2; attempt++) {
     try {
       const resp = await fetch(url, { headers: { ...HEADERS, "Range": "bytes=0-1" }, skipSizeCheck: true });
       const contentRange = resp.headers.get("content-range");
@@ -152,7 +152,18 @@ async function mapWithConcurrency(items, worker, limit) {
 var SEGMENT_SAMPLE_SIZE = 8;
 var SEGMENT_SAMPLE_CONCURRENCY = 8;
 var SUBTITLE_CONCURRENCY = 8;
+var SIZE_ESTIMATE_BUDGET_MS = 5e3;
 async function measureHlsSize(variantUrl) {
+  try {
+    return await Promise.race([
+      measureHlsSizeInner(variantUrl),
+      new Promise((resolve) => setTimeout(() => resolve("Unknown"), SIZE_ESTIMATE_BUDGET_MS))
+    ]);
+  } catch (e) {
+    return "Unknown";
+  }
+}
+async function measureHlsSizeInner(variantUrl) {
   try {
     const resp = await fetch(variantUrl, { headers: HEADERS, skipSizeCheck: true });
     if (!resp.ok)

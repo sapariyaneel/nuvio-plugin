@@ -1,6 +1,6 @@
 /**
  * vegamovies - Built from src/providers/vegamovies.js
- * Generated: 2026-08-21T11:29:12.763Z
+ * Generated: 2026-08-21T12:23:40.023Z
  */
 
 // src/providers/vegamovies.js

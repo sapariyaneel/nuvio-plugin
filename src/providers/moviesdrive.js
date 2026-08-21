@@ -642,8 +642,7 @@ async function gdFlixExtractor(url, referer = null) {
 
         const anchors = $('div.text-center a[href]').get();
 
-        // each anchor's chain (direct/index/drivebot/instant/gofile/pixel) is independent of the
-        // others, only the final links.push() is shared, so resolve every anchor concurrently
+        // each anchor's chain is independent, resolve concurrently
         const perAnchor = await Promise.all(anchors.map(async (a) => {
             const el = $(a);
             const text = el.text().toLowerCase();
@@ -832,11 +831,8 @@ async function goFileExtractor(url) {
  * @param {string} referer The referer URL.
  * @returns {Promise<Array<{quality: string, url: string, source: string}>>} A list of final links.
  */
-const EXTRACTOR_TIMEOUT_MS = 6000;
+const EXTRACTOR_TIMEOUT_MS = 6000; // caps every extractor call so one stuck hoster can't stall the batch
 
-// nothing in this file times out its own fetches, so a single stuck hoster chain (hubcloud/gdflix
-// are each 2-4 sequential fetches deep) can stall the whole Promise.all() batch that called this.
-// Bound it here, at the one choke point every extractor call passes through.
 function loadExtractor(url, referer = MAIN_URL) {
     return Promise.race([
         loadExtractorInner(url, referer),

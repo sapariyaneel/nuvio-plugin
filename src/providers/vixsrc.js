@@ -124,9 +124,11 @@ async function resolveSubtitleUrl(playlistUrl) {
   }
 }
 
-// ranged GET's Content-Range gives real byte length without downloading it, retry since edge rate-limits bursts
+// ranged GET's Content-Range gives real byte length without downloading it. Only one retry - on a
+// slow/congested connection each retry is a full extra round trip, and this whole measurement is
+// cosmetic (a display-only size string), not worth compounding delay on top of an already-playable url.
 async function getRealSegmentSize(url) {
-  for (let attempt = 0; attempt < 3; attempt++) {
+  for (let attempt = 0; attempt < 2; attempt++) {
     try {
       const resp = await fetch(url, { headers: { ...HEADERS, "Range": "bytes=0-1" }, skipSizeCheck: true });
       const contentRange = resp.headers.get("content-range");
@@ -162,10 +164,22 @@ async function mapWithConcurrency(items, worker, limit) {
 const SEGMENT_SAMPLE_SIZE = 8;
 const SEGMENT_SAMPLE_CONCURRENCY = 8;
 const SUBTITLE_CONCURRENCY = 8; // same edge rate-limiting applies to subtitle unwrapping
+const SIZE_ESTIMATE_BUDGET_MS = 5000; // cosmetic size string, must not block the response
 
 // samples at midpoints of 32 equal strata, not evenly-spaced indices - the last segment is a
 // sub-second runt that evenly-spaced sampling always lands on, dragging the average down
 async function measureHlsSize(variantUrl) {
+  try {
+    return await Promise.race([
+      measureHlsSizeInner(variantUrl),
+      new Promise(resolve => setTimeout(() => resolve("Unknown"), SIZE_ESTIMATE_BUDGET_MS))
+    ]);
+  } catch (e) {
+    return "Unknown";
+  }
+}
+
+async function measureHlsSizeInner(variantUrl) {
   try {
     const resp = await fetch(variantUrl, { headers: HEADERS, skipSizeCheck: true });
     if (!resp.ok) return "Unknown";

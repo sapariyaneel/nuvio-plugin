@@ -208,6 +208,7 @@ function meetsMinSize(sizeStr) {
 }
 
 const SEGMENT_SAMPLE_SIZE = 2;
+const SIZE_ESTIMATE_BUDGET_MS = 5000; // cosmetic size string, must not block the response
 
 // some CDN edges omit Content-Length, fall back to a ranged GET for Content-Range
 async function getRealSegmentSize(url) {
@@ -231,6 +232,17 @@ async function getRealSegmentSize(url) {
 
 // no BANDWIDTH tag in these playlists, sample a few segments and scale by count instead
 async function estimateHlsSize(playlistUrl) {
+  try {
+    return await Promise.race([
+      estimateHlsSizeInner(playlistUrl),
+      new Promise(resolve => setTimeout(() => resolve("Unknown"), SIZE_ESTIMATE_BUDGET_MS))
+    ]);
+  } catch (e) {
+    return "Unknown";
+  }
+}
+
+async function estimateHlsSizeInner(playlistUrl) {
   try {
     const resp = await fetch(playlistUrl, { headers: HEADERS, skipSizeCheck: true });
     if (!resp.ok) return "Unknown";

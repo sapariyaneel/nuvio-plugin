@@ -1,6 +1,6 @@
 /**
  * vidking - Built from src/providers/vidking.js
- * Generated: 2026-08-21T09:34:38.291Z
+ * Generated: 2026-08-21T12:23:39.997Z
  */
 
 // src/providers/vidking.js
@@ -221,6 +221,7 @@ function meetsMinSize(sizeStr) {
   return parseFloat(m[1]) * (mult[m[2].toUpperCase()] || 0) >= 150;
 }
 var SEGMENT_SAMPLE_SIZE = 2;
+var SIZE_ESTIMATE_BUDGET_MS = 5e3;
 async function getRealSegmentSize(url) {
   try {
     const head = await fetch(url, { method: "HEAD", headers: HEADERS, skipSizeCheck: true });
@@ -240,6 +241,16 @@ async function getRealSegmentSize(url) {
   return null;
 }
 async function estimateHlsSize(playlistUrl) {
+  try {
+    return await Promise.race([
+      estimateHlsSizeInner(playlistUrl),
+      new Promise((resolve) => setTimeout(() => resolve("Unknown"), SIZE_ESTIMATE_BUDGET_MS))
+    ]);
+  } catch (e) {
+    return "Unknown";
+  }
+}
+async function estimateHlsSizeInner(playlistUrl) {
   try {
     const resp = await fetch(playlistUrl, { headers: HEADERS, skipSizeCheck: true });
     if (!resp.ok)
