@@ -1,6 +1,6 @@
 /**
  * rogmovies - Built from src/providers/rogmovies.js
- * Generated: 2026-08-21T10:01:11.383Z
+ * Generated: 2026-08-21T11:29:12.803Z
  */
 
 // src/providers/rogmovies.js
@@ -372,22 +372,7 @@ async function hubCloudExtractor(url, referer) {
           const finalUrl = link.includes("download") ? link : `${base}/api/file/${link.split("/").pop()}?download`;
           return [{ url: finalUrl, quality, title: `${ref} Pixeldrain ${labelExtras}`.trim(), size: formatBytes(sizeInBytes) }];
         } else if (label.includes("10gbps")) {
-          let redirectUrl = link;
-          let finalLink = null;
-          for (let i = 0; i < 5; i++) {
-            const r = await fetchWithTimeout(redirectUrl, { redirect: "manual", skipSizeCheck: true });
-            if (r.status >= 300 && r.status < 400) {
-              const loc = r.headers.get("location");
-              if (loc && loc.includes("link=")) {
-                finalLink = loc.split("link=")[1];
-                break;
-              }
-              if (loc)
-                redirectUrl = new URL(loc, redirectUrl).toString();
-            } else
-              break;
-          }
-          return finalLink ? [{ url: finalLink, quality, title: `${ref} [10Gbps] ${labelExtras}`.trim(), size: formatBytes(sizeInBytes) }] : [];
+          return [];
         }
         return [];
       } catch (e) {

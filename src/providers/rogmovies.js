@@ -389,17 +389,9 @@ async function hubCloudExtractor(url, referer) {
           const finalUrl = link.includes("download") ? link : `${base}/api/file/${link.split("/").pop()}?download`;
           return [{ url: finalUrl, quality, title: `${ref} Pixeldrain ${labelExtras}`.trim(), size: formatBytes(sizeInBytes )}];
         } else if (label.includes("10gbps")) {
-          let redirectUrl = link;
-          let finalLink = null;
-          for (let i = 0; i < 5; i++) {
-            const r = await fetchWithTimeout(redirectUrl, { redirect: "manual", skipSizeCheck: true });
-            if (r.status >= 300 && r.status < 400) {
-              const loc = r.headers.get("location");
-              if (loc && loc.includes("link=")) { finalLink = loc.split("link=")[1]; break; }
-              if (loc) redirectUrl = new URL(loc, redirectUrl).toString();
-            } else break;
-          }
-          return finalLink ? [{ url: finalLink, quality, title: `${ref} [10Gbps] ${labelExtras}`.trim(), size: formatBytes(sizeInBytes )}] : [];
+          // resolves through a 5-hop manual redirect chain to a link that expires before
+          // playback anyway (same finding already applied in moviesdrive.js/hdhub4u.js) - skip
+          return [];
         }
         return [];
       } catch (e) {
